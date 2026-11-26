@@ -29,7 +29,7 @@ ColumnLayout {
                 Text { font.family: Theme.fontFamily; text: modelData.name; color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
                 Text { font.family: Theme.fontFamily; text: modelData.baseUrl; color: Theme.muted; font.pixelSize: Theme.font(10, visible); elide: Text.ElideRight; width: 400 }
             }
-            Text { font.family: Theme.fontFamily; text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+            Text { font.family: Theme.fontFamily; text: I18n.modelCount(modelData.models.length); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
             Text { font.family: Theme.fontFamily; text: modelData.api === "openai" ? I18n.t("OpenAI 格式") : I18n.t("Anthropic 格式"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
             ProviderProxy { providerId: modelData.id }
             ActionButton { objectName: "editProvider_" + modelData.id; glyph: "edit"; quiet: true; hint: I18n.t("编辑供应商与模型"); onClicked: root.editProvider(modelData) }

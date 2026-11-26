@@ -11,4 +11,4 @@
 - 当前调用聊天的工作区：`<workspace>/.pi/skills/<skill-name>/SKILL.md`。
 - 全局：`<当前 Pi agentDir>/skills/<skill-name>/SKILL.md`。用已有 `umeko_desktop` 的 `settings.get` 查看 `config.agent.agentDir`；为空时使用 `~/.pi/agent`。始终以当前 Umeko 实例的 agentDir 和发起调用的聊天的工作区为准。
 
-SKILL.md 是 UTF-8 Markdown，YAML frontmatter 提供 `name` 和 `description`，正文写使用指引；脚本和资源放在同一个 Skill 文件夹内。遵循 Pi 原生格式与目录发现规则。默认按 Pi 配置发现；用户可在 Widget 中为当前会话单独关闭或启用。完成文件修改后，用当前实例的 `run_pi_command` 执行 `/reload`，依任务回执核实刷新。索引只包含名称和简介；需要正文时读取对应的 SKILL.md。
+SKILL.md 是 UTF-8 Markdown，YAML frontmatter 提供 `name` 和 `description`，正文写使用指引；脚本和资源放在同一个 Skill 文件夹内。遵循 Pi 原生格式与目录发现规则。默认按 Pi 配置发现；用户可在 Widget 中为当前会话单独关闭或启用。完成文件修改后，用 `umeko_desktop` 的 `pi.run` 执行 `/reload`，依任务回执核实刷新。索引只包含名称和简介；需要正文时读取对应的 SKILL.md。

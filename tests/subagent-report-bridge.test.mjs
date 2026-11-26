@@ -12,10 +12,12 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const release = join(root, "runtime/releases/coding-1.5.2");
 const CHILD_HINT = "notify_parent";
+const COWORK_REVIEWER = "child-0123456789abcdef0123456789abcdef";
+const COWORK_UPDATE = "The source document changed during the review.";
 
 // A background subagent reports after its parent finished the turn, and Pi
 // starts a new parent run by itself. Returns once that run is streaming.
-async function reportRun(t) {
+async function reportRun(t, { cowork = false } = {}) {
   assert.deepEqual(readFileSync(join(release, "bridge.mjs")), readFileSync(join(root, "runtime/bridge.mjs")),
     "Run prepare_runtime.py before testing a changed bridge");
   const dir = mkdtempSync(join(tmpdir(), "umeko-subagent-report-")), agentDir = join(dir, "agent");
@@ -25,6 +27,8 @@ async function reportRun(t) {
   const reportGate = new Promise(resolve => { releaseReport = resolve; });
   const reportStarted = new Promise(resolve => { reportStreaming = resolve; });
   const parents = [];
+  let childTurns = 0, recordUpdateResult;
+  const updateResult = new Promise(resolve => { recordUpdateResult = resolve; });
   const server = createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw);
@@ -38,10 +42,20 @@ async function reportRun(t) {
     res.write(chunk({ role: "assistant" }));
     if (child) {
       await childGate;
+      if (cowork) {
+        if (++childTurns === 1) {
+          res.end(chunk({ tool_calls: [{ index: 0, id: "report-change", type: "function", function: {
+            name: "notify_parent", arguments: JSON.stringify({ message: COWORK_UPDATE }),
+          } }] }) + chunk({}, "tool_calls") + "data: [DONE]\n\n");
+          return;
+        }
+        recordUpdateResult(body.messages.find(message => message.role === "tool" && message.tool_call_id === "report-change"));
+        await reportGate;
+      }
       res.end(chunk({ content: "child report" }) + chunk({}, "stop") + "data: [DONE]\n\n");
     } else if (number === 1) {
       res.end(chunk({ tool_calls: [{ index: 0, id: "call-subagent", type: "function", function: { name: "subagent",
-        arguments: JSON.stringify({ prompt: "child task", description: "Background probe", subagent_type: "general-purpose", run_in_background: true }) } }] })
+        arguments: JSON.stringify({ prompt: "child task", description: "Background probe", subagent_type: cowork ? COWORK_REVIEWER : "general-purpose", run_in_background: true }) } }] })
         + chunk({}, "tool_calls") + "data: [DONE]\n\n");
     } else if (number === 3) {
       res.write(chunk({ content: "handling report" }));
@@ -81,11 +95,14 @@ async function reportRun(t) {
 
   send({ type: "prompt", text: "delegate", gateway: `http://127.0.0.1:${server.address().port}/`, token: "fixture",
     workspace: dir, defaultCwd: dir, agentDir, sessionDir: join(dir, "sessions"),
-    model: "test-model", models: [{ id: "test-model", contextWindow: 128000 }], agent: { safeMode: true } });
+    model: "test-model", models: [{ id: "test-model", contextWindow: 128000 }], agent: { safeMode: true },
+    ...(cowork ? { cowork: { allowedTools: [], skillPaths: [], subagents: [{ id: COWORK_REVIEWER,
+      name: "Reviewer", prompt: "Review the document", context: "files", tools: [], skillPaths: [] }] } } : {}) });
   await until(e => e.type === "done" && e.action === "prompt", "the parent's own turn");
   assert.equal(parents.length, 2, "The parent finished its own turn before the child reported");
   const finished = events.length;
   releaseChild();
+  if (cowork) assert.match((await updateResult)?.content || "", /Update sent to the delegating agent/);
   await reportStarted;
   const adopted = await until(e => e.type === "agent_run", "agent_run for the report");
   const start = events.indexOf(adopted);
@@ -94,6 +111,13 @@ async function reportRun(t) {
   assert.equal(events.slice(start).some(e => e.type === "done"), false, "Busy until the report run ends");
   return { send, until, events, parents, start, finished, releaseReport };
 }
+
+test("a background Cowork subagent can notify its parent with an empty tool selection", { timeout: 30000 }, async t => {
+  const run = await reportRun(t, { cowork: true });
+  assert.ok(run.parents[2].some(text => text.includes(COWORK_UPDATE)));
+  run.releaseReport();
+  await run.until((e, index) => index > run.start && e.type === "done", "done after the Cowork update");
+});
 
 test("a background subagent report runs as a tracked desktop action and queues input", { timeout: 90000 }, async t => {
   const run = await reportRun(t);

@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PySide6.QtCore import QCoreApplication, QObject, Signal
+from app.pi_management import PiManagement
 from app.widget_host import WidgetHost
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'plugin-runtime'))
@@ -27,6 +28,9 @@ class Manager(QObject):
         self.calls, self.frames, self.replies = [], [], {}
         self.b = SimpleNamespace(piManagement=management, busy=False, kernelBusy=False,
             pendingApproval={}, _view=SimpleNamespace(extension_modes={}, resources={},busy=False,action='idle'), _umeko_control=SimpleNamespace(execute=self.execute))
+        self.b.store = SimpleNamespace(data={'desktop': {'remoteWorkspaceEnabled': False}})
+        management.controller = self.b
+        management.inventory_current = lambda record: PiManagement.inventory_current(management, record)
         from app.tool_visibility import catalog
         management.capability_extensions=lambda:catalog(self.b._view,management.extensions)
         management.capability_profile=lambda:{'preset':'full','custom':{'base':'full','tools':{},'plugins':{}}}
@@ -412,7 +416,7 @@ class WidgetHostTests(unittest.TestCase):
     def test_busy_agent_cannot_turn_widget_admin_into_an_install_bypass(self):
         self.manager.b.busy = True
         identifier = self.request('pi.install', {'source': 'npm:fixture@1.0.0'})
-        self.assertIn('run_pi_command', self.manager.replies[identifier]['error'])
+        self.assertIn('pi.run', self.manager.replies[identifier]['error'])
         self.assertFalse(self.host.pendingApproval)
         self.assertEqual(self.manager.calls, [])
 

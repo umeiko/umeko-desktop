@@ -27,12 +27,16 @@ from .npm_config import npm_environment
 from .storage import Store
 from .pi_sessions import PiSessionPool, SessionState, clean_extension_modes, clean_skill_modes, clean_blocked_tools
 from .controller_runtime import PiControllerMixin
+from .remote_environments import RemoteEnvironments
+from .remote_service import RemoteServiceClient
+from .workspace_executor import WorkspaceExecutor
 from .dsh_backend import DshControllerMixin, is_dsh
 from .transcripts import preview
 from .chat_model import ChatModel
 from .transcript_index import TranscriptRepository
 from .model_context import context_suggestion
 from .model_groups import GROUP_MODEL, GROUP_PROVIDER, GROUP_SELECTION, MAX_MEMBERS, configured_members, member_key, settings as group_settings
+from .model_roles import SESSION_ROLES, model_choices, select_route, session_model_roles
 from .model_reasoning import reasoning_levels, reconcile_effort
 from .controller_reasoning import ReasoningDiscovery
 from .thinking_formats import FORMAT_OPTIONS
@@ -77,6 +81,15 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     appearanceChanged = Signal()
     characterCatalogChanged = Signal()
     desktopSettingsChanged = Signal()
+    remoteEnvironmentsChanged = Signal()
+    remoteHostsChanged = Signal()
+    remoteBrowseFinished = Signal(str, 'QVariantMap')
+    remoteMkdirFinished = Signal(str, 'QVariantMap')
+    remoteHomeFinished = Signal(str, 'QVariantMap')
+    remoteTestFinished = Signal(str, 'QVariantMap')
+    remoteAddHostFinished = Signal(str, 'QVariantMap')
+    _remoteStateArrived = Signal(object)
+    _remoteOpCompleted = Signal(str, str, object)
     auxiliaryVisionSettingsChanged = Signal()
 
     @Property('QVariantList', constant=True)
@@ -87,9 +100,29 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def imageProviders(self):
         return self._image_provider_rows()
 
+    @Property('QVariantList', notify=changed)
+    def multimodalProviders(self):
+        return self._multimodal_provider_rows()
+
     @Property('QVariantMap', notify=desktopSettingsChanged)
     def desktopSettings(self):
         return dict(self.store.data['desktop'])
+
+    @Property('QVariantList', notify=remoteEnvironmentsChanged)
+    def remoteEnvironments(self):
+        return self._remote_environments.rows()
+
+    @Property(bool, notify=remoteEnvironmentsChanged)
+    def remoteNetworkEnabled(self):
+        return self.store.data.get('remoteNetworkEnabled') is not False
+
+    @Property('QVariantList', notify=remoteHostsChanged)
+    def sshConfigHosts(self):
+        return list(self._ssh_config_hosts)
+
+    @Property(QObject, constant=True)
+    def cowork(self):
+        return self._cowork
 
     @Property('QVariantMap', notify=auxiliaryVisionSettingsChanged)
     def auxiliaryVisionSettings(self):
@@ -178,7 +211,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         from .plugin_sessions import profile_rows
         return profile_rows(self)
 
-    @Property('QVariantList', notify=changed)
+    @Property('QVariantList', notify=reasoningDetectionChanged)
     def pluginSessionModels(self):
         return [{'providerId': row['providerID'], 'model': row['id'], 'label': row['owned_by'] + ' / ' + row['id'],
                  'reasoningLevels': self._reasoning_levels(SimpleNamespace(model=row['id'], provider=row['providerID']))}
@@ -221,6 +254,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.toast.emit('settings.json 无法解析，已另存为 settings.external-invalid.json' if invalid and not keys
                         else 'settings.json 在 Umeko 外被修改，已读入这些修改')
         self.changed.emit()
+        if 'remoteEnvironments' in keys:
+            self.remoteEnvironmentsChanged.emit()
+        if {'remoteNetworkEnabled', 'remoteNetworkProxy'}.intersection(keys):
+            self._remote_network_settings_changed()
     proxyKeysChanged = Signal()
     editorText = Signal(str)
 
@@ -230,6 +267,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._app_about = AppAbout(self)
         self.store = Store()
         self.store.external_change = self._settings_changed_externally
+        self._remote_environments = RemoteEnvironments(self.store, self.remoteEnvironmentsChanged.emit)
+        self._remote_service = RemoteServiceClient(self)
+        self._remote_service.set_state_handler(self._remoteStateArrived.emit)
+        self._remoteStateArrived.connect(lambda event: self._remote_environments.observe('desktop', event) if not self._closing else None)
+        self._remoteOpCompleted.connect(self._on_remote_op_completed)
+        self._workspace_executor = WorkspaceExecutor(self)
+        self._ssh_config_hosts = []
         # Provider changes and externally merged settings still refresh these
         # small views. A local switch only emits its own section's notification.
         self.changed.connect(self.desktopSettingsChanged)
@@ -326,7 +370,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._collapsed_projects = set()
         self._show_archived = False
         for session in self._sessions:
-            if session.get("workspace"):
+            if session.get("workspace") and not session.get("cowork"):
                 self._ensure_project(session["workspace"])
         self._kernel_busy = False
         self._last_send_error = ""
@@ -334,6 +378,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._kernel_status = "就绪"
         self._view.approval = {}
         self._release = root / "runtime/releases" / RELEASE_NAME
+        from .windows_sandbox import WindowsSandbox
+        self._windows_sandbox = WindowsSandbox(self)
         active = self.store.directory / "kernels/active.json"
         if active.exists():
             try:
@@ -357,10 +403,16 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         from .slash_commands import SlashCommands
         self._slash_commands = SlashCommands(self)
         self._reasoning_discovery = ReasoningDiscovery(self)
+        from .cowork import Cowork
+        self._cowork = Cowork(self)
 
     @Property(QObject, constant=True)
     def loginStartup(self):
         return self._login_startup
+
+    @Property(QObject, constant=True)
+    def windowsSandbox(self):
+        return self._windows_sandbox
 
     @Property(QObject, constant=True)
     def slashCommands(self):
@@ -404,10 +456,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(bool, notify=chatChanged)
     def canChooseBackend(self):
-        return not (self._view.id or self._view.messages or self._view.busy)
+        return not (self._view.cowork or self._view.id or self._view.messages or self._view.busy)
 
     @Slot(str, result=bool)
     def setSessionBackend(self, value):
+        if self._view.cowork:
+            return value == "pi"
         changed = self._choose_dsh_backend(value)
         if changed and value == "dsh" and self._repair_model_group_selection(self._view):
             self.store.save()
@@ -475,15 +529,16 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self.messageModelChanged.emit()
             self.messageCountChanged.emit()
         self._pool.touch(record, current=True, dirty=False)
-        if record.workspace:
-            project = self._ensure_project(record.workspace, reopen=True)
-            self.store.data.update(workspace=project["path"], activeProject=project["id"])
-        else:
-            self.store.data.update(workspace="", activeProject="")
+        if not record.cowork:
+            if record.workspace:
+                project = self._ensure_project(record.workspace, reopen=True)
+                self.store.data.update(workspace=project["path"], activeProject=project["id"])
+            else:
+                self.store.data.update(workspace="", activeProject="")
         # The index can name a deleted supplier or a retired pre-plugin model.
         # Keep a valid historical selection; otherwise use the current selection.
         available = [(p["id"], m["alias"]) for p in self.store.data["providers"]
-                     if p["api"] != "image" and (p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True))
+                     if p["api"] not in ("image", "speech", "video") and (p["api"] != "internal" or getattr(self.gateway.adapter, "ready", True))
                      for m in p["models"]]
         if not is_dsh(record) and self.modelGroupReady:
             available.append(GROUP_SELECTION)
@@ -504,6 +559,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._viewport_save.start()
         # Rebinding every hidden settings page is expensive. Session-specific
         # signals below update the chat; refresh settings only when they changed.
+        if (previous.cowork or record.cowork) and (previous.workspace, previous.cowork) != (record.workspace, record.cowork):
+            previous_configuration["workspace"] = None
+        self._cowork.view_changed(previous)
         if previous_approval != self._dangerous_allowed(record) or any(self.store.data.get(key) != value for key, value in previous_configuration.items()):
             self.changed.emit()
         self.chatChanged.emit()
@@ -525,6 +583,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._pi_warmup.start()
 
     def _refresh_sidebar(self):
+        if self._view.cowork:
+            self._cowork.refresh_rows()
+            return
         rows = self._project_rows()
         if rows != self._last_sidebar_rows:
             self._last_sidebar_rows = rows
@@ -671,6 +732,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         # it for every QML binding makes settings clicks scale with all history.
         data = copy.deepcopy({key: value for key, value in self.store.data.items()
                               if key != 'sessionMeta'})
+        if self._view.cowork:
+            data["workspace"] = self._view.workspace
         data["hasPassword"] = bool(data.pop("password"))
         data.pop("employeeId", None)
         if isinstance(self.adapter, UnconfiguredAdapter):
@@ -824,7 +887,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot()
     def openChatDirectory(self):
-        path = Path(self._view.workspace or self.store.data["workspace"])
+        workspace = self._view.workspace or self.store.data["workspace"]
+        remote = self._remote_project_for_workspace(workspace)
+        if remote:
+            if not self._desktop_plugins.openPage('file-tree'):
+                self.toast.emit(f"远程目录：{remote['host']}:{remote['remotePath']}")
+            return
+        path = Path(workspace)
         if path.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:
@@ -973,6 +1042,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         by_workspace = {}
         projects_by_key = {os.path.normcase(p['path']): p for p in self.store.data['projects']}
         for session in self._sessions:
+            if session.get("cowork"):
+                continue
             workspace = session.get("workspace", "")
             if workspace:
                 key = self._project_workspace_key(workspace)
@@ -997,7 +1068,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             if self._show_archived and not children and not project.get('archived'):
                 continue
             collapsed = project["id"] in self._collapsed_projects
+            is_remote = bool(project.get("environment") and project.get("remotePath"))
             rows.append({**project, "kind": "project", "title": project["name"], "collapsed": collapsed, "pinned": bool(project.get("pinned")),
+                         "isRemote": is_remote,
+                         "remoteHost": project.get("remoteHost", ""),
+                         "remotePath": project.get("remotePath", ""),
+                         "remoteEnvironment": project.get("environment", ""),
+                         "remotePlatform": project.get("remotePlatform", ""),
                          "selected": project["id"] == self.store.data["activeProject"]})
             for session in children:
                 grouped.add(session["id"])
@@ -1027,6 +1104,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self.chatChanged.emit()
 
     def _clear_current(self):
+        if self._view.cowork:
+            self._cowork.requestTask(self._view.cowork)
+            return
         record = self._new_view()
         self._project_drafts[record.workspace] = record
         self._activate(record)
@@ -1039,7 +1119,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not session:
             return
         self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
-        if not archived and session.get('workspace'):
+        if not archived and session.get('workspace') and not session.get('cowork'):
             project = self._ensure_project(session['workspace'], reopen=True)
             project['archived'] = False
         if archived:
@@ -1058,12 +1138,12 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not project or self._session_files.busy:
             return
         project['archived'] = archived
-        ids = [s["id"] for s in self._sessions if s.get("workspace") and os.path.normcase(str(Path(s["workspace"]).resolve())) == os.path.normcase(project["path"])]
+        ids = [s["id"] for s in self._sessions if not s.get("cowork") and s.get("workspace") and os.path.normcase(str(Path(s["workspace"]).resolve())) == os.path.normcase(project["path"])]
         for session_id in ids:
             self.store.data["sessionMeta"].setdefault(session_id, {})["archived"] = archived
             if archived:
                 self._clear_dangerous_approval(session_id)
-        if archived and (self._view.id in ids or self._project_workspace_key(self._view.workspace) == self._project_workspace_key(project['path'])):
+        if archived and not self._view.cowork and (self._view.id in ids or self._project_workspace_key(self._view.workspace) == self._project_workspace_key(project['path'])):
             self.store.data.update(activeProject='', workspace='')
             self._clear_current()
         if archived:
@@ -1084,8 +1164,13 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Slot(str)
     def revealProject(self, project_id):
         project = next((p for p in self.store.data["projects"] if p["id"] == project_id), None)
-        if project:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(project["path"]))
+        if not project:
+            return
+        if project.get("environment") and project.get("remotePath"):
+            host = project.get("remoteHost") or project["environment"]
+            self.copy(f"{host}:{project['remotePath']}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(project["path"]))
 
     @Slot(str, str)
     def renameProject(self, project_id, title):
@@ -1123,6 +1208,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         session = next((s for s in self._sessions if s["id"] == session_id), None)
         if session:
             record = self._new_view(session.get("workspace") or self.store.data["workspace"])
+            record.cowork = session.get("cowork", "")
             record.history = copy.deepcopy(session.get("history", []))
             record.model = session.get("model") or record.model
             record.provider = session.get("provider") or record.provider
@@ -1135,7 +1221,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return
         payload = {"action": action, "sessionFile": session.get("file"), "history": session.get("history", []),
             "cwd": session.get("workspace") or self.store.data["workspace"] or str(self.store.directory),
-            "sessionDir": str(self.store.directory / "pi/sessions"), **values}
+            "sessionDir": str(self._cowork.session_directory(session["cowork"]) if session.get("cowork")
+                              else self.store.directory / "pi/sessions"), **values}
         if session_id in self._management_jobs:
             return
         self._management_jobs.add(session_id)
@@ -1165,6 +1252,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def openProject(self, project_id):
         project = next((p for p in self.store.data["projects"] if p["id"] == project_id), None)
         if project:
+            if project.get("environment") and project.get("remotePath"):
+                Path(project["path"]).mkdir(parents=True, exist_ok=True)
             self.setWorkspace(QUrl.fromLocalFile(project["path"]).toString())
 
     @Slot(str)
@@ -1287,6 +1376,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def activeSession(self):
         return self._view.id
 
+    @Property('QVariantMap', notify=chatChanged)
+    def activeRemoteWorkspace(self):
+        return self._remote_project_for_workspace(self._view.workspace) or {}
+
     @Property(str, notify=viewChanged)
     def conversationToken(self):
         return self._view.key
@@ -1301,7 +1394,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(str, notify=chatChanged)
     def sessionTitle(self):
-        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), "新会话")
+        return next((s["title"] for s in self._sessions if s["id"] == self._view.id), self._view.initial_title or "")
 
     @Property(bool, notify=chatChanged)
     def busy(self):
@@ -1325,8 +1418,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return []
         if record and is_dsh(record) and getattr(record, 'dsh_options', None):
             return self._dsh_efforts(record)
-        provider_id = record.provider if record else self.store.data["selectedProvider"]
-        alias = record.model if record else self.store.data["selectedModel"]
+        if record and record.provider and record.model:
+            provider_id, alias = record.provider, record.model
+        else:
+            provider_id, alias = self.store.data["selectedProvider"], self.store.data["selectedModel"]
         provider = next((p for p in self.store.data["providers"] if p["id"] == provider_id), {})
         model = next((m for m in provider.get("models", []) if m["alias"] == alias), {})
         return reasoning_levels(model)
@@ -1586,6 +1681,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property(str, notify=changed)
     def workspaceName(self):
+        if self._view.cowork:
+            return Path(self._view.workspace).name or self._view.workspace
         project = next((p for p in self.store.data["projects"] if p["id"] == self.store.data["activeProject"]), None)
         return project["name"] if project else Path(self.store.data["workspace"]).name if self.store.data["workspace"] else "选择工作目录"
 
@@ -1596,7 +1693,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def _dangerous_allowed(self, record):
         if is_dsh(record): return False
         meta = self.store.data["sessionMeta"].get(record.id, {})
-        if not record.id or record.global_agent or meta.get("archived") or meta.get('pluginSession'):
+        if not record.id or record.global_agent or record.cowork or meta.get("archived") or meta.get('pluginSession'):
             return False
         return meta.get("dangerousAllowed") is True
 
@@ -1741,6 +1838,22 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         except (ValueError, KeyError, TypeError) as exc:
             self.toast.emit(str(exc))
 
+    @Slot(bool, result=bool)
+    def setAutomaticWorktrees(self, enabled):
+        agent = self.store.data['agent']
+        previous = agent.get('automaticWorktrees', False)
+        agent['automaticWorktrees'] = enabled
+        try:
+            self.store.save()
+        except (OSError, RuntimeError) as error:
+            agent['automaticWorktrees'] = previous
+            self.toast.emit(str(error))
+            return False
+        if enabled != previous:
+            self._skills_widget_changed()
+        self.changed.emit()
+        return True
+
     @Slot(str)
     def openPiFolder(self, kind):
         base = Path(self.store.data["agent"].get("agentDir") or Path.home() / ".pi/agent")
@@ -1755,7 +1868,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def _mcp_path(self, scope, workspace=None):
         if scope == "global":
             return Path(self.store.data["agent"].get("agentDir") or Path.home() / ".pi/agent") / "mcp.json"
-        workspace = self.store.data["workspace"] if workspace is None else workspace
+        workspace = self._view.workspace if workspace is None else workspace
         if scope == "project" and workspace:
             return Path(workspace) / ".pi/mcp.json"
         raise ValueError("请先打开项目目录")
@@ -1795,7 +1908,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._mcp_jobs[job_name] = (record, scope, record.workspace)
         self.chatChanged.emit()
         global_raw = raw if scope == "global" else self.readMcp("global")
-        project_raw = raw if scope == "project" else self.readMcp("project") if self.store.data["workspace"] else '{"mcpServers":{}}'
+        project_raw = raw if scope == "project" else self.readMcp("project") if record.workspace else '{"mcpServers":{}}'
         def save():
             result = subprocess.run([node_executable(), str(self._release / "bridge.mjs"), "--check-mcp"],
                 input=json.dumps({"global": global_raw, "project": project_raw}), capture_output=True,
@@ -1810,11 +1923,16 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return scope
         self._job(job_name, save)
 
-    def _mcp_environment(self, workspace=None):
+    def _mcp_environment(self, workspace=None, extra=(), ordinary=True):
         names = set()
-        for scope in ("global", "project"):
+        paths = list(extra)
+        for scope in ("global", "project") if ordinary else ():
             try:
-                path = self._mcp_path(scope, workspace)
+                paths.append(self._mcp_path(scope, workspace))
+            except ValueError:
+                pass
+        for path in paths:
+            try:
                 if path.is_file():
                     names.update(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", path.read_text(encoding="utf-8")))
             except (ValueError, OSError):
@@ -1852,19 +1970,277 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         QGuiApplication.clipboard().setText(value)
         self.toast.emit("已复制到剪贴板")
 
-    @Slot(str)
+    @Slot(result=str)
+    def defaultWorkspace(self):
+        active = next((p for p in self.store.data['projects']
+                       if p['id'] == self.store.data.get('activeProject') and not p.get('archived') and not p.get('remote')), None)
+        if active and active.get('path') and Path(active['path']).is_dir():
+            return active['path']
+        path = self.store.default_workspace
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return str(path.resolve())
+        except OSError:
+            home = Path.home()
+            return str(home.resolve()) if home.is_dir() else ''
+
+    @Slot(str, result=bool)
     def setWorkspace(self, url):
-        path = QUrl(url).toLocalFile()
-        if Path(path).is_dir():
-            self.store.data["workspace"] = str(Path(path).resolve())
-            project = self._ensure_project(path, reopen=True)
-            self.store.data["activeProject"] = project["id"]
-            self._collapsed_projects.discard(project["id"])
-            record = self._project_drafts.get(project["path"])
-            if record is None or record.messages or record.busy:
-                record = self._new_view(project["path"])
-                self._project_drafts[project["path"]] = record
-            self._activate(record)
+        if self._cowork.active and not self._view.cowork:
+            self._cowork.requestCreate('', url)
+            return False
+        if self._view.cowork:
+            self._cowork.newTask(self._view.cowork, url)
+            return False
+        address = QUrl(url)
+        path = Path(address.toLocalFile() if address.isLocalFile() else url)
+        if not path.is_absolute() or not path.is_dir():
+            self.toast.emit('工作目录不存在')
+            return False
+        project = self._ensure_project(str(path), reopen=True)
+        self.store.data["workspace"] = project["path"]
+        self.store.data["activeProject"] = project["id"]
+        self._collapsed_projects.discard(project["id"])
+        record = self._project_drafts.get(project["path"])
+        if record is None or record.messages or record.busy:
+            record = self._new_view(project["path"])
+            self._project_drafts[project["path"]] = record
+        self._activate(record)
+        return True
+
+    @staticmethod
+    def _normalize_remote_workspace_path(remote_path: str, platform: str) -> str:
+        raw = str(remote_path or '').strip()
+        if not raw:
+            raise ValueError('请输入远程工作目录路径')
+        if platform == 'windows':
+            if re.match(r'^/[A-Za-z]:(?:[\\/]|$)', raw):
+                raw = raw[1:]
+            raw = raw.replace('/', '\\')
+            if re.fullmatch(r'[A-Za-z]:', raw):
+                raw = raw.upper() + '\\'
+            elif re.match(r'^[A-Za-z]:\\', raw):
+                raw = raw[0].upper() + raw[1:]
+                while len(raw) > 3 and raw.endswith('\\'):
+                    raw = raw[:-1]
+            return raw
+        raw = raw.replace('\\', '/')
+        if not raw.startswith('/') and not raw.startswith('~'):
+            raw = '/' + raw
+        while len(raw) > 1 and raw.endswith('/'):
+            raw = raw[:-1]
+        return raw
+
+    def _remote_mirror_dir(self, environment: str, remote_path: str) -> Path:
+        safe_env = re.sub(r'[^A-Za-z0-9._-]+', '_', environment).strip('._-') or 'remote'
+        trimmed = remote_path.rstrip('/\\')
+        base = re.split(r'[/\\]', trimmed)[-1] if trimmed else 'workspace'
+        if not base or re.fullmatch(r'[A-Za-z]:', base):
+            base = 'workspace'
+        safe_base = re.sub(r'[^A-Za-z0-9._-]+', '_', base).strip('._-')[:40] or 'workspace'
+        digest = hashlib.sha256(f"{environment}:{remote_path}".encode('utf-8')).hexdigest()[:8]
+        return (self.store.directory / 'remote-workspaces' / safe_env / f"{safe_base}-{digest}").resolve()
+
+    def _remote_project_for_workspace(self, workspace_path: str) -> dict | None:
+        if not workspace_path:
+            return None
+        try:
+            key = self._project_workspace_key(workspace_path)
+        except OSError:
+            return None
+        project = next((p for p in self.store.data['projects'] if os.path.normcase(p['path']) == key), None)
+        if not project or not project.get('environment') or not project.get('remotePath'):
+            return None
+        env = next((row for row in self._remote_environments.configured() if row['name'] == project['environment']), None)
+        return {
+            'environment': project['environment'],
+            'host': (env or {}).get('host') or project.get('remoteHost') or project['environment'],
+            'platform': (env or {}).get('platform') or project.get('remotePlatform') or 'linux',
+            'remotePath': project['remotePath'],
+        }
+
+    def _unique_remote_env_name(self, host: str) -> str:
+        base = re.sub(r'[^A-Za-z0-9._-]+', '-', str(host or '').strip()).strip('._-')[:56] or 'remote'
+        existing = {row['name'] for row in self._remote_environments.configured()}
+        if base not in existing:
+            return base
+        for index in range(2, 1000):
+            candidate = f"{base}-{index}"
+            if candidate not in existing:
+                return candidate
+        return f"{base}-{uuid.uuid4().hex[:6]}"
+
+    @Slot(str, str, result=bool)
+    def setRemoteWorkspace(self, environment, remote_path):
+        env = next((row for row in self._remote_environments.configured() if row['name'] == environment), None)
+        if not env:
+            self.toast.emit('远程环境不存在，请先添加')
+            return False
+        try:
+            normalized = self._normalize_remote_workspace_path(remote_path, env['platform'])
+            mirror = self._remote_mirror_dir(env['name'], normalized)
+            mirror.mkdir(parents=True, exist_ok=True)
+        except (ValueError, OSError) as error:
+            self.toast.emit(str(error))
+            return False
+        resolved = str(mirror)
+        project = self._ensure_project(resolved, reopen=True)
+        default_title = f"{env['host']}:{normalized}"
+        if not project.get('remotePath') or project.get('name') == Path(resolved).name:
+            project['name'] = default_title
+        project.update(
+            environment=env['name'],
+            remotePath=normalized,
+            remoteHost=env['host'],
+            remotePlatform=env['platform'],
+        )
+        self.store.data['workspace'] = resolved
+        self.store.data['activeProject'] = project['id']
+        self._collapsed_projects.discard(project['id'])
+        self.store.save()
+        record = self._project_drafts.get(project['path'])
+        if record is None or record.messages or record.busy:
+            record = self._new_view(project['path'])
+            self._project_drafts[project['path']] = record
+        self._activate(record)
+        self.changed.emit()
+        self._refresh_sidebar()
+        return True
+
+    def _start_remote_op(self, kind: str, fn) -> str:
+        req_id = uuid.uuid4().hex
+        def run():
+            try:
+                result = fn()
+            except Exception as error:
+                result = {'ok': False, 'error': str(error)}
+            if not self._closing:
+                self._remoteOpCompleted.emit(kind, req_id, result)
+        threading.Thread(target=run, daemon=True, name=f'umeko-remote-{kind}').start()
+        return req_id
+
+    def _on_remote_op_completed(self, kind: str, req_id: str, result):
+        if self._closing:
+            return
+        payload = dict(result) if isinstance(result, dict) else {'ok': False, 'error': str(result)}
+        if kind == 'sshHosts':
+            if payload.get('ok') and isinstance(payload.get('hosts'), list):
+                self._ssh_config_hosts = payload['hosts']
+                self.remoteHostsChanged.emit()
+            return
+        if kind == 'ensureHost':
+            if payload.get('ok') and payload.get('_pendingAdd'):
+                host = payload['host']
+                platform = payload['platform']
+                requested_name = payload.get('requestedName') or ''
+                existing = next((row for row in self._remote_environments.configured() if row['host'] == host), None)
+                if existing:
+                    payload = {'ok': True, 'environment': existing}
+                else:
+                    try:
+                        env_name = requested_name or self._unique_remote_env_name(host)
+                        added = self._remote_environments.add(env_name, host, platform)
+                        payload = {'ok': True, 'environment': added}
+                    except ValueError as error:
+                        payload = {'ok': False, 'error': str(error)}
+            self.remoteAddHostFinished.emit(req_id, payload)
+            return
+        if kind == 'browse':
+            self.remoteBrowseFinished.emit(req_id, payload)
+        elif kind == 'mkdir':
+            self.remoteMkdirFinished.emit(req_id, payload)
+        elif kind == 'home':
+            self.remoteHomeFinished.emit(req_id, payload)
+        elif kind == 'test':
+            self.remoteTestFinished.emit(req_id, payload)
+
+    @Slot()
+    def refreshSshConfigHosts(self):
+        self._start_remote_op('sshHosts', lambda: self._remote_service.call('sshHosts', {}, timeout=15.0))
+
+    @Slot(str, result=str)
+    @Slot(str, str, result=str)
+    def ensureRemoteHost(self, host, platform=''):
+        host = str(host or '').strip()
+        platform = str(platform or '').strip().lower()
+        existing = next((row for row in self._remote_environments.configured()
+                         if row['name'] == host or row['host'] == host), None)
+        if existing:
+            req_id = uuid.uuid4().hex
+            QTimer.singleShot(0, self, lambda: self.remoteAddHostFinished.emit(req_id, {'ok': True, 'environment': existing}))
+            return req_id
+        if platform in ('linux', 'windows'):
+            req_id = uuid.uuid4().hex
+            try:
+                added = self._remote_environments.add(self._unique_remote_env_name(host), host, platform)
+                result = {'ok': True, 'environment': added}
+            except ValueError as error:
+                result = {'ok': False, 'error': str(error)}
+            QTimer.singleShot(0, self, lambda r=result: self.remoteAddHostFinished.emit(req_id, r))
+            return req_id
+        def probe():
+            res = self._remote_service.call('detectPlatform', {'host': host}, timeout=30.0)
+            if not res.get('ok'):
+                return res
+            return {'ok': True, '_pendingAdd': True, 'host': host, 'platform': res['platform']}
+        return self._start_remote_op('ensureHost', probe)
+
+    @Slot(str, str, str, result=str)
+    def addRemoteEnvironment(self, name, host, platform=''):
+        name = str(name or '').strip()
+        host = str(host or '').strip()
+        platform = str(platform or '').strip().lower()
+        if not host:
+            req_id = uuid.uuid4().hex
+            QTimer.singleShot(0, self, lambda: self.remoteAddHostFinished.emit(req_id, {'ok': False, 'error': '请输入 OpenSSH 主机别名'}))
+            return req_id
+        if platform in ('linux', 'windows'):
+            req_id = uuid.uuid4().hex
+            try:
+                added = self._remote_environments.add(name or self._unique_remote_env_name(host), host, platform)
+                result = {'ok': True, 'environment': added}
+            except ValueError as error:
+                result = {'ok': False, 'error': str(error)}
+            QTimer.singleShot(0, self, lambda r=result: self.remoteAddHostFinished.emit(req_id, r))
+            return req_id
+        def probe():
+            res = self._remote_service.call('detectPlatform', {'host': host}, timeout=30.0)
+            if not res.get('ok'):
+                return res
+            return {'ok': True, '_pendingAdd': True, 'host': host, 'requestedName': name, 'platform': res['platform']}
+        return self._start_remote_op('ensureHost', probe)
+
+    @Slot(str, result=str)
+    def testRemoteEnvironment(self, name):
+        env_name = str(name or '').strip()
+        return self._start_remote_op('test', lambda: self._remote_service.call('test', {'name': env_name}, timeout=240.0))
+
+    @Slot(str, result=bool)
+    def removeRemoteEnvironment(self, name):
+        try:
+            self._remote_service.close_environment(name)
+            self._remote_environments.remove(name)
+            return True
+        except ValueError as error:
+            self.toast.emit(str(error))
+            return False
+
+    @Slot(str, str, result=str)
+    def browseRemoteDirectory(self, environment, remote_path=''):
+        env_name = str(environment or '').strip()
+        target = str(remote_path or '')
+        return self._start_remote_op('browse', lambda: self._remote_service.call('browse', {'name': env_name, 'path': target}, timeout=120.0))
+
+    @Slot(str, str, result=str)
+    def createRemoteDirectory(self, environment, remote_path):
+        env_name = str(environment or '').strip()
+        target = str(remote_path or '')
+        return self._start_remote_op('mkdir', lambda: self._remote_service.call('mkdir', {'name': env_name, 'path': target}, timeout=60.0))
+
+    @Slot(str, result=str)
+    def fetchRemoteHome(self, environment):
+        env_name = str(environment or '').strip()
+        return self._start_remote_op('home', lambda: self._remote_service.call('home', {'name': env_name}, timeout=120.0))
 
     @Slot(bool)
     def setDark(self, value):
@@ -1969,6 +2345,83 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not group:
             self.store.data.update(selectedProvider=provider, selectedModel=model)
 
+    def model_roles_for(self, record):
+        if not self.store.data['desktop']['teamCollaborationEnabled']:
+            return {}
+        return session_model_roles(record, self.store.data)
+
+    def set_model_role(self, record, role, alias):
+        if not self.store.data['desktop']['teamCollaborationEnabled']:
+            raise ValueError("请先在 Umeko Desktop 设置中开启团队协作")
+        if record.global_agent or record.cowork or is_dsh(record) or self.store.data["sessionMeta"].get(record.id, {}).get("pluginSession"):
+            raise ValueError("模型分工适用于普通 Pi 会话")
+        if role not in SESSION_ROLES:
+            raise ValueError("未知模型角色")
+        if alias:
+            select_route(self.gateway, alias)
+        if alias == GROUP_MODEL and record.process:
+            record.stale = True
+        roles = self.model_roles_for(record)
+        if alias:
+            roles[role] = alias
+        else:
+            roles.pop(role, None)
+        if record.id:
+            self.store.data["sessionMeta"].setdefault(record.id, {})["modelRoles"] = roles
+            self.store.save()
+        else:
+            record.draft_model_roles = roles
+        self.changed.emit()
+        return roles
+
+    @Property('QVariantMap', notify=desktopSettingsChanged)
+    def sessionModelRoles(self):
+        return self.model_roles_for(self._view)
+
+    @Property(bool, notify=changed)
+    def sessionModelRolesAvailable(self):
+        record = self._view
+        return not (record.global_agent or record.cowork or is_dsh(record) or
+                    self.store.data["sessionMeta"].get(record.id, {}).get("pluginSession"))
+
+    @Property('QVariantList', notify=changed)
+    def teamModelChoices(self):
+        return [{'id': row['id'], 'label': row['label'], 'group': row['group']}
+                for row in model_choices(self.gateway)]
+
+    @Property('QVariantList', notify=changed)
+    def teamMemberModels(self):
+        bus = self.desktopPlugins.global_agents
+        return [{'id': row['id'], 'name': row['name'],
+                 'model': bus.pending_models.get(row['id'], (row.get('model', ''),))[0]}
+                for row in bus.agents.values() if not row.get('managedBy')]
+
+    @Slot(str, str, result=bool)
+    def selectTeamMemberModel(self, identifier, model):
+        if not self.store.data['desktop']['teamCollaborationEnabled']:
+            return False
+        bus = self.desktopPlugins.global_agents
+        row = bus.agents.get(identifier)
+        if not row or row.get('managedBy'):
+            return False
+        try:
+            effort = row.get('reasoningEffort', '') if row.get('model') == model else ''
+            bus.switch_member_model(identifier, model, effort)
+        except ValueError as error:
+            self.toast.emit(str(error))
+            return False
+        self.changed.emit()
+        return True
+
+    @Slot(str, str, result=bool)
+    def selectRoleModel(self, role, model):
+        try:
+            self.set_model_role(self._view, role, model)
+        except ValueError as error:
+            self.toast.emit(str(error))
+            return False
+        return True
+
     def _repair_model_group_selection(self, record):
         if record.provider != GROUP_PROVIDER or record.busy or (not is_dsh(record) and self.modelGroupReady):
             return False
@@ -1989,7 +2442,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Slot(bool, str, result=bool)
     def saveModelGroup(self, enabled, raw):
-        if any(record.provider == GROUP_PROVIDER and (record.busy or record.subagents_active)
+        if any((record.provider == GROUP_PROVIDER or GROUP_MODEL in self.model_roles_for(record).values())
+               and (record.busy or record.subagents_active)
                for record in self._pool.records.values()):
             self.toast.emit("请等待模型组任务结束后再修改")
             return False
@@ -2026,7 +2480,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.gateway.reset_model_group()
         if descriptor != self.gateway.model_group_descriptor():
             for record in self._pool.records.values():
-                if record.provider == GROUP_PROVIDER:
+                if record.provider == GROUP_PROVIDER or record.global_agent or GROUP_MODEL in self.model_roles_for(record).values():
                     if record.process:
                         record.stale = True
                     record.context_usage = {}
@@ -2055,6 +2509,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._remember_model_selection(provider, model)
         if record.busy:
             record.pending_selection = (provider, model) if (provider, model) != (record.provider, record.model) else None
+            record.pending_reasoning_effort = None
         else:
             if (model, provider) != (record.model, record.provider):
                 record.context_usage = {}
@@ -2068,6 +2523,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self._reconcile_reasoning(record)
             if is_dsh(record): self._switch_dsh_config()
         self.store.save()
+        self.reasoningDetectionChanged.emit()
         self.changed.emit()
         self.chatChanged.emit()
         self.contextUsageChanged.emit()
@@ -2078,11 +2534,17 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     def _apply_pending_selection(self, record):
         """Commit this session's next choice at the completed request boundary."""
-        if record.pending_selection is None:
+        if record.pending_selection is None and record.pending_reasoning_effort is None:
             return
-        record.provider, record.model = record.pending_selection
-        record.pending_selection = None
-        record.context_usage = {}
+        if record.pending_selection is not None:
+            record.provider, record.model = record.pending_selection
+            record.pending_selection = None
+            record.context_usage = {}
+        if record.pending_reasoning_effort is not None:
+            record.reasoning_effort, record.pending_reasoning_effort = record.pending_reasoning_effort, None
+            if record.id:
+                self.store.data["sessionMeta"].setdefault(record.id, {})["reasoningEffort"] = record.reasoning_effort
+            self.store.save()
         self._reconcile_reasoning(record)
         if record.id:
             self._index_record(record)
@@ -2090,6 +2552,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if record is self._view:
             self._remember_model_selection(record.provider, record.model)
             self.store.save()
+            self.reasoningDetectionChanged.emit()
             self.changed.emit()
             self.contextUsageChanged.emit()
 
@@ -2170,8 +2633,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Slot(str)
     def removeProvider(self, provider_id):
         provider = self.gateway.provider(provider_id)
-        if provider and provider['api'] == 'image':
-            return self.removeImageProvider(provider_id)
+        if provider and provider['api'] in ('image', 'speech', 'video'):
+            return self.removeMultimodalProvider(provider_id)
         if provider and provider["api"] == "plugin":
             return self._provider_plugins.remove(provider_id)
         if self._models_busy(provider_id):
@@ -2181,6 +2644,21 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self.store.save()
         self._restart_pi()
         self.changed.emit()
+
+    def setModelApplyPatch(self, provider_id, alias, enabled):
+        provider = self.gateway.provider(provider_id)
+        model = next((row for row in (provider or {}).get('models', []) if row['alias'] == alias), None)
+        if model is None or provider['api'] in ('image', 'speech', 'video'):
+            raise ValueError('找不到指定的聊天模型')
+        if (model.get('applyPatch') is True) != enabled:
+            if enabled:
+                model['applyPatch'] = True
+            else:
+                model.pop('applyPatch', None)
+            self.store.save()
+            self._restart_pi()
+            self.changed.emit()
+        return {'provider': provider_id, 'model': alias, 'enabled': enabled}
 
     @Slot(str, result=bool)
     def saveMappings(self, raw):
@@ -2311,27 +2789,34 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return self._open_dsh(session)
         record = self._pool.find(session_id)
         stale = record and record.transcript and not record.busy and not record.transcript.matches_source()
-        if (record and (not record.loaded or stale)) or (record is None and session.get('file') and self.transcripts.large(session['file'])):
+        if (record and (not record.loaded or stale)) or (record is None and session.get('file') and
+                (session.get('cowork') or self.transcripts.large(session['file']))):
             self._session_preview.open_direct(session_id)
             return
         if record is None:
-            record = self._new_view(session.get("workspace", ""))
-            record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
-            record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
-            record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
-            record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
-            record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
-            effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
-            record.reasoning_effort = effort
-            record.history = copy.deepcopy(session.get("history", []))
-            record.messages = copy.deepcopy(session.get("messages", []))
-            record.model, record.provider = session.get("model") or record.model, session.get("provider") or record.provider
-            if record.file:
-                try:
-                    record.messages, record.tree = preview(record.file)
-                except OSError:
-                    self.toast.emit("原生会话文件暂时无法读取")
+            record = self._saved_pi_record(session)
         self._activate(record)
+
+    def _saved_pi_record(self, session, *, read_transcript=True):
+        session_id = session["id"]
+        record = self._new_view(session.get("workspace", ""))
+        record.cowork = session.get("cowork", "")
+        record.id, record.file, record.title = session_id, session.get("file", ""), session["title"]
+        record.extension_modes = clean_extension_modes(self.store.data["sessionMeta"].get(session_id, {}).get("extensionModes"))
+        record.skill_modes = clean_skill_modes(self.store.data["sessionMeta"].get(session_id, {}).get("skillModes"))
+        record.blocked_tools = clean_blocked_tools(self.store.data["sessionMeta"].get(session_id, {}).get("blockedTools"))
+        record.pi_capabilities = self.store.data["sessionMeta"].get(session_id, {}).get("piCapabilities") or {}
+        effort = self.store.data["sessionMeta"].get(session_id, {}).get("reasoningEffort", record.reasoning_effort)
+        record.reasoning_effort = effort
+        record.history = copy.deepcopy(session.get("history", []))
+        record.messages = copy.deepcopy(session.get("messages", []))
+        record.model, record.provider = session.get("model") or record.model, session.get("provider") or record.provider
+        if record.file and read_transcript:
+            try:
+                record.messages, record.tree = preview(record.file)
+            except OSError:
+                self.toast.emit("原生会话文件暂时无法读取")
+        return record
 
     @Slot(str)
     def deleteSession(self, session_id):
@@ -2351,9 +2836,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not self._view.busy:
             self._command_pi("navigate", entryId=entry_id)
 
-    def _save_session(self):
-        if is_dsh(self._view):
-            return self._save_dsh(self._view)
+    def _save_session(self, record=None):
+        record = record or self._view
+        if is_dsh(record):
+            return self._save_dsh(record)
         # UI index only. Native Pi JSONL is the sole transcript and tree store.
         self.store.save_sessions(self._sessions)
 
@@ -2609,6 +3095,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._cancel_pi_warmup()
         self._reasoning_discovery.close()
         self._desktop_plugins.close()
+        self._cowork.close()
         self._appearance_save.stop()
         self._viewport_save.stop()
         self._streaming_timer.stop()
@@ -2620,6 +3107,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._subagents.close()
         self._proxy_usage_timer.stop()
         self._pool.close()
+        self._remote_service.close()
         self._dsh_history.close()
         self._task_records.close()
         if self.public_server:

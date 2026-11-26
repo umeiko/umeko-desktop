@@ -32,6 +32,10 @@ FORMAT_OPTIONS = [
     {"value": "chat-template", "label": "Chat template kwargs"},
     {"value": "qwen", "label": "enable_thinking"},
     {"value": "deepseek", "label": "thinking.type enabled/disabled"},
+    {"value": "qwen-switch", "label": "enable_thinking only"},
+    {"value": "reasoning-switch", "label": "enable_reasoning only"},
+    {"value": "deepseek-switch", "label": "thinking.type only"},
+    {"value": "template-thinking", "label": "chat_template_kwargs.thinking only"},
     {"value": "anthropic-adaptive", "label": "Anthropic adaptive/disabled"},
 ]
 OPENAI_FORMATS = tuple(option["value"] for option in FORMAT_OPTIONS
@@ -51,6 +55,14 @@ def format_parameters(format: str, effort: str) -> dict:
     if not valid_format(format):
         raise ValueError("Unknown thinking format")
     on = effort != "off"
+    if format == "qwen-switch":
+        return {"enable_thinking": on}
+    if format == "reasoning-switch":
+        return {"enable_reasoning": on}
+    if format == "deepseek-switch":
+        return {"thinking": {"type": "enabled" if on else "disabled"}}
+    if format == "template-thinking":
+        return {"chat_template_kwargs": {"thinking": on}}
     if format == "openai-none":
         return {"reasoning_effort": effort if on else "none"}
     if format in ("openai", "anthropic", "responses"):

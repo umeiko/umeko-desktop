@@ -19,7 +19,7 @@ if [[ ${1:-} == --run-one ]]; then
     mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR" "$UMEKO_DATA_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
     printf "ci-ephemeral-password" | gnome-keyring-daemon --unlock --components=secrets
-    .venv/bin/python "$1"
+    .venv/bin/python -X faulthandler "$1"
   ' _ "$script" >"$log" 2>&1 || status=$?
   elapsed=$((SECONDS - started))
   printf '%s\t%s\t%s\n' "$script" "$elapsed" "$status" >"$log_dir/$name.result"
@@ -47,6 +47,9 @@ smokes=(
   scripts/smoke-plugin-sessions.py
   tests/model_popup_ui_smoke.py
   tests/pi_capabilities_ui_smoke.py
+  tests/cowork_widgets_ui_smoke.py
+  tests/cowork_creation_ui_smoke.py
+  tests/session_workspace_ui_smoke.py
   tests/global_agents_ui_smoke.py
   tests/desktop_plugins_ui_smoke.py
   tests/scheduled_tasks_ui_smoke.py

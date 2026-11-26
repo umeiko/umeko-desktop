@@ -9,25 +9,36 @@ DropArea {
     property string targetProjectTitle: ""
     function locate(x, y) {
         targetProjectId = ""; targetProjectTitle = ""
-        if (!sessionDrop || !listView) return
+        if (!(sessionDrop || backend.cowork.active) || !listView) return
         const point = listView.mapFromItem(root, x, y)
         const index = listView.indexAt(point.x + listView.contentX, point.y + listView.contentY)
         if (index < 0) return
-        const row = backend.projectRows[index]
+        const row = listView.model[index]
+        if (backend.cowork.active) {
+            targetProjectId = row.typeId || ""
+            return
+        }
         targetProjectId = row.kind === "project" ? row.id : row.projectId || ""
-        const project = backend.projectRows.find(item => item.kind === "project" && item.id === targetProjectId)
+        const project = listView.model.find(item => item.kind === "project" && item.id === targetProjectId)
         targetProjectTitle = project ? project.title : ""
     }
     onEntered: drag => {
         drag.accepted = drag.urls.length > 0 && !backend.sessionFiles.busy
         sessionDrop = drag.urls.some(url => /\.jsonl$/i.test(url.toString()))
+        if (backend.cowork.active) {
+            drag.accepted = drag.urls.length === 1 && backend.cowork.folderPath(drag.urls[0].toString()) !== ""
+            sessionDrop = false
+        }
         locate(drag.x, drag.y)
     }
     onPositionChanged: drag => locate(drag.x, drag.y)
     onExited: { targetProjectId = ""; targetProjectTitle = "" }
     onDropped: drop => {
         locate(drop.x, drop.y)
-        backend.dropProjects(JSON.stringify(drop.urls.map(url => url.toString())), targetProjectId)
+        if (backend.cowork.active)
+            backend.cowork.requestCreate(targetProjectId, drop.urls[0].toString())
+        else
+            backend.dropProjects(JSON.stringify(drop.urls.map(url => url.toString())), targetProjectId)
         drop.accept(Qt.CopyAction)
         targetProjectId = ""; targetProjectTitle = ""
     }

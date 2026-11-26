@@ -25,12 +25,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def detected(levels=('low', 'high'), format='chat-template', source='probe'):
-    return {'levels': {'state': 'known', 'source': source, 'levels': list(levels), 'verified': True},
+    return {'levels': {'state': 'known', 'source': source, 'levels': list(levels), 'verified': True, 'evidenceVersion': 1},
             'format': {'state': 'known', 'source': 'probe', 'format': format, 'verified': True,
                        'onObserved': True, 'offObserved': True, 'offVerified': True,
                        'offSupported': True, 'offFormat': format, 'status': 'on-off-verified',
                        'onEffort': next(iter(levels), 'high'), 'formatsTried': [format],
-                       'onAttempts': [], 'offSwitchesTried': []}}
+                        'onAttempts': [], 'offSwitchesTried': [], 'evidenceVersion': 1}}
 
 
 class ReasoningAutoControllerTests(unittest.TestCase):
@@ -80,7 +80,7 @@ class ReasoningAutoControllerTests(unittest.TestCase):
         result = copy.deepcopy(self.result)
         if advertised_levels is not None:
             result['levels'] = {'state': 'known', 'source': 'metadata',
-                                'levels': list(advertised_levels), 'verified': True}
+                                 'levels': list(advertised_levels), 'verified': False, 'evidenceVersion': 1}
         return result
 
     def controller(self, rows=None, selected='model', discover=True):
@@ -325,6 +325,7 @@ class ReasoningAutoControllerTests(unittest.TestCase):
         self.assertEqual(self.calls[0][2], ['metadata-custom', 'high'])
         self.assertEqual(controller.reasoningLevels, ['metadata-custom', 'high'])
         self.assertEqual(self.row(controller)['reasoningDetection']['source'], 'metadata')
+        self.assertFalse(self.row(controller)['reasoningDetection']['verified'])
         self.assertEqual(controller.reasoningFormat, 'deepseek')
         self.assertEqual(controller.reasoningLevelsState, 'known')
         self.assertEqual(controller.reasoningFormatState, 'known')

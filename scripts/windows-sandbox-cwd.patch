@@ -1,0 +1,62 @@
+Subject: Allow Windows PowerShell to resolve the initial workspace name
+
+Adapted from openai/codex rust-v0.172.0, windows-sandbox-rs/src/setup_provisioning.rs.
+See licenses/codex-windows-sandbox-NOTICE.txt.
+
+diff --git a/codex-rs/windows-sandbox-rs/src/setup_provisioning.rs b/codex-rs/windows-sandbox-rs/src/setup_provisioning.rs
+--- a/codex-rs/windows-sandbox-rs/src/setup_provisioning.rs
++++ b/codex-rs/windows-sandbox-rs/src/setup_provisioning.rs
+@@ -87,11 +87,13 @@
+ use windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_EXECUTE;
+ use windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ;
+ use windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_WRITE;
++use windows_sys::Win32::Storage::FileSystem::FILE_LIST_DIRECTORY;
+ use windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES;
+ use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_DELETE;
+ use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+ use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_WRITE;
+ use windows_sys::Win32::Storage::FileSystem::READ_CONTROL;
++use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+ use windows_sys::Win32::Storage::FileSystem::WRITE_DAC;
+ use windows_sys::Win32::System::Threading::INFINITE;
+
+@@ -1058,6 +1060,39 @@
+         }
+     }
+
++    // Windows PowerShell resolves the casing of its initial filesystem path
++    // by looking up the workspace name in its immediate parent. Windows can
++    // enter the workspace itself without having permission to list the parent.
++    // A refresh grants directory metadata to the sandbox group on that one
++    // directory, preserving inherited denies and leaving its children alone.
++    if payload.refresh_only
++        && payload.write_roots.contains(&payload.command_cwd)
++        && let Some(parent) = payload.command_cwd.parent()
++    {
++        match unsafe {
++            ensure_allow_mask_aces_with_inheritance(
++                parent,
++                &[sandbox_group_psid],
++                FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
++                /*inheritance*/ 0,
++            )
++        } {
++            Ok(true) => {
++                log_line(
++                    log,
++                    &format!("granted directory lookup on cwd parent {}", parent.display()),
++                )?;
++            }
++            Ok(false) => {}
++            Err(err) => {
++                log_line(
++                    log,
++                    &format!("could not grant directory lookup on cwd parent {}: {err:#}", parent.display()),
++                )?;
++            }
++        }
++    }
++
+     if payload.read_roots.is_empty() {
+         log_line(log, "no read roots to grant; skipping read ACL helper")?;
+     } else {

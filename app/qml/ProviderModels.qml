@@ -47,6 +47,7 @@ ColumnLayout {
     Repeater {
         model: entries
         ColumnLayout {
+            id: modelRow
             required property int index
             required property string upstream
             required property string alias
@@ -59,8 +60,20 @@ ColumnLayout {
             Layout.fillWidth: true; spacing: 4
             RowLayout {
                 Layout.fillWidth: true; spacing: 12
-                InputField { objectName: "providerModelId_" + index; readOnly: root.fixedModels; Layout.fillWidth: true; Layout.preferredWidth: 1; text: upstream; placeholderText: I18n.t("服务端模型 ID"); onTextEdited: entries.setProperty(index, "upstream", text) }
-                InputField { objectName: "providerModelAlias_" + index; Layout.fillWidth: true; Layout.preferredWidth: 1; text: alias; placeholderText: I18n.t("与模型 ID 相同"); onTextEdited: entries.setProperty(index, "alias", text) }
+                InputField {
+                    objectName: "providerModelId_" + index
+                    readOnly: root.fixedModels; Layout.fillWidth: true; Layout.preferredWidth: 1
+                    text: modelRow.upstream; placeholderText: I18n.t("服务端模型 ID")
+                    onTextChanged: if (!readOnly && text !== modelRow.upstream)
+                        entries.setProperty(index, "upstream", text)
+                }
+                InputField {
+                    objectName: "providerModelAlias_" + index
+                    Layout.fillWidth: true; Layout.preferredWidth: 1
+                    text: modelRow.alias; placeholderText: I18n.t("与模型 ID 相同")
+                    onTextChanged: if (text !== modelRow.alias)
+                        entries.setProperty(index, "alias", text)
+                }
                 ActionButton { objectName: (root.fixedModels ? "pluginModelSettings_" : "providerModelSettings_") + index; glyph: "settings"; Layout.preferredWidth: Theme.control(34); quiet: true; hint: I18n.t("模型思考档位"); Accessible.name: hint; onClicked: reasoningDialog.edit(index, alias || upstream, reasoningLevelsJson, entries.get(index), root.providerId, root.api) }
                 ActionButton { visible: !root.fixedModels; glyph: "trash"; width: Theme.control(32); quiet: true; enabled: entries.count > 1; onClicked: entries.remove(index) }
             }

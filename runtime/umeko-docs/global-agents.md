@@ -12,7 +12,7 @@
 {"operation":"agent_bus.create","arguments":{"requestKey":"create-global-tester-1","name":"测试员","instructions":"负责响应 Agent Bus 测试任务，回复简短、准确。"}}
 ```
 
-- `requestKey` 是唯一必填参数，1–80 字符。职责填 `instructions`，名称填 `name`（没有 `role` 或 `title` 字段）。形象省略时随机分配；模型省略时沿用调用会话的模型。
+- `requestKey` 是唯一必填参数，1–80 字符。职责填 `instructions`，名称填 `name`。形象省略时随机分配。选择模型时先用 `models.list` 查可用模型及模型组。省略模型时，使用调用会话的模型组，或优先使用设置好的成员默认模型，再沿用调用会话的模型。
 - 先检查工具返回的 `ok` 和 `status`。`ok:false` 是失败，按错误提示修正后重试。`awaiting_approval` 表示预填表单已打开，等用户点击“创建”；`created` 表示创建成功，之后使用返回的 `targetId`。
 - Widget 的“允许自动被创建”开关由用户控制。开启后直接创建；关闭时需要用户确认。确认结果会作为 Widget 消息送回，也可以用 `agent_bus.creation_status` 和 `requestId` 查询一次。
 - 创建成功会自动建立“发起会话 ↔ 新实例”的双向总线。返回 `sourceBridge` 表示实际连接情况。全局子智能体本身已接入总线，无需用户另外为新实例开启总线。创建本身不运行任务。
@@ -24,6 +24,16 @@
 双向连接表示双方都能发任务、回报结果。`dispatch` 返回 `accepted,requestId` 表示已排队；目标通过 `agent_bus.reply`（同一 `requestId`、`status:completed`、`result`）回报时任务完成，结果会送回真实发起会话并唤醒它。身份由宿主绑定；回执只通过 `agent_bus.reply` 发送，普通聊天回复不计入。
 
 同一目标的请求逐条处理；忙碌或前一请求未结束时，后续请求留在队列。用户能在该全局子智能体聊天上方删除或优先处理待投递消息；优先处理不打断当前任务。`overview` 返回 `state:idle|busy`、`busySince`、`busyForSeconds`、`activity`（如 `busy: 1min13s`）和 `queued`。
+
+## 规划、执行和团队用模
+
+在普通 Pi 会话中用 `models.roles.set` 设置以下角色。参数为 `role` 和 `model`，模型使用 `models.list` 返回的 `id`。空字符串清除该角色的设置，`models.roles.get` 查看当前会话的设置。
+
+- `planningModel` 先用只读工具制定方案。如果需要用户决定，它会先提问。完成方案后，会话自动将方案和原对话交给执行模型。
+- `executionModel` 执行方案，省略时使用协调者模型或对话模型。聊天模型选择器中可以设置规划模型和执行模型。
+- `coordinatorModel` 负责普通 Pi 会话的协调请求，`memberDefaultModel` 是新建成员的默认模型。
+
+在成员设置中可以选择或切换模型。协调会话也可调用 `agent_bus.set_model`，提供成员的 `targetId` 和 `model`，可另填该模型支持的 `reasoningEffort`。进行中的模型请求结束后，下一次请求采用所选模型，并继续使用同一会话。成员使用模型组时自动尝试下一模型。单模型额度耗尽时，成员显示等待切换，已投递的请求会暂停。用户或协调者替它选好模型后，原任务带着对话继续。
 
 ## 查看和管理连接
 
@@ -43,6 +53,40 @@
 - `agent_bus.dispatch`：`targetId` 与 `text`（最多 8000 字符）必填。普通会话只可发往已连接的全局子智能体；全局子智能体可发往已连接的普通会话或其他全局子智能体。目标不能是自己。返回 accepted / requestId，之后 queued → sending → running → completed / failed / cancelled / interrupted。同一目标一次只投递一条任务，其他消息排队。接收者在任务投递后通过 reply 回报。
 - `agent_bus.requests`：无参数；返回当前调用者发出或收到的最近 64 个请求。完成结果会主动送达并唤醒发起者，等它到达即可；进度只加入上下文。
 - `agent_bus.reply`：`requestId`、`result` 必填，`status` 为 progress / completed / failed / cancelled（默认 completed）。回复对象是当前会话收到且已投递的请求；进入终态后不可再修改。进度间隔至少 5 秒。
+
+## 团队协作
+
+在协调者的聊天中说“和 api-dev、ui-dev、tester 组队，用同一块看板记录任务”。协调者先用 `agent_bus.overview` 查找现有全局子智能体，再用真实 `targetId` 建队。组队本身只保存名单。成员原有的模型、会话和工具权限继续生效。
+
+| 操作 | 参数和返回值 |
+| --- | --- |
+| `agent_bus.team_create` | 传入 `name`、可选的 `coordinatorName`（默认 `lead`）和 `members` 数组。每位成员写作 `{"targetId":"agent:…","name":"api-dev","groups":["devs"]}`，`groups` 可省略。返回团队 `id` 和名单。当前调用者是协调者。 |
+| `agent_bus.team_members` | 省略 `teamId` 时列出自己的团队。指定团队时返回成员、别名、群组和活动状态 `not_started`、`running`、`waiting` 或 `unavailable`。 |
+| `agent_bus.team_board` | 传入 `teamId`，可选 `after`（默认 `0`）、`limit`（1–50，默认 20）。返回当前 `tasks`，以及按 `sequence` 递增排列的 `events`。`hasMore` 为真时用 `nextAfter` 继续翻页。 |
+| `agent_bus.team_post` | 传入 `teamId` 和 `event`。返回已保存的 `event`，以及本次点名的 `deliveries`。`queued` 表示进入总线，`unavailable` 表示目标已删除。 |
+
+事件按提交顺序保存在同一个任务记录数据库中。以下操作用 `event.kind` 选择。
+
+| `kind` | 其余字段 |
+| --- | --- |
+| `message` | `text` |
+| `task` | `title`、`text`、可选的依赖任务 ID 数组 `blockedBy` |
+| `claim` | `taskId`、`expectedVersion` |
+| `dependencies` | `taskId`、`expectedVersion`、`blockedBy`，仅待认领任务可改 |
+| `progress` / `result` | `taskId`、`expectedVersion`、`text` |
+| `handoff` | `taskId`、`expectedVersion`、接手成员的别名 `to`、`text` |
+
+新任务的 `version` 为 1。认领前查看 `ready` 和 `version`，再将该版本填入 `expectedVersion`。如果另一位成员先认领，重新读取任务可看到新负责人和版本。进行中的任务由负责人或协调者更新。`handoff` 立即换负责人，`result` 保存结果并完成任务。
+
+下面这项操作会把任务交给 `ui-dev` 并唤醒它继续工作。
+
+```json
+{"operation":"agent_bus.team_post","arguments":{"teamId":"团队 ID","event":{"kind":"handoff","taskId":"任务 ID","expectedVersion":2,"to":"ui-dev","text":"@ui-dev 接手界面，接口已就绪。"}}}
+```
+
+看板事件的 `text` 支持 `@api-dev`、`@devs`、`@all`，大小写不敏感。同一条消息对每位接收者只投递一次，群发跳过发件人。也可以在已有团队的全局子智能体聊天开头输入 `@tester 请开始验收`，宿主会直接记录和投递。如果同一别名命中多个团队，使用包含 `teamId` 的操作来指定团队。工具收到的消息含有真实发件人、团队 ID、事件序号和原文。
+
+运行中的成员通过现有 Pi 会话接收消息。已完成一轮工作的成员闲置等待，收到点名才开始下一轮团队工作。未运行过的成员由首条点名启动。普通进度、认领或看板读取不会唤醒成员。重启后可以继续读取原事件和任务状态，先前未发送完的点名需要重新发出。
 
 最多保留 16 个全局子智能体，同时运行 4 个。总线最多 32 个未完成请求，每个目标最多 4 个，每个发送者每分钟最多发 16 条；任务 30 分钟超时。关闭链路只取消该会话与该全局子智能体之间的未完成请求，其他连接照常；用户删除队列消息时保留取消记录。应用重启后，未完成的请求标为 `interrupted`，不会自动重发。旧版会话级授权已迁移为当时已存在的全局子智能体的具体连接，迁移不涉及之后新建的实例。
 
@@ -67,7 +111,17 @@
 
 启用 Skills 仅提供专用指导和该 Skill 目录内的文本读取，不扩大执行权限；需要操作工作区时仍通过智能体总线委派给已连接的会话。模型不能修改这些勾选设置。
 
-“请求”标签页只显示未结束的请求，完成、失败或取消后自动移出；对应对话及结果消息照常保留。
+“请求”标签页显示未结束的请求，以及自动工作树任务的结果、分支和路径。
+
+### 自动 Git 工作树
+
+在智能体设置中开启「为智能体自动创建 Git 工作树」，也可调用 `agent.setAutomaticWorktrees`，传入 `{"enabled":true}`。
+
+- 派发到全局子智能体时，用 `agent_bus.dispatch` 的可选 `access` 指明任务权限。改代码用 `"write"`，只读检查用 `"read"`。省略时，根据目标成员用户授权的工具判断。有编辑、写入或终端权限的成员默认使用工作树。
+- 任务继承发起会话的本地目录。写入任务以原分支的当前提交创建独立工作树；只读任务在同一项目目录读取。任务只使用成员原有许可。成功回复且运行结束后，宿主保存任务分支并尝试合回原目录。冲突或 Git 拒绝覆盖已有修改时，请求记录会说明原因，任务分支和工作树仍可打开。
+- Cowork 会话和其子智能体使用所绑定的目录。自动 Git 工作树设置只适用于普通会话与其智能体任务。
+- 在请求记录中打开工作树后，终端、Git 和变更审查使用打开的任务目录。清理对话框列出文件、运行任务和关联会话。确认后可移除干净的工作树，保留 Git 分支。
+- 会话内子代理默认隔离 `general-purpose`。在 Pi Agent 配置目录的 `subagents-worktrees.json` 中设置 `{"worktreeAgents":["general-purpose"]}` 可选择类型，项目的 `.pi/subagents-worktrees.json` 可以覆盖该列表。会话内子代理结束后由配套包保存分支。
 
 
 悬浮小助手可读取 `widgets.docs`（`id: scheduled-tasks`），并通过 `widgets.call` 使用已启用的定时任务 Widget，为自己创建与管理全局计时器；通过 `widgets.result` 查看调用结果。默认目标就是它自己，仅能查看和修改目标为自己的全局计时器，不能改投其他智能体或前台会话。计时器保存稳定的助手身份，重启后仍可唤醒原助手；隐藏桌宠、停用绑定服务或删除助手时不会向别处投递。普通会话的计时器、共享配额及 Agent Bus 权限保持原有行为。

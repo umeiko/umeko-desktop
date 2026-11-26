@@ -10,7 +10,8 @@ import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, QUrl
-from .model_groups import GROUP_PROVIDER
+from .model_groups import GROUP_MODEL, GROUP_PROVIDER
+from .model_roles import model_choices
 from .themes import BASES
 
 
@@ -103,7 +104,8 @@ class UmekoControl(QObject):
         if sum(job['status'] == 'queued' for job in self.jobs.values()) >= 32:
             raise ValueError('Too many pending Umeko changes; wait for existing jobs')
         identifier = self._new_job(operation, 'queued')
-        self.jobs[identifier].update(arguments=copy.deepcopy(args), caller=caller.key if caller else '')
+        self.jobs[identifier].update(arguments=copy.deepcopy(args), caller=caller.key if caller else '',
+                                     cowork=bool(getattr(caller, 'cowork', '')))
         self.timer.start()
         return {'ok': True, 'status': 'queued', 'jobId': identifier,
                 'message': '等待相关任务结束后应用；使用 jobs.get 查看结果。'}
@@ -114,6 +116,9 @@ class UmekoControl(QObject):
         for identifier, job in list(self.jobs.items()):
             if job['status'] != 'queued': continue
             caller = self._caller(job['caller'])
+            if job['cowork'] and (caller is None or not self.b.cowork.allows_desktop_control(caller)):
+                self._finish(identifier, {'ok': False, 'error': 'This Cowork role has not enabled umeko_desktop'})
+                continue
             if time.monotonic() - job['created'] > 600:
                 self._finish(identifier, {'ok': False, 'error': 'Timed out waiting for an idle desktop task'})
                 continue
@@ -240,15 +245,29 @@ class UmekoControl(QObject):
             return b.desktopPlugins.global_agents.execute(operation,args,caller)
         if caller and getattr(caller,'global_agent','') and operation not in ('help','models.list') and not b.desktopPlugins.pet.assistant.allows_timer(caller, operation, args):
             raise ValueError('全局协调子智能体只能使用 agent_bus.* 和 models.list；其他任务请委派给已开启桥的工作区代理')
+        if operation.startswith('remote-environments.'):
+            spec = self.operations.get(operation)
+            fields = tuple(field[0] for field in spec['args']) if spec else ()
+            if not spec or set(fields) != set(args) or not all(isinstance(args[field], str) for field in fields):
+                raise ValueError('Invalid remote environment operation or arguments')
+            registry = b._remote_environments
+            if operation == 'remote-environments.list':
+                return {'environments': registry.rows()}
+            if operation == 'remote-environments.add':
+                return {'environment': registry.add(args['name'], args['host'], args['platform'])}
+            if operation == 'remote-environments.remove':
+                registry.remove(args['name'])
+                return {'name': args['name'], 'status': 'removed'}
+            raise ValueError('Run the connection test from the Pi desktop tool.')
         if operation == 'extensions.install' and not _widget_install:
-            raise ValueError('Agent package installation must use run_pi_command and its native installation permission; confirmed Widget installs use the private host entry')
+            raise ValueError('Agent package installation must use umeko_desktop with pi.run; confirmed Widget installs use the private host entry')
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
-            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md','agents':'global-agents.md'}
+            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md','agents':'global-agents.md','command_rules':'command-rules.md'}
             topic=args.get('topic','')
             topic={'插件':'plugins','provider插件':'provider','widget插件':'widget','供应商':'provider'}.get(str(topic).lower(),str(topic).lower())
-            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider、widget 或 agents')
+            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider、widget、agents 或 command_rules')
             result={'docsRoot':str(docs),'entry':str(docs/(topics[topic] if topic else 'README.md')),'topics':{key:str(docs/value) for key,value in topics.items()}}
             # Coordinators cannot use file tools. Supply their guide only on demand.
             if topic=='agents':result['document']=(docs/topics[topic]).read_text(encoding='utf-8')[:65536]
@@ -264,6 +283,16 @@ class UmekoControl(QObject):
                 value=args.get(name,copy.deepcopy(field[2]) if len(field)>2 else None)
                 if not {'string':isinstance(value,str),'boolean':type(value) is bool,'integer':type(value) is int,'json':isinstance(value,dict)}[kind]:raise ValueError(name+' must be '+kind)
                 values[name]=value
+            sandbox = getattr(b, 'windowsSandbox', None)
+            starts_widget_code = operation in ('widgets.call', 'widgets.config', 'widgets.open') or (
+                operation in ('widgets.enable', 'widgets.activate') and values['enabled'])
+            if sandbox is not None and sandbox.state['enabled'] and starts_widget_code:
+                identifier = values['id']
+                plugin = b.desktopPlugins.entries.get(identifier, {})
+                terminal_read = (identifier == 'terminal' and operation == 'widgets.call'
+                                 and values['method'] in ('list', 'read', 'interrupt'))
+                if 'process.execute' in plugin.get('permissions', []) and not terminal_read:
+                    raise ValueError('This Widget starts processes outside the Windows sandbox. Use bash, powershell or background_job to run the command in the sandbox.')
             return b.desktopPlugins.bridge.execute(operation,values,caller,self)
         if operation == 'operations.list':
             prefix = args.get('prefix', '')
@@ -280,10 +309,20 @@ class UmekoControl(QObject):
             settings.pop('sessionMeta', None)
             return {'config': redacted(settings), 'activeSession': b.activeSession, 'callerSession': caller.id if caller else '',
                     'loginStartup': redacted(getattr(getattr(b, 'loginStartup', None), 'state', {}))}
+        if operation == 'settings.windowsSandbox':
+            if args: raise ValueError('settings.windowsSandbox takes no arguments')
+            return b.windowsSandbox.tool_state()
         if operation == 'providers.list': return {'providers': redacted(b.config['providers']), 'presets': b.commonProviders}
         if operation == 'models.list':
-            return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'])
-                               for row in b.gateway.models()]}
+            return {'models': [dict(model='umeko/'+row['id'], id=row['id'], provider='umeko', displayProvider=row.get('owned_by', 'Umeko'), contextWindow=row['contextWindow'], vision='image' in row['input'],
+                                    label=row['label'], group=row['id'] == GROUP_MODEL)
+                               for row in model_choices(b.gateway)]}
+        if operation in ('models.roles.get', 'models.roles.set'):
+            if operation == 'models.roles.get' and not args:
+                return {'roles': b.model_roles_for(caller or b._view)}
+            if operation == 'models.roles.set' and set(args) == {'role', 'model'} and all(isinstance(value, str) for value in args.values()):
+                return {'status': 'applied', 'roles': b.set_model_role(caller or b._view, args['role'], args['model'])}
+            raise ValueError('请提供 role 和 model，清除设置时使用空模型名')
         if operation == 'characters.list': return {'selected': b.characterStyle['id'], 'characters': b.characterPacks}
         if operation == 'characters.get': return {'character': b.characterStyle}
         if operation == 'characters.config': return {'path':str(b.store.directory/'character-config.json'), 'config':copy.deepcopy(b._character_config), 'overrides':copy.deepcopy(b._character_options)}
@@ -329,6 +368,8 @@ class UmekoControl(QObject):
             return {'jobs': redacted([{'id': key, **{k: v for k, v in job.items() if k in ('operation', 'status', 'result')}}
                                      for key, job in visible_jobs.items() if not args.get('id') or key == args['id']])}
         spec = self.operations.get(operation)
+        if spec and spec.get('target') == 'bridge':
+            raise ValueError('Call this operation directly from a Pi session.')
         if spec is None: raise ValueError('Unknown Umeko operation; read the documentation or use operations.list')
         fields = spec['args']
         if set(args) - {field[0] for field in fields}: raise ValueError('Unknown argument for ' + operation)
@@ -409,6 +450,8 @@ class UmekoControl(QObject):
         if queue and self._blocked(spec, args, caller): return self._queue(operation, args, caller)
         if self._blocked(spec, args, caller): raise ValueError('The relevant task is still busy')
         if operation == 'agent.save': values[0] = {**b.store.data['agent'], **values[0]}
+        if operation == 'settings.setWindowsSandbox':
+            return b.windowsSandbox.configure(*values)
         if operation == 'projects.add':
             values[0] = [QUrl.fromLocalFile(str(Path(path).expanduser().resolve())).toString() for path in values[0]]
         for index, field in enumerate(fields):

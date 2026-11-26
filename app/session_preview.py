@@ -198,6 +198,7 @@ class SessionPreview(QObject):
         if not record or not record.loaded or 'snapshot' in result or 'messages' in result:
             fresh = record is None
             record = record or self.controller._new_view(saved.get('workspace', ''))
+            record.cowork = saved.get('cowork', '')
             record.id, record.file, record.title = saved['id'], saved.get('file', ''), saved['title']
             record.extension_modes = clean_extension_modes(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('extensionModes'))
             record.skill_modes = clean_skill_modes(self.controller.store.data['sessionMeta'].get(saved['id'],{}).get('skillModes'))

@@ -8,7 +8,10 @@ Item {
     property var manager: backend.desktopPlugins
     property string selectedId: ""
     readonly property var allRows: manager.rows
-    readonly property var filteredRows: allRows.filter(p=>(p.name+" "+p.id+" "+p.description).toLowerCase().includes(search.text.toLowerCase()))
+    readonly property var filteredRows: allRows.filter(p => {
+        const searchable = [p.name, p.id, p.description, I18n.widgetText(p, p.name), I18n.widgetText(p, p.description)]
+        return searchable.join(" ").toLowerCase().includes(search.text.toLowerCase())
+    })
     onFilteredRowsChanged: if (!filteredRows.some(p=>p.id===selectedId)) selectedId=filteredRows.length?filteredRows[0].id:""
     readonly property var selected: allRows.find(p=>p.id===selectedId) || null
     readonly property var detail: selected && I18n.language ? manager.details(selectedId) : ({})

@@ -18,7 +18,7 @@ def configured_members(data, *, internal_ready=True):
     """Resolve members in priority order, retaining stale rows for settings."""
     group = data.get("modelGroup", {})
     providers = {p["id"]: p for p in data["providers"]
-                 if p["api"] != "image" and (p["api"] != "internal" or internal_ready)}
+                 if p["api"] not in ("image", "speech", "video") and (p["api"] != "internal" or internal_ready)}
     for member in group.get("members", [])[:MAX_MEMBERS]:
         provider, alias = member_key(member)
         account = providers.get(provider)
@@ -48,7 +48,7 @@ def settings(data, *, internal_ready=True):
     choices = [{"provider": provider["id"], "providerName": provider["name"],
                 "model": model["alias"], "levels": reasoning_levels(model)}
                for provider in data["providers"]
-               if provider["api"] != "image" and (provider["api"] != "internal" or internal_ready)
+               if provider["api"] not in ("image", "speech", "video") and (provider["api"] != "internal" or internal_ready)
                for model in provider["models"]]
     return {"enabled": enabled, "ready": enabled and any(row["available"] for row in members),
             "members": members, "choices": choices, "limit": MAX_MEMBERS}

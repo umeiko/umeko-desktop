@@ -1,8 +1,24 @@
 # Third-party notices
 
+## Shell environment snapshot
+
+`runtime/shell-snapshot.mjs` adapts the session capture and replay design from OpenAI Codex `rust-v0.172.0` (Apache-2.0). See `licenses/codex-NOTICE.txt` for the source files and license.
+
 ## Tool permission classifier
 
 `runtime/tool-permissions.mjs` adapts the command-position guard (`AT_CMD`), quote masking (`stripQuoted`), recursive Windows deletion family (`WINDOWS_ROOT_WIPE`), critical command families and write-only normalized path-rule structure from `@xynogen/pix-gate` 0.4.5, copyright 2026 xynogen (MIT). Source: https://github.com/xynogen/pix-mono/blob/f07f04c186a8b43adb5c443ee65a2ebee53f4e0c/packages/pix-gate/src/lib.ts . The complete license appears in both that module and `licenses/pix-gate-MIT.txt`. Umeko applies its own seven permission categories in place of the upstream default policy. Pi Coding Agent 1.3.0's `permission-gate` and `protected-paths` extension examples (https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) supply the `tool_call` integration pattern under the Pi MIT notice below. `cc-safety-net` 2.7.0 (https://github.com/kenryu42/cc-safety-net/tree/v2.7.0) supplied categories and the test checklist only; no implementation code is copied or bundled.
+
+## Command prefix rules
+
+`runtime/tool-permissions.mjs` adapts command prefix matching, decision precedence, and reusable approvals from [OpenAI Codex rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/execpolicy), copyright 2025 OpenAI (Apache-2.0). The source attribution and full license are in `licenses/codex-execpolicy.txt`.
+
+## Git Bash for Windows sandbox commands
+
+Windows CI packages include [Portable Git for Windows 2.56.1](https://github.com/git-for-windows/git/releases/tag/v2.56.1.windows.1) under the sandbox runtime. The package retains its notices and includes the [MSYS2 runtime license](https://github.com/git-for-windows/msys2-runtime/blob/d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e/winsup/CYGWIN_LICENSE). The runtime source is [git-for-windows/msys2-runtime at d25c02b](https://github.com/git-for-windows/msys2-runtime/tree/d25c02bd8bbfef7da4b42eab6f0834bcb9d9343e), with the packaged `umeko-signal-pipe.patch` applied. The build recipe is `scripts/build-sandbox-git-bash.bash`.
+
+## Codex apply_patch
+
+`runtime/apply-patch.mjs` and the patch scenarios in `tests/fixtures/codex-apply-patch.json` adapt the OpenAI Codex `apply-patch` crate and tool grammar from [rust-v0.172.0](https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/apply-patch). The Apache 2.0 license and source attribution are in `licenses/codex-apply-patch-APACHE.txt`.
 
 ## Desktop plugin artwork
 
@@ -17,6 +33,20 @@ The terminal widget also uses the unmodified Microsoft Codicons font noted above
 ## Bundled search tools
 
 Release bundles include fd 10.3.0 (MIT or Apache-2.0, https://github.com/sharkdp/fd/tree/v10.3.0) and ripgrep 14.1.1 (MIT or Unlicense, https://github.com/BurntSushi/ripgrep/tree/14.1.1) so Pi's find/grep tools work without a first-run download. Their upstream license files accompany the binaries under `runtime/releases/coding-1.5.2/bin`. Archive SHA-256 values are pinned in `scripts/search-tools.json`.
+
+## Remote network proxy
+
+`runtime/remote-http-proxy.mjs` adapts the HTTP CONNECT handler from [dsh-remote-explorer 0.8.12](https://github.com/btsd321/dsh-remote-explorer/blob/fd660312bd5ceb7bebd39346c46d87955f70a61f/src/tunnel/local-http-proxy.ts), under Apache-2.0. The original license is in `licenses/dsh-remote-explorer-APACHE-2.0.txt`.
+
+## Codex exec-server
+
+Remote environments use the official `codex-exec-server` binaries from OpenAI Codex `rust-v0.172.0`, under Apache-2.0. The JavaScript client implements the tagged `codex-rs/exec-server-protocol/src/protocol.rs` and `rpc.rs` wire formats. The upstream license and notice are retained in `licenses/codex-exec-server-APACHE.txt` and `licenses/codex-exec-server-NOTICE.txt`. Release assets and SHA-256 values are pinned in `runtime/remote-exec-assets.json`. Source: https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/exec-server .
+
+## Remote working directory helpers (`dsh-remote` and Pi SSH example)
+
+`runtime/remote-ssh-config.mjs`, `app/qml/WorkspacePicker.qml`, and the remote path normalization / Windows drive-listing / SSH terminal launch patterns adapt logic and dialog copy from `dsh-remote` 1.4.1 (MIT, https://www.npmjs.com/package/dsh-remote , `lib/sshconfig.js`, `lib/paths.js`, `lib/routes-fs.js`, `lib/remote-shell-child.cjs`, and `lib/client.js`). The upstream license is retained in `licenses/dsh-remote-MIT.txt`.
+
+`runtime/remote-workspace-tools.mjs` adapts the Pi built-in tool override pattern (`createReadToolDefinition`, `createWriteToolDefinition`, `createEditToolDefinition`, `createBashToolDefinition`, `createLsToolDefinition`, `createFindToolDefinition`, `user_bash`, and `before_agent_start`) from Pi Coding Agent 1.5.2's `examples/extensions/ssh.ts` example under the Pi MIT notice below.
 
 Qt / PySide6 is provided under its upstream LGPLv3 / GPLv3 / commercial terms. The application dynamically loads the unmodified Qt libraries. Their notices and license files are included in the installed PySide6 distribution. Source and licensing: https://www.qt.io/licensing/ and https://code.qt.io/pyside/pyside-setup.git/ .
 
@@ -37,6 +67,18 @@ Dependencies retain their license files in the runtime's node_modules directory.
 ## Pi subagents
 
 Release bundles include the unmodified npm package `@gotgenes/pi-subagents` 25.0.5 (MIT) in the runtime's `node_modules` directory. Official source: https://github.com/gotgenes/pi-packages/tree/pi-subagents-v25.0.5/packages/pi-subagents . The full upstream copyright and permission notice is included in `licenses/pi-subagents-MIT.txt` and retained with the package.
+
+Release bundles include `@gotgenes/pi-subagents-worktrees` 0.3.3 (MIT) in the runtime's `node_modules` directory. The notice is retained with the npm package and in `licenses/pi-subagents-worktrees-MIT.txt`.
+
+Agent Bus worktrees adapt the overlapping-directory rule from `@wjj865-code/dsh-orchestrator` 0.33.1 and the Git sync/merge sequence from `opencode-mission-control` 2.0.1. Their MIT notices are in `licenses/dsh-orchestrator-MIT.txt` and `licenses/opencode-mission-control-MIT.txt`.
+
+`app/team_board.py` adapts direct mentions from [`@tintinweb/pi-subagents` 0.26.3](https://www.npmjs.com/package/@tintinweb/pi-subagents/v/0.26.3), `src/mention.ts` and `src/index.ts`. Copyright (c) 2026 tintinweb. The original MIT notice is in `licenses/tintinweb-pi-subagents-MIT.txt`.
+
+`app/team_board.py` and `app/task_records.py` adapt task versions and dependencies from [`@deepseek-ai/dsh-agent-team` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-agent-team/v/0.2.2-rc.5), `packages/team/agent-team/src/task-board.ts` and `task-graph.ts`, and apply the recipient-driven wait design from [`@deepseek-ai/dsh-tool-subagent-control` 0.2.2-rc.5](https://www.npmjs.com/package/@deepseek-ai/dsh-tool-subagent-control/v/0.2.2-rc.5), `packages/subagent/tool-subagent-control/src/wait-agent.ts`. Copyright (c) 2026 DeepSeek. The original MIT notice shared by both packages is in `licenses/dsh-agent-team-and-subagent-control-MIT.txt`.
+
+## Planning handoff
+
+`runtime/input-queue.mjs` adapts the proposed-plan parsing and same-session handoff from [@signalridge/pi-plan-mode 1.6.1, src/message-transform.ts](https://github.com/signalridge/pi-extensions/blob/main/packages/pi-plan-mode/src/message-transform.ts). The MIT notice is in `licenses/pi-plan-mode-MIT.txt`.
 
 ## Background jobs
 
@@ -74,7 +116,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Bundled Node.js and npm
 
-Release packages include the official Node.js 22.23.3 distribution and npm from https://nodejs.org/dist/v22.23.3/ . The full distribution retains its LICENSE files and npm dependency notices under `runtime/node/`. Downloads are pinned by SHA-256 in `scripts/node-distributions.json`; the archive origin and version are recorded in build metadata.
+Release packages include the official Node.js 24.19.0 distribution and npm from https://nodejs.org/dist/v24.19.0/ . The full distribution retains its LICENSE files and npm dependency notices under `runtime/node/`. Downloads are pinned by SHA-256 in `scripts/node-distributions.json`; the archive origin and version are recorded in build metadata.
 
 ## Provider brand icons
 
@@ -112,3 +154,7 @@ Scheduled Tasks bundles tzdata 2026.6 (Apache-2.0) for IANA time zones when syst
 ## Agent Client Protocol SDK
 
 The optional DeepSeek Harness backend uses the official `@agentclientprotocol/sdk` 2.4.0, licensed under Apache-2.0. The original license is included in `licenses/acp-sdk-LICENSE`. Source: https://github.com/agentclientprotocol/typescript-sdk.
+
+## CLI activity animation
+
+The CLI uses the Braille and moon activity frames and frame scheduling from [Kimi Code at 1c684ee](https://github.com/MoonshotAI/kimi-code/tree/1c684ee2b34c316cc6f67080ceca46d804da934c/apps/kimi-code/src/tui), copyright 2026 Moonshot AI (MIT). See `licenses/kimi-code-MIT.txt`.

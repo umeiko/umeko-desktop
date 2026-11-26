@@ -242,6 +242,10 @@ class DocumentPreview(QObject):
         self._generation += 1
         self._copy_serial += 1
         self._pending = (self._generation, path, kind)
+        # Reset blocks before emitting busy=True so PagedDocument's ListView cancels
+        # pending cacheBuffer delegate incubators before its Loader destroys the context.
+        self._text = ''
+        self._blocks.load([], [])
         self._state = {'path': path, 'busy': True}
         self.changed.emit()
         self._start()

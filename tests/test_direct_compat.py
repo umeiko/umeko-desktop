@@ -73,10 +73,20 @@ class DirectCompatibilityTests(unittest.TestCase):
         self.provider = {'id': 'direct-fixture', 'name': 'Offline fixture', 'api': 'openai',
                          'baseUrl': self.base, 'key': 'fixture-private', 'models': [],
                          'proxy': {'mode': 'direct', 'url': ''}}
+        self.image_provider = {'id': 'direct-image', 'name': 'Offline image', 'api': 'image',
+                               'presetId': 'openai-image', 'imageProtocol': 'openai',
+                               'baseUrl': self.base, 'key': 'fixture-private', 'models': [],
+                               'imageModels': ['fixture-image'], 'generationCapabilities': ['image'],
+                               'proxy': {'mode': 'direct', 'url': ''}}
+        self.speech_provider = {'id': 'direct-speech', 'name': 'Offline speech', 'api': 'speech',
+                                'presetId': 'openai-speech',
+                                'baseUrl': self.base, 'key': 'fixture-private', 'models': [],
+                                'generationModels': ['fixture-speech'], 'generationCapabilities': ['speech'],
+                                'proxy': {'mode': 'direct', 'url': ''}}
         self.store = SimpleNamespace(directory=Path(self.temp.name), data={
-            'providers': [self.provider], 'multimodal': {
-                'image': {'providerId': self.provider['id'], 'model': 'fixture-image'},
-                'speech': {'providerId': self.provider['id'], 'model': 'fixture-speech', 'voice': 'fixture'}}})
+            'providers': [self.provider, self.image_provider, self.speech_provider], 'multimodal': {
+                'image': {'providerId': self.image_provider['id'], 'model': 'fixture-image'},
+                'speech': {'providerId': self.speech_provider['id'], 'model': 'fixture-speech', 'voice': 'fixture'}}})
         self.gateway = Gateway(self.store, None)
 
     def stop_server(self):

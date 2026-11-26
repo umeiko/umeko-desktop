@@ -25,6 +25,8 @@ class Context:
     _request: threading.local = field(default_factory=threading.local,init=False,repr=False)
     _sessions: object = field(default=None,init=False,repr=False)
     _event_thread_id: int = field(default_factory=threading.get_ident,init=False,repr=False)
+    _sync_waiters: dict = field(default_factory=dict,init=False,repr=False)
+    _sync_lock: object = field(default_factory=threading.Lock,init=False,repr=False)
 
     @property
     def sessions(self):
@@ -36,6 +38,18 @@ class Context:
             return self._sessions
 
     _sessions_lock: object = field(default_factory=threading.Lock,init=False,repr=False)
+
+    def _deliver_sync_response(self, data):
+        req_id = data.get('requestId') if isinstance(data, dict) else None
+        if not req_id:
+            return False
+        with self._sync_lock:
+            waiter = self._sync_waiters.pop(req_id, None)
+        if waiter is None:
+            return False
+        waiter[1]['data'] = data
+        waiter[0].set()
+        return True
 
     def _dispatch_host_event(self,name,data):
         if name=='host.response' and self._sessions is not None:
@@ -70,6 +84,88 @@ class Context:
 
     @property
     def workspace(self): return Path((self.request_session or self.session).get('workspace', ''))
+
+    @property
+    def remote_workspace(self):
+        raw = (self.request_session or self.session).get('remoteWorkspace')
+        return dict(raw) if isinstance(raw, dict) and raw.get('environment') and raw.get('remotePath') else None
+
+    @property
+    def is_remote(self):
+        return self.remote_workspace is not None
+
+    def workspace_call(self, operation, arguments=None, *, session=None, timeout=60.0):
+        """Synchronous call to the host WorkspaceExecutor (local or remote)."""
+        if not isinstance(operation, str) or not operation.startswith('workspace.'):
+            raise PluginError('Invalid workspace operation: ' + str(operation))
+        event = threading.Event()
+        box = {}
+        def register(req_id):
+            with self._sync_lock:
+                self._sync_waiters[req_id] = (event, box)
+        req_id = self._request_host(operation, arguments or {}, session=session, before_emit=register)
+        try:
+            if not event.wait(timeout=timeout):
+                raise PluginError('工作区操作超时：' + operation)
+        finally:
+            with self._sync_lock:
+                self._sync_waiters.pop(req_id, None)
+        data = box.get('data', {})
+        if not data.get('ok'):
+            raise PluginError(str(data.get('error') or '工作区操作失败'))
+        return data.get('result', {})
+
+    def workspace_exec(self, argv=None, *, command=None, cwd='.', env=None, timeout_ms=30000, max_output_bytes=1024*1024, allow_outside=False, session=None):
+        args = {'cwd': cwd, 'timeoutMs': int(timeout_ms), 'maxOutputBytes': int(max_output_bytes)}
+        if argv is not None: args['argv'] = [str(item) for item in argv]
+        if command is not None: args['command'] = str(command)
+        if env is not None: args['env'] = dict(env)
+        if allow_outside: args['allowOutside'] = True
+        return self.workspace_call('workspace.exec', args, session=session, timeout=max(10.0, timeout_ms / 1000.0 + 15.0))
+
+    def workspace_read_dir(self, path='.', *, with_metadata=False, allow_outside=False, session=None):
+        args = {'path': str(path), 'withMetadata': bool(with_metadata)}
+        if allow_outside: args['allowOutside'] = True
+        return self.workspace_call('workspace.readDir', args, session=session)
+
+    def workspace_stat(self, path='.', *, follow_symlinks=True, allow_outside=False, session=None):
+        args = {'path': str(path), 'followSymlinks': bool(follow_symlinks)}
+        if allow_outside: args['allowOutside'] = True
+        return self.workspace_call('workspace.stat', args, session=session)
+
+    def workspace_read_file(self, path, *, max_bytes=512*1024, allow_outside=False, session=None):
+        args = {'path': str(path), 'maxBytes': int(max_bytes)}
+        if allow_outside: args['allowOutside'] = True
+        return self.workspace_call('workspace.readFile', args, session=session)
+
+    def workspace_write_file(self, path, content=None, *, data_base64=None, allow_outside=False, session=None):
+        args = {'path': str(path)}
+        if data_base64 is not None: args['dataBase64'] = data_base64
+        else: args['content'] = str(content if content is not None else '')
+        if allow_outside: args['allowOutside'] = True
+        return self.workspace_call('workspace.writeFile', args, session=session)
+
+    def workspace_mkdir(self, path, *, allow_outside=False, session=None):
+        args = {'path': str(path)}
+        if allow_outside: args['allowOutside'] = True
+        return self.workspace_call('workspace.mkdir', args, session=session)
+
+    def workspace_remove(self, path, *, recursive=True, force=True, allow_outside=False, session=None):
+        args = {'path': str(path), 'recursive': bool(recursive), 'force': bool(force)}
+        if allow_outside: args['allowOutside'] = True
+        return self.workspace_call('workspace.remove', args, session=session)
+
+    def workspace_rename(self, path, destination, *, session=None):
+        return self.workspace_call('workspace.rename', {'path': str(path), 'destination': str(destination)}, session=session)
+
+    def workspace_ssh_target(self, *, session=None):
+        return self.workspace_call('workspace.sshTarget', {}, session=session, timeout=25.0)
+
+    def workspace_home(self, *, session=None):
+        return self.workspace_call('workspace.home', {}, session=session, timeout=30.0)
+
+    def workspace_preview_file(self, path, *, max_bytes=10*1024*1024, session=None):
+        return self.workspace_call('workspace.previewFile', {'path': str(path), 'maxBytes': int(max_bytes)}, session=session, timeout=60.0)
 
     def require(self, permission):
         if permission not in self.permissions: raise PluginError('Plugin permission is required: '+permission)
@@ -143,12 +239,16 @@ class Context:
         if not isinstance(operation,str):raise PluginError('Host operation must be a string')
         spec=self.host_capabilities.get('operations',{}).get(operation)
         if not isinstance(spec,dict):raise PluginError('Host operation unavailable; inspect host_capabilities')
-        self.require(spec['permission'])
+        permission = spec['permission']
+        if permission not in self.permissions:
+            if not (operation in ('workspace.writeFile', 'workspace.remove') and 'git.write' in self.permissions):
+                self.require(permission)
         if arguments is None:arguments={}
         if not isinstance(arguments,dict):raise PluginError('Host arguments must be a JSON object')
         try:raw=json.dumps(arguments,ensure_ascii=False,allow_nan=False).encode('utf-8')
         except (ValueError,TypeError):raise PluginError('Host arguments must be valid JSON') from None
-        if len(raw)>16384:raise PluginError('Host arguments exceed 16 KiB')
+        limit_bytes = 1024*1024 if operation.startswith('workspace.') else 16384
+        if len(raw)>limit_bytes:raise PluginError('Host arguments exceed limit')
         from .sessions import OPERATIONS
         if operation in OPERATIONS:
             if self.lifecycle!='application':raise PluginError('Session service requires application lifecycle')
@@ -242,6 +342,12 @@ class Context:
 
     def close(self):
         self.cancelled.set()
+        with self._sync_lock:
+            waiters = list(self._sync_waiters.values())
+            self._sync_waiters.clear()
+        for ev, box in waiters:
+            box['data'] = {'ok': False, 'error': '插件已关闭'}
+            ev.set()
         if self._sessions is not None:self._sessions._close()
         for process in list(self._processes):self._stop_process(process)
 

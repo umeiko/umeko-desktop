@@ -25,15 +25,22 @@ Umeko 使用自己的供应商网关，桌面供应商通过下面的 `providers
 {"operation":"sessions.reasoning","arguments":{"value":"high"}}
 ```
 
-`value` 为 `off` 或当前模型的 `reasoningLevels` 中的原始名称；空列表仅支持关闭。在供应商设置添加或刷新模型、打开模型弹窗或已保存模型的齿轮时，对未检测的自动模型后台排队检测：先读取模型目录中明确的档位元数据，再解析无效档位的错误枚举，最后逐档探测。检测只由上面这些操作触发。同一模型有进行中的轮次时，探测等该轮结束再开始。尚未检测时可以直接以 `off` 聊天。结果按供应商和模型缓存，重启后保留；模型切换或打开会话时，失效的档位会调整到最近的可用档位。
+`value` 为 `off` 或当前模型的 `reasoningLevels` 中的原始名称。空列表仅支持关闭。在供应商设置添加或刷新模型、打开模型弹窗或已保存模型的齿轮时，对未检测的自动模型后台排队检测。OpenAI 兼容路径先发送省略参数的基线，再逐档测量思考量。服务端元数据和错误枚举提供候选名称。同一模型有进行中的轮次时，探测等该轮结束再开始。尚未检测时可以直接以 `off` 聊天。结果按供应商和模型缓存，重启后保留。模型切换或打开会话时，失效的档位会调整到最近的可用档位。
+
+`apply_patch` 默认关闭。用以下操作为某个模型开启批量文件补丁，传 `enabled:false` 关闭。设置从下次聊天请求生效。
+
+```json
+{"operation":"models.applyPatch","arguments":{"provider":"供应商ID","model":"模型alias","enabled":true}}
+```
+
 
 档位和思考参数格式各有独立的自动开关。模型字段为 `reasoningLevels`（从低到高的字符串数组）、`reasoningLevelsAuto`（布尔值）、`reasoningFormat`（字符串）、`reasoningFormatAuto`（布尔值）。保存过的旧版 `reasoningLevels` 自动视为手动设置，保持原来的数量、名称与顺序；现有齿轮编辑档位也会切换为手动。手动设置优先于检测，模型刷新不会覆盖它。
 
-格式支持 `openai`（顶层 `reasoning_effort`，off 省略）、`openai-none`（off 发送 `none`）、`chat-template`（`chat_template_kwargs.enable_thinking`，开启时另带嵌套 `reasoning_effort`）、`qwen`（顶层 `enable_thinking` 和开启时的 effort）、`deepseek`（`thinking.type: enabled/disabled` 和开启时的 effort），以及原生 Anthropic 的 `anthropic-adaptive`。原生 Anthropic 的力度仍映射到 `output_config.effort`，Responses 映射到 `reasoning.effort`。
+格式支持 `openai`（顶层 `reasoning_effort`，off 省略）、`openai-none`（off 发送 `none`）、`chat-template`（`chat_template_kwargs.enable_thinking`，开启时另带嵌套 `reasoning_effort`）、`qwen`（顶层 `enable_thinking` 和开启时的 effort）、`deepseek`（`thinking.type: enabled/disabled` 和开启时的 effort），以及原生 Anthropic 的 `anthropic-adaptive`。独立开关格式为 `qwen-switch`、`reasoning-switch`、`deepseek-switch`、`template-thinking`，分别只发送 `enable_thinking`、`enable_reasoning`、`thinking.type`、`chat_template_kwargs.thinking`。原生 Anthropic 的力度仍映射到 `output_config.effort`，Responses 映射到 `reasoning.effort`。
 
-自动格式检测以实际返回的思考字段或 `<think>` 内容为依据。探测使用支持的最强标准档位（优先 `max`，拒绝时降低），并对每种候选格式单独尝试关闭开关，包括开启请求没有思考输出或被拒绝的格式。优先使用同一格式完成开关；OpenAI 兼容路径有多种已验证组合时优先原生 effort 加显式 `none`。必要时自动缓存可分别保存开启格式和 `offFormat`。省略参数可能继续采用上游默认的思考模式。探测的档位不替换用户当前选择。
+自动格式检测比较同一道题在开启、关闭时的思考量和答案。原生 effort 能产生可用分档时优先保留原生格式，再寻找实际可用的关闭方式；独立开关分别尝试开启和关闭。自动缓存可分别保存开启格式和 `offFormat`。省略参数使用上游默认模式。档位确认还要求正值使用同一指标并按名称顺序递增；观察值倒序时，档位显示“未能确认”，开关结果独立判断。
 
-检测记录 `reasoningDetection`、`reasoningFormatDetection` 包含状态、来源和验证结果；服务端接受任意档位值时，使用公开请求 schema 中的档位并标记 `verified:false`，表示各档位的实际效果未经确认。格式结果的 `status` 为 `on-off-verified`（观察到开关）、`cannot-disable`（所有候选关闭方式均未关闭）或 `on-not-observable`（所有格式均未观察到开启）。`offSupported:false` 时同时保留完整 `offSwitchesTried`，表示探测没有找到关闭方式，界面据此提示无法关闭。手动设置或检测尚未完成时为 null。`offVerified` 记录是否在返回内容中观察到关闭。已有的旧自动缓存会补测这些关闭结果，手动设置保持不变。
+检测记录 `reasoningDetection`、`reasoningFormatDetection` 保存状态、来源、请求次数和逐档测量证据。OpenAI 兼容接口用同一道短题比较省略参数、关闭和各档位，优先读取 reasoning token 数，再使用思考字符数；相同实测量合并为代表档位。能看到思考而所有设置均无变化时，保留空档位；所有请求均看不到思考时，保留兼容档位并显示“未能确认”。`degradingStyles` 保存被排除的退化方式。格式结果的 `status` 为 `on-off-verified`（观察到开关）、`cannot-disable`（本次未找到关闭方式）或 `on-not-observable`（开启效果未能确认）。`offFormat` 可记录独立的关闭方式；`offVerified` 记录本次是否观察到关闭。每种参数组合只发送一次，自动检测最多 26 次请求。旧自动缓存会按原有后台触发补测一次，手动设置继续保留。详细说明见 `docs/reasoning-detection.md`。
 
 上游若拒绝正在使用的档位，当前轮报错并列出已知可用档位，缓存移除该档位，等该模型当前轮结束后重新检测；这一轮不会自动重发。手动重新检测也会等待同模型空闲。模型切换若排队，下一轮才使用新连接。
 

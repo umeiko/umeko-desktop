@@ -7,6 +7,7 @@ QtObject {
     readonly property bool personalityEnabled: id !== "system"
     readonly property var assets: style.assets || ({})
     readonly property var lines: style.lines || ({})
+    readonly property var subagentPacks: backend.subagentCharacterPacks
     // A bounded per-conversation cache: UI updates and settings navigation never reroll.
     property var rareCoverCache: ({})
     property var rareCoverOrder: []
@@ -40,6 +41,7 @@ QtObject {
         return value
     }
     function role(index) { return (style.subagents || [])[Math.max(0,Math.min(3,index))] || ({}) }
+    function subagentPack(identifier) { return identifier ? subagentPacks.find(pack => pack.id === identifier) : undefined }
     function roleAsset(index, kind, fallback) {
         const value = role(index)[kind]
         return value || asset((kind === "catch" ? "subagentCatch" : "subagent") + index, fallback)

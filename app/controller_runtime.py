@@ -1,10 +1,12 @@
 """Route native Pi events to their owning session, independently of the view."""
 from .model_groups import GROUP_MODEL, GROUP_PROVIDER
-from .pi_capabilities import merge_resources,from_legacy
+from .pi_capabilities import merge_resources, from_legacy, without_remote_workspace_tools
 import copy
+import json
 import logging
 import os
 import re
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -12,7 +14,7 @@ from PySide6.QtCore import QProcess, QTimer
 
 from .pi_runtime import node_executable
 from .webview import configuration as webview_configuration
-from .transcripts import tool_view, compaction_view, compaction_status
+from .transcripts import tool_view, compaction_view, compaction_status, patch_files
 from .message_attachments import attachment_prompt, split_attachments
 from .model_reasoning import reconcile_effort
 
@@ -100,6 +102,13 @@ class PiControllerMixin:
         self.contextUsageChanged.emit()
         self.changed.emit()
 
+    def _remote_workspace_tools_changed(self):
+        self._pool.invalidate()
+        if not self.store.data['desktop']['remoteWorkspaceEnabled']:
+            for record in self._pool.records.values():
+                self._update_pi_resources(record, record.resources)
+        self._desktop_plugins.sessionChanged.emit()
+
     def _merge_native_sessions(self, native):
         native = [row for row in native if row["id"] not in self._session_files.deleted and row["id"] not in self._session_files.pending]
         existing = {session["id"]: session for session in self._sessions}
@@ -154,7 +163,7 @@ class PiControllerMixin:
         record.file = info.get("file") or record.file
         record.title = info.get("title") or record.title
         workspace = info.get('workspace')
-        if self._ungrouped_import(record.id, workspace, record.workspace):
+        if not record.cowork and self._ungrouped_import(record.id, workspace, record.workspace):
             record.workspace = ''
         elif workspace:
             record.workspace = workspace
@@ -163,6 +172,9 @@ class PiControllerMixin:
             metadata = self.store.data["sessionMeta"].pop(old_id, {})
             metadata.pop("dangerousAllowed", None)
             self.store.data["sessionMeta"].setdefault(record.id, {}).update(metadata)
+        if record.draft_model_roles:
+            self.store.data["sessionMeta"][record.id].setdefault("modelRoles", record.draft_model_roles)
+            record.draft_model_roles = {}
         if record.file or record.action == "prompt":
             self._index_record(record)
             if record.extension_modes or record.skill_modes or record.blocked_tools: self.store.save()
@@ -172,6 +184,8 @@ class PiControllerMixin:
         row = next((s for s in self._sessions if s["id"] == record.id), None)
         values = {"id": record.id, "file": record.file, "workspace": record.workspace, "title": record.title,
             "model": record.model, "provider": record.provider}
+        if record.cowork:
+            values["cowork"] = record.cowork
         if row is None:
             self._sessions.insert(0, values)
         else:
@@ -202,7 +216,8 @@ class PiControllerMixin:
             self._pool.retire(record)
 
     def _pi_command_payload(self, record, action, **values):
-        return {"type": action, "model": record.model or self.store.data["selectedModel"],
+        roles = self.model_roles_for(record) if not record.global_agent else {}
+        return {"type": action, "model": record.model or self.store.data["selectedModel"], "modelRoles": roles,
                 "reasoningEffort": record.reasoning_effort, **values,
                 "systemPromptEnabled": self._desktop_plugins.system_prompt_enabled(record),
                 "widgetPrompts": self._desktop_plugins.prompt_sources(record)}
@@ -214,7 +229,9 @@ class PiControllerMixin:
         default_cwd = self.store.default_workspace
         default_cwd.mkdir(exist_ok=True)
         agent = self.store.data["agent"]
+        sandbox = getattr(self, 'windowsSandbox', None)
         from .generation import generation_config
+        from .remote_environments import network_config
         action = payload["type"]
         payload.update(gateway=f"http://127.0.0.1:{self.private_server.port}/", token=self.private_token,
             workspace=record.workspace, defaultCwd=str(default_cwd),
@@ -228,27 +245,50 @@ class PiControllerMixin:
             legacyHistory=record.history if not record.file else [], models=self.gateway.models(), agent=agent,
             auxiliaryVision=self._auxiliary_vision(),
             permissionMode=agent.get("toolPermissionMode", "auto"), language=self.language,
+            windowsSandbox=sandbox.policy() if sandbox is not None else {"enabled": False},
             dangerousAllowed=action not in ("warm", "fork", "navigate", "new") and self._dangerous_allowed(record),
             dataDir=str(self.store.directory),
             systemPromptStateDir=str(self.store.directory / 'system-prompts'),
-            generation=generation_config(self.store.data),
+            generation=generation_config(self.store.data), remoteNetwork=network_config(self.store),
+            remoteWorkspaceEnabled=self.store.data['desktop']['remoteWorkspaceEnabled'],
             mcpEnv=self._mcp_environment(record.workspace), webview=webview_configuration(self.store.data.get('desktop')), loopReview=True)
-        if record.provider == GROUP_PROVIDER:
+        remote_workspace = self._remote_project_for_workspace(record.workspace)
+        if remote_workspace:
+            Path(record.workspace).mkdir(parents=True, exist_ok=True)
+            payload['remoteWorkspace'] = remote_workspace
+        if ('--remote-environments-smoke' in sys.argv or '--remote-workdir-smoke' in sys.argv) and os.environ.get('QT_QPA_PLATFORM') == 'offscreen':
+            ssh_command = os.environ.get('UMEKO_TEST_SSH_COMMAND')
+            if ssh_command:
+                payload['remoteTestSshCommand'] = json.loads(ssh_command)
+        if record.provider == GROUP_PROVIDER or record.global_agent or GROUP_MODEL in payload.get("modelRoles", {}).values():
             group = self.gateway.model_group_descriptor()
-            if group is None:
+            if group is None and record.provider == GROUP_PROVIDER:
                 raise RuntimeError("模型组没有可用模型")
-            payload["models"].append(group)
+            if group is not None:
+                payload["models"].append(group)
         if plugin_policy:
             payload.update(pluginSessionPolicy=plugin_policy,
                 permissionMode=plugin_policy['mode'], dangerousAllowed=False,
                 models=[model for model in payload['models'] if model['id'] == plugin_policy['model']])
         if record.global_agent:
             service=self._desktop_plugins.global_agents
-            payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(service.root/"sessions"/record.global_agent),
+            directory = service.root / "sessions" / record.global_agent
+            if record.bus_task:
+                directory = directory / record.bus_task
+                # The bridge generates its handbook at startup. Concurrent
+                # members on Windows must not replace the same output files.
+                payload["docsDir"] = str(directory / "agent-docs")
+            payload.update(globalCoordinator=True, mcpEnv={}, agentDir=str(service.root/"agent"), sessionDir=str(directory),
                 **service.skill_config(record),
                 petAssistantBinding=service.m._pet.assistant.binding_for(record),
                 petReminderBinding=service.m._pet.assistant.reminder_binding_for(record),
                 agent={**agent,"safeMode":True,"instructions":service.prompt(record)})
+        if record.cowork:
+            payload.update(self._cowork.runtime_config(record, agent))
+            if record.initial_title and not record.file:
+                payload['initialSessionTitle'] = record.initial_title
+        if record.terminal_owned:
+            payload.update(terminalOwned=True, mcpEnv={}, initialSessionId=record.id if not record.id.startswith("pending-") else "")
         self._pool.start(record, node_executable(), bridge, payload)
 
     def _write_first_warm_command(self, record, payload):
@@ -262,7 +302,8 @@ class PiControllerMixin:
             self.toast.emit('会话数据正在删除，请稍后再试')
             return False
         record = record or self._view
-        self._repair_model_group_selection(record)
+        if not record.global_agent:
+            self._repair_model_group_selection(record)
         from .plugin_sessions import apply_session_policy
         if action == 'widget-notify' and record.cancelled:
             return False
@@ -287,8 +328,8 @@ class PiControllerMixin:
         record.action, record.failed, record.cancelled = action, False, False
         record.stop_token = record.stop_state = record.stop_detail = ''
         record.pet_activity = 'thinking'
-        record.prompt_started = time.monotonic() if action in ('prompt','widget-notify') else None
-        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify") else "working"
+        record.prompt_started = time.monotonic() if action in ('prompt','widget-notify','resume-model') else None
+        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
         if getattr(self, '_reasoning_discovery', None):
             self._reasoning_discovery.update_activity()
         record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
@@ -319,9 +360,12 @@ class PiControllerMixin:
         self.piCommandStarted.emit(record, action)
         return True
 
-    def _send(self, text, steering=False):
-        record = self._view
+    def _send(self, text, steering=False, *, terminal_record=None, hold=False):
+        record = terminal_record or self._view
+        if terminal_record is None and self._cowork.active and not self._cowork.activeRole:
+            return False
         text = text.strip()
+        attachments = record.attachments if terminal_record is None else []
         self._last_send_error = ""
         if self._kernel_busy:
             self._last_send_error = "Pi 内核检查或更新正在进行；完成后即可再次发送消息。"
@@ -334,24 +378,29 @@ class PiControllerMixin:
             self.toast.emit(self._last_send_error)
             self.changed.emit()
             return False
-        if (not text and not record.attachments) or (record.busy and record.phase != "running"):
+        if (not text and not attachments) or (record.busy and record.phase != "running"):
             return False
         if record.busy and getattr(record, 'stop_token', ''):
-            if record.prompt_after_stop is not None:
+            if terminal_record is not None or record.prompt_after_stop is not None:
                 return False
             record.prompt_after_stop = (text, steering)
             return True
         if not record.busy:
+            if not record.subagents_active and terminal_record is None and record.terminal_owned and not record.terminal_clients:
+                record.terminal_owned = False
+                record.stale = bool(record.process)
             self._apply_pending_selection(record)
-        images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in record.attachments if item["kind"] == "image"]
+        images = [{"type": "image", "data": item["data"], "mimeType": item["mime"]} for item in attachments if item["kind"] == "image"]
         self._repair_model_group_selection(record)
-        if record.provider == GROUP_PROVIDER:
+        if terminal_record is not None:
+            provider, model = record.pending_selection or (record.provider, record.model)
+            vision_enabled = False
+        elif record.provider == GROUP_PROVIDER:
             model, provider = record.model, record.provider
             vision_enabled = bool(images and "image" in (self.gateway.model_group_descriptor() or {}).get("input", ()))
         else:
             model, provider = self.store.data["selectedModel"], self.store.data["selectedProvider"]
             vision_enabled = bool(images and self.gateway.supports_vision(model, provider))
-        attachments = record.attachments
         if images and not vision_enabled and not self._can_analyze_attachments(model, provider):
             images = []
             vision = self._auxiliary_vision()
@@ -360,20 +409,31 @@ class PiControllerMixin:
                 attachments = [{**item, "kind": "file" if item["kind"] == "image" else item["kind"]} for item in attachments]
         text = attachment_prompt(text, attachments)
         if record.phase == "running":
+            if terminal_record is not None and record.action not in ("prompt", "agent-run", "widget-notify"):
+                return False
             if record.task_attempt:
                 self._task_records.input_files(record, attachments)
-            self._write_pi({"type": "steer" if steering else "follow-up", "text": text, "images": images,
-                "model": model, "reasoningEffort": reconcile_effort(record.reasoning_effort, self._reasoning_levels())}, record)
-            record.attachments, record.draft = [], ""
-            self.attachmentsChanged.emit()
-            self.editorText.emit("")
+            effort = record.reasoning_effort
+            if terminal_record is not None and record.pending_reasoning_effort is not None:
+                effort = record.pending_reasoning_effort
+            else:
+                effort = reconcile_effort(effort, self._reasoning_levels(record))
+            self._write_pi({"type": ("terminal-steer" if steering else "terminal-follow-up") if terminal_record is not None else ("steer" if steering else "follow-up"), "text": text, "images": images,
+                "modelRoles": self.model_roles_for(record),
+                "model": model, "reasoningEffort": effort, "messageId": uuid.uuid4().hex, "hold": hold}, record)
+            if terminal_record is None:
+                record.attachments, record.draft = [], ""
+                self.attachmentsChanged.emit()
+                self.editorText.emit("")
             return True
         if record.prepared_task and not self._task_records.start(record, attachments):
+            return False
+        if terminal_record is not None and not model:
             return False
         record.model, record.provider = model, provider
         if not record.id:
             record.id = "pending-" + record.key
-        if not record.messages and not record.transcript:
+        if not record.messages and not record.transcript and not record.initial_title:
             record.title = " ".join(text.split())[:28]
         record.messages.extend([{"role": "user", "text": text, "error": False}, {"role": "assistant", "text": "", "error": False}])
         record.body_dirty = True
@@ -381,19 +441,22 @@ class PiControllerMixin:
         self._index_record(record)
         self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = False
         tracking = {"trackTask": True} if record.task_attempt else {}
-        if self._command_pi("prompt", text=text, images=images, **tracking):
-            record.attachments, record.draft = [], ""
-            self.attachmentsChanged.emit()
-            self.editorText.emit("")
-            self._save_session()
+        if terminal_record is not None and text.startswith("/"):
+            tracking["literalSlash"] = True
+        if self._command_pi("prompt", record=record, text=text, images=images, **tracking):
+            if terminal_record is None:
+                record.attachments, record.draft = [], ""
+                self.attachmentsChanged.emit()
+                self.editorText.emit("")
+            self._save_session(record)
             self.transcriptChanged.emit()
             return True
         if record.task_attempt:
             self._task_records.finish(record, "failed", "Pi 未能启动尝试")
         return False
 
-    def _request_compaction(self):
-        record = self._view
+    def _request_compaction(self, record=None, instructions=None):
+        record = record or self._view
         if self._kernel_busy:
             self.toast.emit("请等待 Pi 内核操作结束 / Wait for the Pi runtime operation to finish")
             return False
@@ -402,7 +465,7 @@ class PiControllerMixin:
             return False
         if record.busy:
             return False
-        if not self._command_pi("compact", record=record):
+        if not self._command_pi("compact", record=record, customInstructions=instructions or None):
             return False
         return True
 
@@ -435,6 +498,8 @@ class PiControllerMixin:
 
     def _update_pi_resources(self, record, resources):
         resources = merge_resources(record.resources, resources, record.pi_capabilities)
+        if not self.store.data['desktop']['remoteWorkspaceEnabled']:
+            resources = without_remote_workspace_tools(resources)
         if resources != record.resources:
             record.resources = resources
             record.body_dirty = True
@@ -445,6 +510,14 @@ class PiControllerMixin:
         if self._closing:
             return
         kind, visible = event.get("type"), record is self._view
+        if kind == 'windows_sandbox_prepare':
+            self.windowsSandbox.prepare_for_command()
+            return
+        if kind == 'remote_environment_state':
+            self._remote_environments.observe(record.key, event)
+            return
+        if kind == 'exit':
+            self._remote_environments.disconnect(record.key)
         if kind == 'ready' and event.get('warm'):
             record.ready, record.prewarming = True, False
             command, record.warm_command = record.warm_command, None
@@ -503,6 +576,10 @@ class PiControllerMixin:
             self._pool.trim()
             return
         if kind == 'umeko_request':
+            if record.cowork and not self._cowork.allows_desktop_control(record):
+                self._write_pi({"type": "umeko_response", "id": event.get("id"),
+                                "result": {"ok": False, "error": "This Cowork role has not enabled umeko_desktop"}}, record)
+                return
             result = self._umeko_control.execute({'operation': event.get('operation'), 'arguments': event.get('arguments', {})}, record)
             self._write_pi({'type': 'umeko_response', 'id': event.get('id'), 'result': result}, record)
             return
@@ -531,7 +608,7 @@ class PiControllerMixin:
         elif kind == "ready":
             record.ready = True
             self._subagents.process_ready(record)
-            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify") else "working"
+            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
             record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
             if event.get("session"):
                 self._record_info(record, event["session"])
@@ -589,6 +666,8 @@ class PiControllerMixin:
         elif kind == "queue_returned":
             self._restore_queued(record, [*event.get("steering", []), *event.get("followUp", [])])
         elif kind == "compaction_event":
+            if event.get("mode") == "auto" and event.get("state") == "success":
+                record.auto_compaction_serial += 1
             row = compaction_view({"type": "custom", "customType": "umeko-compaction",
                 "data": event, "id": event.get("entryId"), "timestamp": event.get("timestamp")})
             if row:
@@ -637,6 +716,8 @@ class PiControllerMixin:
                 if isinstance(event.get("args"), dict):
                     tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
+            if event['name'] == 'apply_patch' and event['state'] == 'done':
+                tool['patchFiles'] = patch_files(event.get('patchFiles'))
             if isinstance(event.get('video'), dict):
                 tool['video'] = dict(event['video'])
             if event['name'] == 'analyze_image' and isinstance(event.get('args'), dict):
@@ -722,13 +803,16 @@ class PiControllerMixin:
             if visible:
                 self.contextUsageChanged.emit()
             projects_before = len(self.store.data["projects"])
-            if not record.global_agent: self._merge_native_sessions(event["sessions"])
+            if not record.global_agent and not record.cowork: self._merge_native_sessions(event["sessions"])
             # A stale list captured by another process must not overwrite a live view.
             for live in self._pool.records.values():
                 if live.id and (live.file or live.messages):
                     self._index_record(live)
             self.store.save()
-            self._save_session()
+            if record.cowork:
+                self.store.save_sessions(self._sessions)
+            else:
+                self._save_session()
             if len(self.store.data["projects"]) != projects_before:
                 self.changed.emit()
             transcript = True
@@ -813,8 +897,8 @@ class PiControllerMixin:
         if transcript and visible:
             self.transcriptChanged.emit()
 
-    def _stop(self):
-        record = self._view
+    def _stop(self, record=None):
+        record = record or self._view
         if record.phase == "running" and not record.cancelled:
             record.cancelled = True
             token = uuid.uuid4().hex

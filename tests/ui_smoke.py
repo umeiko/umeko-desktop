@@ -338,7 +338,7 @@ try:
         def complete(self, model, messages, tools, max_tokens):
             system = messages[0]["content"]
             assert "You are Umeko" in system
-            assert "Pi embedded in Umeko Desktop" in system and "run_pi_command" in system
+            assert "Pi embedded in Umeko Desktop" in system and "pi.run" in system
             assert "You have no shell or file write tool" not in system
             if messages[-1]["role"] != "tool":
                 return Completion(tool_calls=[{"id":"write-test","name":"write","arguments":{"path":"hello.txt","content":"hello world"}}])

@@ -8,11 +8,98 @@ Column {
     spacing: 16
     signal requestHeadersRequested()
     property bool startupSettingsReady: false
+    readonly property bool coworkEnabled: backend.desktopSettings.coworkEnabled === true
+    readonly property bool remoteWorkspaceEnabled: backend.desktopSettings.remoteWorkspaceEnabled === true
+    onRemoteWorkspaceEnabledChanged: if (startupSettingsReady && visible && remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
     Component.onCompleted: {
         startupSettingsReady = true
-        if (visible) backend.loginStartup.refresh()
+        if (visible) {
+            backend.loginStartup.refresh()
+            if (remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
+        }
     }
-    onVisibleChanged: if (startupSettingsReady && visible) backend.loginStartup.refresh()
+    onVisibleChanged: if (startupSettingsReady && visible) {
+        backend.loginStartup.refresh()
+        if (remoteWorkspaceEnabled) backend.refreshSshConfigHosts()
+    }
+    Loader {
+        id: coworkWeb
+        active: root.coworkEnabled
+        sourceComponent: CoworkWebNetworkDialog { network: backend.cowork.webNetwork }
+    }
+    SectionCard {
+        width: parent.width
+        ColumnLayout {
+            width: parent.width; spacing: 9
+            RowLayout {
+                Layout.fillWidth: true; spacing: 12
+            Glyph { name: "spark"; Layout.preferredWidth: Theme.icon(20); Layout.preferredHeight: Theme.icon(20); color: Theme.accent }
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 5
+                RowLayout {
+                    spacing: 8
+                    Text { text: "Cowork"; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+                    ExperimentalBadge {}
+                }
+                Text {
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                    text: backend.language === "en" ? "Show Cowork above Settings in the sidebar and organize tasks by role." : "在侧栏设置上方显示 Cowork，按角色管理不同目录下的任务。"
+                    color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                }
+            }
+            Toggle {
+                objectName: "desktopCoworkEnabled"
+                checked: root.coworkEnabled
+                Accessible.name: "Cowork"
+                onClicked: {
+                    const value = checked
+                    checked = Qt.binding(() => root.coworkEnabled)
+                    backend.saveDesktopSettings(JSON.stringify({coworkEnabled:value}))
+                }
+            }
+            }
+            ActionButton {
+                objectName: "openCoworkWebNetwork"
+                Layout.alignment: Qt.AlignRight
+                visible: root.coworkEnabled
+                glyph: "settings"; text: I18n.t("网络设置")
+                onClicked: coworkWeb.item.open()
+            }
+        }
+    }
+    TeamCollaborationSettings { width: parent.width }
+    SectionCard {
+        width: parent.width
+        RowLayout {
+            width: parent.width
+            spacing: 12
+            Text {
+                Layout.fillWidth: true
+                text: I18n.t("远程工作区设置")
+                color: Theme.ink
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(14)
+                font.weight: Font.DemiBold
+                wrapMode: Text.Wrap
+            }
+            Toggle {
+                objectName: "desktopRemoteWorkspaceEnabled"
+                checked: root.remoteWorkspaceEnabled
+                Accessible.name: I18n.t("远程工作区设置")
+                onClicked: {
+                    const value = checked
+                    checked = Qt.binding(() => root.remoteWorkspaceEnabled)
+                    backend.saveDesktopSettings(JSON.stringify({remoteWorkspaceEnabled: value}))
+                }
+            }
+        }
+    }
+    Loader {
+        width: parent.width
+        active: root.remoteWorkspaceEnabled
+        visible: active
+        sourceComponent: remoteEnvironmentSettings
+    }
     Button {
         id: customRequestsEntry
         objectName: "openRequestHeaders"
@@ -163,6 +250,322 @@ Column {
                     indicator: Glyph { name: "chevron-down"; width: Theme.icon(14); height: width; x: parent.width-width-12; y: (parent.height-height)/2; color: Theme.muted }
                 }
             }
+        }
+    }
+    Component {
+        id: remoteEnvironmentSettings
+        SectionCard {
+        objectName: "remoteWorkspaceEnvironmentSettings"
+        ColumnLayout {
+            id: remoteSettingsSection
+            width: parent.width
+            spacing: 12
+            property bool addingRemote: false
+            property string addReqId: ""
+            property string remoteActionMessage: ""
+            property string testingName: ""
+            property string testReqId: ""
+
+            Connections {
+                target: backend
+                ignoreUnknownSignals: true
+                function onRemoteAddHostFinished(reqId, result) {
+                    if (reqId !== remoteSettingsSection.addReqId) return
+                    remoteSettingsSection.addingRemote = false
+                    remoteSettingsSection.addReqId = ""
+                    if (result.ok) {
+                        remoteHostInput.currentIndex = 0
+                        remoteHostInput.editText = ""
+                        remoteSettingsSection.remoteActionMessage = ""
+                    } else {
+                        remoteSettingsSection.remoteActionMessage = result.error || I18n.t("无法添加远程机器")
+                    }
+                }
+                function onRemoteTestFinished(reqId, result) {
+                    if (reqId !== remoteSettingsSection.testReqId) return
+                    remoteSettingsSection.testingName = ""
+                    remoteSettingsSection.testReqId = ""
+                    if (result.ok) {
+                        remoteSettingsSection.remoteActionMessage = ""
+                    } else {
+                        remoteSettingsSection.remoteActionMessage = result.error || I18n.t("连接失败")
+                    }
+                }
+            }
+
+            Text {
+                text: I18n.t("远程环境")
+                color: Theme.ink
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(14)
+                font.weight: Font.DemiBold
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    Layout.fillWidth: true
+                    text: I18n.t("服务器无法访问外网时使用本机网络")
+                    color: Theme.ink
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(13)
+                    wrapMode: Text.Wrap
+                }
+                Toggle {
+                    objectName: "remoteNetworkSharingToggle"
+                    checked: backend.remoteNetworkEnabled !== false
+                    Accessible.name: I18n.t("服务器无法访问外网时使用本机网络")
+                    onClicked: {
+                        const value = checked
+                        checked = Qt.binding(function() { return backend.remoteNetworkEnabled !== false })
+                        backend.setRemoteNetworkEnabled(value)
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                ComboBox {
+                    id: remoteHostInput
+                    objectName: "remoteEnvironmentHostInput"
+                    Layout.fillWidth: true
+                    implicitHeight: Theme.control(36)
+                    editable: true
+                    model: [""].concat((backend && backend.sshConfigHosts ? backend.sshConfigHosts : []).map(item => item.alias))
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(13)
+                    palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
+                    palette.window: Theme.surface; palette.highlight: Theme.accentBg; palette.highlightedText: Theme.ink
+                    Accessible.name: I18n.t("OpenSSH 主机别名")
+                    delegate: ItemDelegate {
+                        required property string modelData
+                        required property int index
+                        width: remoteHostInput.width
+                        text: modelData || I18n.t("OpenSSH 主机别名")
+                        highlighted: remoteHostInput.highlightedIndex === index
+                    }
+                    background: Rectangle { radius: 8; color: Theme.surface; border.color: remoteHostInput.activeFocus ? Theme.accent : Theme.line }
+                    contentItem: TextField {
+                        text: remoteHostInput.editable ? remoteHostInput.editText : remoteHostInput.displayText
+                        placeholderText: I18n.t("OpenSSH 主机别名")
+                        placeholderTextColor: Theme.muted
+                        font: remoteHostInput.font
+                        color: Theme.ink
+                        verticalAlignment: Text.AlignVCenter
+                        leftPadding: 10; rightPadding: 28
+                        selectByMouse: true
+                        background: Item {}
+                        onTextEdited: remoteHostInput.editText = text
+                    }
+                    indicator: Glyph { name: "chevron-down"; width: Theme.icon(13); height: width; x: parent.width - width - 10; y: (parent.height - height) / 2; color: Theme.muted }
+                }
+                ComboBox {
+                    id: remotePlatformInput
+                    objectName: "remoteEnvironmentPlatformInput"
+                    Layout.preferredWidth: Math.max(112, Math.ceil(platformMetrics.advanceWidth(remotePlatformInput.displayText)) + 44)
+                    implicitHeight: Theme.control(36)
+                    leftPadding: 0; rightPadding: 0
+                    model: [I18n.t("自动检测"), "Linux", "Windows"]
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(13)
+                    FontMetrics { id: platformMetrics; font: remotePlatformInput.font }
+                    palette.text: Theme.ink; palette.buttonText: Theme.ink; palette.base: Theme.surface
+                    palette.window: Theme.surface; palette.highlight: Theme.accentBg; palette.highlightedText: Theme.ink
+                    background: Rectangle { radius: 8; color: Theme.surface; border.color: remotePlatformInput.activeFocus ? Theme.accent : Theme.line }
+                    contentItem: Text { text: remotePlatformInput.displayText; font: remotePlatformInput.font; color: Theme.ink; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; leftPadding: 10; rightPadding: 26 }
+                    indicator: Glyph { name: "chevron-down"; width: Theme.icon(13); height: width; x: parent.width - width - 8; y: (parent.height - height) / 2; color: Theme.muted }
+                }
+                Button {
+                    objectName: "remoteEnvironmentAddButton"
+                    implicitHeight: Theme.control(36)
+                    leftPadding: 14; rightPadding: 14
+                    enabled: !remoteSettingsSection.addingRemote && remoteHostInput.editText.trim().length > 0
+                    hoverEnabled: true
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    background: Rectangle { radius: 8; color: parent.enabled ? Theme.button : Theme.hover; opacity: parent.enabled ? 1.0 : 0.5 }
+                    contentItem: Text {
+                        text: remoteSettingsSection.addingRemote ? I18n.t("添加中…") : I18n.t("添加")
+                        color: parent.enabled ? Theme.buttonText : Theme.muted
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.font(13)
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                    onClicked: {
+                        const host = remoteHostInput.editText.trim()
+                        if (!host) return
+                        const platform = remotePlatformInput.currentIndex === 1 ? "linux" : remotePlatformInput.currentIndex === 2 ? "windows" : ""
+                        remoteSettingsSection.addingRemote = true
+                        remoteSettingsSection.remoteActionMessage = ""
+                        remoteSettingsSection.addReqId = backend.addRemoteEnvironment("", host, platform)
+                    }
+                }
+            }
+            Text {
+                objectName: "remoteEnvironmentActionError"
+                Layout.fillWidth: true
+                visible: remoteSettingsSection.remoteActionMessage.length > 0
+                text: remoteSettingsSection.remoteActionMessage
+                textFormat: Text.PlainText
+                wrapMode: Text.WrapAnywhere
+                color: Theme.danger
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(12)
+            }
+            Text {
+                Layout.fillWidth: true
+                text: I18n.t("让 Agent 用 OpenSSH 主机别名添加远程环境，或测试现有连接。")
+                color: Theme.muted
+                wrapMode: Text.Wrap
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(13)
+            }
+            Repeater {
+                model: backend.remoteEnvironments
+                RowLayout {
+                    id: environmentRow
+                    required property var modelData
+                    property double clock: Date.now()
+                    readonly property bool prolongedOutage: modelData.state === "reconnecting"
+                        && !!modelData.outageNoticeAt && clock >= modelData.outageNoticeAt
+                    Layout.fillWidth: true
+                    spacing: 12
+                    Timer {
+                        interval: 1000
+                        repeat: true
+                        running: environmentRow.modelData.state === "reconnecting"
+                            && !!environmentRow.modelData.outageNoticeAt && !environmentRow.prolongedOutage
+                        onTriggered: environmentRow.clock = Date.now()
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.name
+                            wrapMode: Text.Wrap
+                            color: Theme.ink
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(13)
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.host + " · " + modelData.platform
+                            wrapMode: Text.Wrap
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentNetwork_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: modelData.state === "connected" && !!modelData.networkStatus
+                            text: I18n.t(modelData.networkStatus ? modelData.networkStatus.message : "")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            id: sshClientLabel
+                            objectName: "remoteEnvironmentSshClient_" + modelData.name
+                            readonly property string executable: String(modelData.sshClient || "")
+                            Layout.fillWidth: true
+                            visible: executable.length > 0
+                            text: I18n.t("SSH 客户端：") + executable.split(/[\\/]/).pop()
+                            color: Theme.muted
+                            wrapMode: Text.WrapAnywhere
+                            textFormat: Text.PlainText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                            HoverHandler { id: sshClientHover }
+                            ToolTip.visible: sshClientHover.hovered
+                            ToolTip.text: sshClientLabel.executable
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentRetry_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: modelData.state === "reconnecting"
+                            text: (modelData.attempt ? I18n.t("第 %1 次重试").arg(modelData.attempt) : I18n.t("正在重新连接"))
+                                  + (modelData.nextRetryAt ? " · " + I18n.t("下次重试：%1").arg(Qt.formatDateTime(new Date(modelData.nextRetryAt), "hh:mm:ss"))
+                                     : modelData.retryAfterMs ? " · " + I18n.t("%1 秒后重试").arg(Math.ceil(modelData.retryAfterMs / 1000)) : "")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentOutage_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: environmentRow.prolongedOutage
+                            text: I18n.t("服务器暂时无法访问，Umeko 会在后台继续重试。")
+                            color: Theme.muted
+                            wrapMode: Text.Wrap
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                        Text {
+                            objectName: "remoteEnvironmentError_" + modelData.name
+                            Layout.fillWidth: true
+                            visible: modelData.state === "error" && text.length > 0
+                            text: modelData.message || modelData.sshError || ""
+                            color: Theme.muted
+                            wrapMode: Text.WrapAnywhere
+                            textFormat: Text.PlainText
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.font(12)
+                        }
+                    }
+                    BusyIndicator {
+                        visible: running
+                        running: modelData.state === "connecting" || modelData.state === "reconnecting" || remoteSettingsSection.testingName === modelData.name
+                        Layout.preferredWidth: Theme.icon(20)
+                        Layout.preferredHeight: Theme.icon(20)
+                    }
+                    Text {
+                        objectName: "remoteEnvironmentState_" + modelData.name
+                        property string connectionState: modelData.state
+                        text: I18n.t(({connected: "已连接", connecting: "连接中", reconnecting: "正在重新连接",
+                                       disconnected: "未连接", error: "连接失败"})[modelData.state] || "未连接")
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.font(13)
+                    }
+                    Button {
+                        objectName: "remoteEnvironmentTest_" + modelData.name
+                        implicitHeight: Theme.control(30)
+                        leftPadding: 10; rightPadding: 10
+                        enabled: remoteSettingsSection.testingName !== modelData.name
+                        hoverEnabled: true
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        background: Rectangle { radius: 6; color: parent.hovered ? Theme.hover : Theme.bg; border.color: Theme.line }
+                        contentItem: Text {
+                            text: I18n.t("测试")
+                            color: Theme.ink
+                            font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                        onClicked: {
+                            remoteSettingsSection.testingName = modelData.name
+                            remoteSettingsSection.remoteActionMessage = ""
+                            remoteSettingsSection.testReqId = backend.testRemoteEnvironment(modelData.name)
+                        }
+                    }
+                    Button {
+                        objectName: "remoteEnvironmentRemove_" + modelData.name
+                        implicitHeight: Theme.control(30)
+                        leftPadding: 10; rightPadding: 10
+                        hoverEnabled: true
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        background: Rectangle { radius: 6; color: parent.hovered ? Theme.hover : "transparent"; border.color: Theme.line }
+                        contentItem: Text {
+                            text: I18n.t("移除")
+                            color: Theme.muted
+                            font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                        onClicked: backend.removeRemoteEnvironment(modelData.name)
+                    }
+                }
+            }
+        }
         }
     }
 }

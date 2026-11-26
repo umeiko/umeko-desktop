@@ -9,6 +9,7 @@ from unittest.mock import patch
 from app.gateway import Gateway
 from app.integration import UnconfiguredAdapter
 from app.reasoning_activity import ReasoningActivity
+from app.reasoning_detection import PROBE_ANSWER, PROBE_QUESTION
 
 
 class ReasoningSchedulingTests(unittest.TestCase):
@@ -122,7 +123,7 @@ class ReasoningSchedulingTests(unittest.TestCase):
             calls = []
 
             def events(alias, messages, *args, **kwargs):
-                is_probe = messages[0]['content'] == 'Reply OK.'
+                is_probe = messages[0]['content'] == PROBE_QUESTION
                 if is_probe:
                     count = sum(call == 'probe' for call in calls)
                     calls.append('probe')
@@ -135,7 +136,8 @@ class ReasoningSchedulingTests(unittest.TestCase):
                     calls.append('chat')
                     chat_entered.set()
                     self.wait(chat_release)
-                yield {'choices': [{'message': {'content': 'OK'}, 'finish_reason': 'stop'}]}
+                answer = str(PROBE_ANSWER) if is_probe else 'OK'
+                yield {'choices': [{'message': {'content': answer}, 'finish_reason': 'stop'}]}
 
             def detection(request, **kwargs):
                 request('high', 'openai', 1)

@@ -30,7 +30,8 @@ class SlashCommands(QObject):
     def key(self):
         r = self.b._view
         return (r.key, r.workspace, str(self.b._release), repr(self.b.store.data['agent']),
-                self.b.desktopPlugins.skills_enabled(r), repr(r.skill_modes))
+                self.b.desktopPlugins.skills_enabled(r), repr(r.skill_modes),
+                tuple(self.b.cowork.skill_paths(r)) if r.cowork else None)
 
     @Slot()
     def invalidate(self):
@@ -63,8 +64,9 @@ class SlashCommands(QObject):
             rows.append(dict(id='widget:'+row['id'], widgetId=row['id'], group='Widgets', title=row['name'], icon=row['iconGlyph'],
                              iconSource=row.get('iconSource', ''), description=row.get('summary', ''), scope='Widget'))
         if self._context == self.key() and self.b.desktopPlugins.skills_enabled(self.b._view):
+            labels = {'project': ('项目', 'Project'), 'global': ('全局', 'Global'), 'cowork': ('Cowork', 'Cowork')}
             rows.extend({**row, 'description': row.get('descriptions', {}).get(self.b.language, row['description']),
-                         'scope': ('项目' if row['scopeKey'] == 'project' else '全局') if not english else ('Project' if row['scopeKey'] == 'project' else 'Global')}
+                         'scope': labels.get(row['scopeKey'], labels['global'])[english]}
                         for row in self._skills)
         return [{**row, 'titlePinyin': lazy_pinyin(row['title'])} for row in rows]
 
@@ -80,6 +82,8 @@ class SlashCommands(QObject):
         r = self.b._view
         options = dict(sessionSkills=copy.deepcopy(r.skill_modes),
                        loadedSkills=copy.deepcopy(list(r.known_skills.values())))
+        if key[6] is not None:
+            options['selectedSkillPaths'] = list(key[6])
         self._pending = key
         self.b._job('slash-skills', lambda: skill_command(release, cwd, agent_dir, agent, action='list', **options))
 
@@ -100,9 +104,7 @@ class SlashCommands(QObject):
                     path = Path(row['path'])
                     title = path.parent.name if path.name == 'SKILL.md' else row['name']
                     self._skills.append(dict(id=row['id'], group='技能', title=title, icon='skill',
-                        description=row['description'], descriptions=row.get('descriptions', {}), path=row['path'], scopeKey=row['scope'],
-                        scope=('项目' if row['scope'] == 'project' else '全局') if self.b.language != 'en'
-                        else ('Project' if row['scope'] == 'project' else 'Global')))
+                        description=row['description'], descriptions=row.get('descriptions', {}), path=row['path'], scopeKey=row['scope']))
         else:
             self.b.toast.emit('无法读取技能列表 / Could not read Skills: ' + str(result.get('value', ''))[:200])
         self._publish()

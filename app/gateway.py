@@ -27,10 +27,12 @@ from .protocols import response_events, collect_openai, anthropic_events_to_open
 from .openai_responses import responses_request, responses_events
 from .request_diagnostics import RequestDiagnostics, RequestFailure
 from .network_retry import upstream_failure
+from .context_images import ContextImageRecovery
 from .provider_errors import format_http_error, safe_text
 from .model_reasoning import reasoning_levels, reconcile_effort
 from .model_groups import GROUP_MODEL, MAX_MEMBERS, configured_members, descriptor
-from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model
+from .reasoning_detection import allowed_levels, is_effort_rejection, detect_model, PROBE_QUESTION, probe_answer_correct
+from .reasoning_observation import observe_reasoning
 from .reasoning_activity import ReasoningActivity
 from .thinking_formats import format_parameters, valid_format
 from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
@@ -54,6 +56,16 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("供应商返回重定向；请直接填写最终 API 地址")
 
 
+def _quota_exhausted(error, response):
+    status = str(response.get("status", ""))
+    if status == "402":
+        return True
+    return bool(re.search(
+        r"insufficient[ _-]?(?:quota|balance)|quota.{0,20}(?:exceed|exhaust)|out of budget|"
+        r"billing.hard.limit|usage limit reached|额度不足|余额不足|配额.{0,8}(?:不足|用尽)",
+        str(error) + " " + str(response.get("body", "")), re.I))
+
+
 def _member_unavailable(error, records):
     response = next((row.get("response", {}) for row in reversed(records) if row.get("response")), {})
     raw_status = response.get("status")
@@ -73,6 +85,7 @@ class Gateway:
         self._group_cooldown = {}
         self.reasoning_activity = ReasoningActivity()
         self.diagnostics = RequestDiagnostics(store.directory)
+        self.context_images = ContextImageRecovery(store.directory)
         self.compatibility = ParameterMemory(store.directory, app_version=VERSION)
 
     def provider(self, provider_id):
@@ -93,6 +106,7 @@ class Gateway:
                              "contextWindow": metadata["contextWindow"],
                              **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
                              "input": ["text", "image"] if metadata["vision"] else ["text"],
+                              **({'applyPatch': True} if metadata.get('applyPatch') else {}),
                              "reasoningLevels": reasoning_levels(model),
                              "reasoningFormat": model.get("reasoningFormat", "openai"),
                              "reasoningState": (model.get("reasoningDetection", {}).get("state", "unknown")
@@ -124,7 +138,7 @@ class Gateway:
             candidates.sort(key=lambda row: self._group_cooldown.get((row[1]["id"], row[2]["alias"]), 0) > now)
         cancelled = current_request_cancelled()
         inputs = {key: value for key, value in (parameters or {}).items()
-                  if key not in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning",
+                  if key not in ("reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning",
                                  "_umeko_reasoning_effort", "_umeko_reasoning_format")}
         last_report = ""
         for member, provider, model in candidates:
@@ -172,35 +186,19 @@ class Gateway:
         configured = next(model for model in provider["models"] if model["alias"] == alias)
 
         def request(effort, format, max_tokens):
-            records, content = [], []
-            reasoning = False
+            records = []
             try:
                 with self.reasoning_activity.probe({(provider['id'], configured['upstream'])}), network_scope(provider.get("proxy"), records):
-                    for event in self._events(alias, [{"role": "user", "content": "Reply OK."}],
-                                              max_tokens=max_tokens, provider_id=provider["id"],
-                                              parameters={"_umeko_reasoning_effort": effort,
-                                                          "_umeko_reasoning_format": format}):
-                        if event.get("error"):
-                            raise ValueError(json.dumps(event, ensure_ascii=False))
-                        for choice in event.get("choices", []):
-                            delta = choice.get("delta", choice.get("message", {}))
-                            reasoning = reasoning or any(isinstance(delta.get(key), str) and bool(delta[key].strip())
-                                                         for key in ("reasoning_content", "reasoning", "reasoning_text"))
-                            value = delta.get("content")
-                            if isinstance(value, str):
-                                content.append(value)
-                            elif isinstance(value, list):
-                                content.extend(part.get("text", "") for part in value
-                                               if isinstance(part, dict) and isinstance(part.get("text"), str))
+                    return observe_reasoning(self._events(
+                        alias, [{"role": "user", "content": PROBE_QUESTION}],
+                        max_tokens=max_tokens, provider_id=provider["id"],
+                        parameters={"_umeko_reasoning_effort": effort,
+                                    "_umeko_reasoning_format": format}), probe_answer_correct)
             except Exception as error:
                 response = records[-1].get("response", {}) if records else {}
                 failure = ValueError(safe_text(response.get("body") or str(error), [provider.get("key", "")]))
                 failure.status_code = response.get("status")
                 raise failure from None
-            text = "".join(content)
-            reasoning = reasoning or "<think>" in text.lower()
-            ordinary = re.sub(r"<think>.*?(?:</think>|$)", "", text, flags=re.I | re.S)
-            return {"thinking": bool(reasoning), "content": bool(ordinary.strip())}
 
         protocol = "anthropic" if provider["api"] == "anthropic" else (
             "responses" if provider.get("wireApi") == "responses" else "openai")
@@ -243,12 +241,18 @@ class Gateway:
                    'tools': tools or [], 'max_tokens': max_tokens, 'parameters': parameters or {}}
         try:
             with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
-                transport = self._events(alias, messages, tools, max_tokens, provider_id, parameters,
-                                         **({"group": True} if group else {}))
-                for event in normalize_openai_events(transport):
-                    if event.get('error'):
-                        raise ValueError(json.dumps(event, ensure_ascii=False))
-                    yield event
+                def open_events(projected):
+                    transport = self._events(alias, projected, tools, max_tokens, provider_id, parameters,
+                                             **({"group": True} if group else {}))
+                    for event in normalize_openai_events(transport):
+                        if event.get('error'):
+                            raise ValueError(json.dumps(event, ensure_ascii=False))
+                        yield event
+                image_session = (parameters or {}).get('_umeko_image_session')
+                if image_session:
+                    yield from self.context_images.events(image_session, messages, records, open_events)
+                else:
+                    yield from open_events(messages)
             self.diagnostics.compatibility(p, request, records)
         except (IntegrationRequired, PermissionError):
             raise
@@ -260,6 +264,9 @@ class Gateway:
             failure = self.diagnostics.failure(p, request, records[-1]['response'] if records else {}, error, records)
             if group:
                 failure.failover_eligible = bool(failure.tls_code) or _member_unavailable(error, records)
+            elif _quota_exhausted(error, records[-1].get('response', {}) if records else {}):
+                failure.quota_exhausted = True
+                failure.retryable = False
             raise failure from None
 
     def _reasoning_rejection(self, provider, model, effort, error, records):
@@ -300,7 +307,7 @@ class Gateway:
         probe_override = "_umeko_reasoning_format" in parameters
         format_override = parameters.pop("_umeko_reasoning_format", None)
         already_formatted = any(key in parameters for key in
-                                ("enable_thinking", "chat_template_kwargs", "thinking", "reasoning"))
+                                ("enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning"))
         intent = parameters.pop("_umeko_reasoning_effort", None) if private_intent else (
             parameters.get("reasoning_effort") if format_override or not already_formatted else None)
         parameters = {key: value for key, value in parameters.items() if not key.startswith("_umeko_")}
@@ -314,7 +321,7 @@ class Gateway:
                     and isinstance(detection, dict) and detection.get("state") == "known"
                     and detection.get("offVerified") is True and valid_format(detection.get("offFormat"))):
                 format = detection["offFormat"]
-            for key in ("reasoning_effort", "enable_thinking", "chat_template_kwargs", "thinking", "reasoning"):
+            for key in ("reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning"):
                 parameters.pop(key, None)
             parameters.update(format_parameters(format, intent))
         if not probe_override:
@@ -391,7 +398,7 @@ class Gateway:
         try:
             with compatible_open(opener, request, timeout=45 if group else 90, memory=self.compatibility,
                                  scope=(p['id'], base, model), automatic=automatic,
-                                 records=trace.get(), http_retries=0 if group else 2) as response:
+                                 records=trace.get(), http_retries=0 if group or probe_override else 2) as response:
                 def checked_events():
                     for event in response_events(response):
                         if event is None:
@@ -448,12 +455,18 @@ class LocalServer:
         if host not in ("127.0.0.1", "0.0.0.0") or (private and host != "127.0.0.1"):
             raise ValueError("内核通道仅允许本机访问；代理服务只支持本机或局域网监听")
         self.gateway, self.token, self.private = gateway, token, private
+        self.cowork_web_route = None
         self.host, self.authenticator = host, authenticator
         self.closed = False
         self.protocols = protocols or {"openai": True, "anthropic": True}
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
+            def upstream_error(self, error):
+                result = upstream_failure(error)
+                if owner.private and getattr(error, "quota_exhausted", False):
+                    result.update(code="umeko_model_quota", message="[Umeko:model_quota] " + result["message"])
+                return result
             protocol_version = "HTTP/1.1"
 
             def handle(self):
@@ -519,10 +532,15 @@ class LocalServer:
                     return self.respond(401, {"error": {"message": "Invalid API key", "type": "authentication_error"}})
                 try:
                     size = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < size <= 32_000_000:
+                    cowork_route = self.path == '/umeko/cowork-web-route'
+                    if cowork_route and (not owner.private or not owner.cowork_web_route or self.headers.get('Origin')):
+                        return self.respond(404, {"error": {"message": "Not found"}})
+                    if not 0 < size <= (16384 if cowork_route else 32_000_000):
                         return self.respond(413, {"error": {"message": "Invalid request size"}})
                     self.connection.settimeout(100)
                     body = json.loads(self.rfile.read(size))
+                    if cowork_route:
+                        return self.respond(200, owner.cowork_web_route(body))
                     if self.path == '/umeko/generate' and owner.private:
                         if isinstance(body, dict) and body.get('kind') == 'video':
                             return self.request_call(lambda: self.stream_generation(body))
@@ -552,7 +570,8 @@ class LocalServer:
                         automatic = body['_umeko_auto_parameters']
                         allowed = {'tool_choice', 'parallel_tool_calls', 'response_format', 'stream_options',
                                    'temperature', 'top_p', 'top_k', 'seed', 'n', 'user', 'dimensions', 'max_tokens',
-                                   'max_completion_tokens', 'stream', 'reasoning_effort', 'thinking', 'reasoning', 'enable_thinking', 'chat_template_kwargs'}
+                                   'max_completion_tokens', 'stream', 'reasoning_effort', 'thinking', 'reasoning',
+                                   'enable_thinking', 'enable_reasoning', 'chat_template_kwargs'}
                         if not isinstance(automatic, list) or any(not isinstance(key, str) or key not in allowed for key in automatic):
                             raise ValueError('Invalid automatic parameter metadata')
                         parameters['_umeko_auto_parameters'] = automatic
@@ -561,6 +580,11 @@ class LocalServer:
                         if not isinstance(effort, str) or not effort:
                             raise ValueError("Invalid private reasoning effort")
                         parameters["_umeko_reasoning_effort"] = effort
+                    if owner.private and '_umeko_image_session' in body:
+                        session = body['_umeko_image_session']
+                        if not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session):
+                            raise ValueError('Invalid private image session identity')
+                        parameters['_umeko_image_session'] = session
                     if anth and "effort" in body.get("output_config", {}):
                         parameters["reasoning_effort"] = body["output_config"]["effort"]
                     if anth and "stop_sequences" in body:
@@ -592,7 +616,7 @@ class LocalServer:
                 except PermissionError as exc:
                     self.respond(403, {"error": {"type": "permission_error", "message": str(exc)}})
                 except RequestFailure as exc:
-                    self.respond(503 if exc.retryable else 400, {"error": upstream_failure(exc)})
+                    self.respond(503 if exc.retryable else 400, {"error": self.upstream_error(exc)})
                 except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
                     self.respond(400, {"error": {"type": "invalid_request_error", "message": str(exc)[:300]}})
                 except ConnectionError:
@@ -704,7 +728,7 @@ class LocalServer:
                 except ConnectionError:
                     pass
                 except Exception as failure:
-                    event({"type": "error", "error": upstream_failure(failure)}, "error" if anth else None)
+                    event({"type": "error", "error": self.upstream_error(failure)}, "error" if anth else None)
                 finally:
                     iterator.close() if hasattr(iterator, "close") else None
                     self.close_connection = True

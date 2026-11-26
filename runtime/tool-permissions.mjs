@@ -7,6 +7,10 @@
  * tool_call shape: https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions
  * cc-safety-net 2.7.0 supplied categories/test checklist only, no copied code:
  * https://github.com/kenryu42/cc-safety-net/tree/v2.7.0
+ * Prefix matching and persisted approvals are adapted from OpenAI Codex
+ * rust-v0.172.0, codex-rs/execpolicy/src/{rule,policy,amend}.rs and
+ * codex-rs/core/src/exec_policy.rs (including BANNED_PREFIX_SUGGESTIONS).
+ * Notice: ../licenses/codex-execpolicy.txt.
  * This is a direct-command/literal-wrapper detector, not an OS sandbox.
  */
 /*
@@ -35,6 +39,8 @@ SOFTWARE.
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
+import {APPLY_PATCH, preparePatchPermission} from './apply-patch.mjs';
 
 // Upstream command-position guard, retained as the common rule entry guard.
 const AT_CMD = String.raw`(?:^|(?<!\\)[;&|({\x60!]|\$\(|-c\s+["'])\s*(?:(?:sudo|doas|env|nohup|time|exec|nice|xargs|command|builtin|then|do|else)\s+(?:-\S+\s+)*)*`;
@@ -117,15 +123,17 @@ export function classifyPath(filePath,context={}) {
 
 // Tokenize operators outside quotes and preserve decoded operand values. Quote
 // masking is used only for boundaries; actual target tokens are never masked.
-function lex(command) {
+function lex(command, shell) {
  const tokens=[],nested=[],masked=stripQuoted(command);
+ const powershell=shell==='powershell';
+ let plain=true;
  let value='',started=false,quote='',quoted=false;
  const push=()=>{if(started){tokens.push({value,quoted});value='';started=false;quoted=false;}};
  const substitution=(start,close)=>{
    let end=start,depth=1,q='';
    for(;end<command.length;end++){
      const c=command[end];
-     if(c==='\\'&&q!=="'"){end++;continue;}
+     if((powershell?c==='`':c==='\\')&&q!=="'"){end++;continue;}
      if(q){if(c===q)q='';continue;}
      if(c==='"'||c==="'"){q=c;continue;}
      if(close===')'&&c==='(')depth++;
@@ -136,17 +144,33 @@ function lex(command) {
  };
  for(let i=0;i<command.length;i++){
    const c=command[i];
+   if(powershell&&c==='`'&&quote!=="'"){
+     const next=command[++i];
+     if(next==='\r'&&command[i+1]==='\n'){i++;continue;}
+     if(next==='\n')continue;
+     if(!next||/[A-Za-z0-9]/.test(next))plain=false;
+     started=true;value+=next||'';continue;
+   }
+   if(shell==='bash'&&c==='\\'&&quote!=="'"&&(!quote||/["$`\\\n]/.test(command[i+1]||''))){
+     const next=command[++i];
+     if(!next)plain=false;
+     if(next==='\n')continue;
+     started=true;value+=next||'';continue;
+   }
    if(quote){
+     if(powershell&&c===quote&&command[i+1]===quote){value+=c;i++;continue;}
      if(c===quote){quote='';continue;}
+     if(shell&&quote==='"'&&c==='$')plain=false;
      if(quote==='"'&&c==='$'&&command[i+1]==='('){i=substitution(i+2,')');value+='$(...)';continue;}
      if(quote==='"'&&c==='`'&&command.indexOf('`',i+1)>=0){i=substitution(i+1,'`');value+='`...`';continue;}
      if(c==='\\'&&quote==='"'&&/["$`]/.test(command[i+1]||'')&&command.slice(i+2).includes('"')){value+=command[++i];continue;}
      value+=c;continue;
    }
+   if(shell&&(c==='$'||c==='`'||(powershell&&c==='@')||(shell==='bash'&&/[*?\[~]/.test(c))))plain=false;
    if(c==='"'||c==="'"){started=true;quoted=true;quote=c;continue;}
    if(c==='$'&&command[i+1]==='('){started=true;i=substitution(i+2,')');value+='$(...)';continue;}
    if(c==='`'&&command.indexOf('`',i+1)>=0){started=true;i=substitution(i+1,'`');value+='`...`';continue;}
-   if(c==='\\'&&!/^(?:[a-z]:|\\\\)/i.test(value)&&/[\s;&|<>"'(){}]/.test(command[i+1]||'')){started=true;value+=command[++i];continue;}
+   if(!shell&&c==='\\'&&!/^(?:[a-z]:|\\\\)/i.test(value)&&/[\s;&|<>"'(){}]/.test(command[i+1]||'')){started=true;value+=command[++i];continue;}
    if(/\s/.test(c)){push();if(c==='\n')tokens.push({op:';'});continue;}
    if(c==='#'&&!started&&masked[i]==='#'){while(i<command.length&&command[i]!=='\n')i++;push();tokens.push({op:';'});continue;}
    // PowerShell's static method invocation is a command in its own right.
@@ -156,6 +180,7 @@ function lex(command) {
        const x=command[end];if(q){if(x===q)q='';continue;}if(x==='"'||x==="'"){q=x;continue;}
        if(x==='(')depth++;if(x===')'&&!--depth)break;
      }
+     if(shell)plain=false;
      value+=command.slice(i,end+1);i=end;continue;
    }
    if(/[;&|()<>{}]/.test(c)){
@@ -163,7 +188,48 @@ function lex(command) {
    }
    started=true;value+=c;
  }
- push();return {tokens,nested};
+ push();return {tokens,nested,plain:plain&&!quote&&!nested.length};
+}
+
+// Match literal command words within a shell tool. Complex syntax can still
+// contribute a restrictive match, but cannot grant a reusable approval.
+export function splitPolicyCommand(command, shell, depth=0) {
+ if(depth>12)return {parts:[],plain:false};
+ const {tokens,nested,plain}=lex(command,shell);
+ const parts=[];
+ let literal=plain, segment=[];
+ const finish=()=>{
+   if(!segment.length)return;
+   const words=segment.map(token=>token.value);
+   const name=executable(words[0]);
+   if(wrappers.has(name)||/^(?:if|elif|fi|for|while|until|case|function|eval|invoke-expression|iex)$/.test(name)||
+      words.some(word=>/^\w+=|^--%$/.test(word)))literal=false;
+   const call=invocation(segment);
+   parts.push(call?call.tokens.map(token=>token.value):words);
+   if(['bash','sh','zsh','dash','ksh','cmd','powershell','pwsh'].includes(name)){
+     literal=false;
+     const flag=words.findIndex(word=>/^(?:-c|-command|\/c|-[a-z]*c[a-z]*)$/i.test(word));
+     if(flag>=0&&words[flag+1]){
+       const innerShell=['cmd','powershell','pwsh'].includes(name)?'powershell':'bash';
+       parts.push(...splitPolicyCommand(words.slice(flag+1).join(' '),innerShell,depth+1).parts);
+     }
+   }
+   segment=[];
+ };
+ for(let i=0;i<tokens.length;i++){
+   const token=tokens[i];
+   if(!token.op){segment.push(token);continue;}
+   if(/^[<>]+$/.test(token.op)){
+     literal=false;
+     if(i+1<tokens.length&&!tokens[i+1].op)i++;
+     continue;
+   }
+   if(![';','&&','||','|'].includes(token.op))literal=false;
+   finish();
+ }
+ finish();
+ for(const inner of nested)parts.push(...splitPolicyCommand(inner,shell,depth+1).parts);
+ return {parts,plain:literal};
 }
 function executable(value) {return value.replace(/\\/g,'/').split('/').at(-1).replace(/\.(exe|com)$/i,'').toLowerCase();}
 const wrappers=new Set(['sudo','doas','env','nohup','time','exec','nice','xargs','command','builtin','then','do','else']);
@@ -367,10 +433,32 @@ export function childPermissionUI(ui) {
  return normalUI;
 }
 
+// Use Pi's provider request hook to advertise the hint on the OpenAI envelope.
+// Pi's native tool definitions and the command passed to the shell stay intact.
+function advertisePrefixSuggestion(payload) {
+ if(!Array.isArray(payload?.tools)) return undefined;
+ const tools=payload.tools.map(tool=>{
+   const definition=tool.function;
+   const schema=definition?.parameters;
+   if(!['bash','powershell'].includes(definition?.name)||definition.strict===true||!schema?.properties?.command) return tool;
+   const prefix_rule={
+     type:'array',items:{type:'string'},minItems:1,maxItems:2,
+     description:'Optional reusable approval prefix: the program and its subcommand, or a standalone command name. Omit paths, argument values, interpreters and commands that run arbitrary code.',
+   };
+   return {...tool,function:{...definition,parameters:{...schema,properties:{...schema.properties,prefix_rule}}}};
+ });
+ return {...payload,tools};
+}
+
 /** Per-session factory; getPolicy is the sole source of the active mode. */
-export function createToolPermissionExtension({getPolicy,classify=classifyCommand}={}) {
+export function createToolPermissionExtension({getPolicy,classify=classifyCommand,suggestPrefixes=false}={}) {
  if(typeof getPolicy!=='function')throw new TypeError('getPolicy is required');
  return pi=>{
+   if(suggestPrefixes)pi.on('before_provider_request',async({payload},ctx)=>{
+     const policy=await getPolicy();
+     if(ctx.hasUI&&policy.mode==='ask'&&policy.dataDir&&!policy.pluginApprovalRequired)
+       return advertisePrefixSuggestion(payload);
+   });
    pi.on('tool_call',async(event,ctx)=>{
      let language='en';
      const notify=message=>{try{ctx.ui?.notify?.(message,'error');}catch{/* model-visible block below remains authoritative */}};
@@ -384,15 +472,53 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        if(name==='umeko_desktop'||name==='pi'||name==='pi_commands')return undefined;
        const input=event.input||{};
        const backgroundStart=name==='background_job'&&input.action==='start';
+       const backgroundWrite=name==='background_job'&&input.action==='write';
+       const commandStart=name==='bash'||name==='powershell'||backgroundStart;
+       const remoteStart=(name==='remote_command'&&input.action==='run')||
+         (name==='remote_network'&&input.action==='proxychains');
+       const remoteRead=(name==='remote_command'&&input.action==='read')||
+         (name==='remote_files'&&['read','list','search'].includes(input.action));
+       if(remoteRead)return undefined;
+       const command=backgroundWrite?input.input:(input.command??input.script);
        const baseCwd=ctx.cwd||policy.cwd||process.cwd();
        const context={...policy,cwd:backgroundStart&&input.cwd ? path.resolve(baseCwd,input.cwd) : baseCwd};
-       const shell=name==='bash'||name==='powershell'||backgroundStart;
-       const file=name==='write'||name==='edit';
+       const shell=commandStart||backgroundWrite||remoteStart;
+       const patch=name===APPLY_PATCH ? preparePatchPermission(input,baseCwd) : null;
+       const transfer=name==='remote_files'&&['upload','download'].includes(input.action);
+       const file=name==='write'||name==='edit'||!!patch||transfer;
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
+       const original=patch?[...patch.targets].map(([name,{absolute,canonical}])=>absolute===canonical?name:`${name} → ${canonical}`).join('\n'):
+         shell?String(command??''):file?String(transfer?input.localPath??'':input.path??input.file_path??''):JSON.stringify(input);
        let hit=generation?decision('ask'):null;
-       if(shell)hit=await classify(String(input.command??input.script??''),context);
-       else if(file)hit=classifyPath(String(input.path??input.file_path??''),context);
+       if(shell)hit=await classify(original,context);
+       else if(patch)hit=[...patch.targets.values()].flatMap(({absolute,canonical})=>[absolute,canonical])
+         .map(target=>classifyPath(target,context)).find(Boolean)||null;
+       else if(file)hit=classifyPath(original,context);
        if(hit?.category>=1&&hit.category<=7&&policy.dangerousAllowed===true)hit=null;
+       let extraReason, remember;
+       const commandShell=name==='powershell'||(backgroundStart&&input.shell==='powershell')?'powershell':'bash';
+       const ruleContext={dataDir:policy.dataDir,workspace:policy.workspace ? baseCwd : undefined};
+       // Input to an existing process still uses the built-in gate above.
+       if(commandStart&&!hit){
+         const workspaceTrusted=!policy.safeMode&&ctx.isProjectTrusted?.()!==false;
+         const rules=listCommandRules(ruleContext).filter(rule=>rule.decision!=='allow'||
+           (!policy.pluginApprovalRequired&&(rule.scope!=='workspace'||workspaceTrusted)));
+         if(rules.length||policy.mode==='ask'){
+           const commandRule=evaluateCommandRules(splitPolicyCommand(original,commandShell),rules,commandShell,policy.mode,input.prefix_rule);
+           if(commandRule?.pattern){
+             const prefix=JSON.stringify(commandRule.pattern);
+             const scope=commandRule.scope==='user'?(language==='zh'?'用户':'user'):(language==='zh'?'工作区':'workspace');
+             extraReason=language==='zh'?`命中${scope}命令规则 ${prefix}（${commandRule.decision}）。`
+               :`Matched ${scope} command rule ${prefix} (${commandRule.decision}).`;
+           }
+           if(commandRule?.decision==='forbid')return {block:true,reason:extraReason};
+           if(commandRule?.decision==='allow')return undefined;
+           if(commandRule?.decision==='ask'){
+             hit=decision('ask');
+             remember=ruleContext.dataDir&&!policy.pluginApprovalRequired?commandRule.remember:undefined;
+           }
+         }
+       }
        if(policy.mode==='ask'){
          if(shell||file)hit=hit||decision('ask');
          else{
@@ -402,24 +528,31 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
            if(hints.readOnlyHint!==true&&(hints.destructiveHint===true||hints.readOnlyHint===false))hit=decision('ask');
          }
        }
-       if(!hit)return undefined;
+       if(!hit){patch?.approve();return undefined;}
        const selected=policy.generation?.[name==='image_gen'?'image':name==='video_gen'?'video':'speech'];
        const destination=selected ? `${selected.provider} / ${selected.model}` : name;
        const reason=generation ? (language==='zh'
          ? `将提示词或文本发送到 ${destination} 生成${name==='image_gen'?'图片':name==='video_gen'?'视频':'语音'}，可能产生费用。文件保存在当前工作目录，已有文件不会被覆盖。`
          : `Send the prompt or text to ${destination} to generate ${name==='image_gen'?'images':name==='video_gen'?'video':'speech'}; this may incur charges. Save files in the current workspace without overwriting existing files.`)
-         : REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
-       const original=shell?String(input.command??input.script??''):file?String(input.path??input.file_path??''):JSON.stringify(input);
+         : extraReason||REASONS[hit.ruleId]?.[language==='zh'?1:0]||hit.reason;
+       const approvalInput=name==='remote_files'||name==='remote_command'?JSON.stringify(input):original;
        if(!ctx.hasUI||!ctx.ui?.confirm){
          const message=language==='zh'?`未执行：无法显示审批对话框。${reason}`:`Not executed: approval UI is unavailable. ${reason}`;
          notify(message);return {block:true,reason:message};
        }
        const title=language==='zh'?'批准工具操作':'Approve tool operation';
-       const message=language==='zh'?`原因：${reason}\n\n原始${shell?'命令':'路径/输入'}：\n${original}`:`Reason: ${reason}\n\nOriginal ${shell?'command':'path/input'}:\n${original}`;
+       const message=language==='zh'?`原因：${reason}\n\n原始${shell?'命令':'路径/输入'}：\n${approvalInput}`:`Reason: ${reason}\n\nOriginal ${shell?'command':'path/input'}:\n${approvalInput}`;
        const approved=hit.category>=1&&hit.category<=7&&typeof ctx.ui.confirmDangerous==='function'
          ? await ctx.ui.confirmDangerous(title,message,hit.category)
-         : await ctx.ui.confirm(title,message);
+         : remember&&typeof ctx.ui.confirmCommand==='function'
+           ? await ctx.ui.confirmCommand(title,message,remember)
+           : await ctx.ui.confirm(title,message);
+       if(approved==='alwaysAllow'&&remember){
+         changeCommandRule('add',{scope:'user',pattern:remember,decision:'allow',shell:commandShell},ruleContext);
+         return undefined;
+       }
        if(approved!==true)return {block:true,reason:language==='zh'?`用户拒绝执行。${reason}`:`User denied execution. ${reason}`};
+       patch?.approve();
        return undefined;
      }catch(error){
        const detail=error instanceof Error?error.message:String(error);
@@ -428,4 +561,156 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
      }
    });
  };
+}
+
+// User and workspace prefix rules.
+const FILE = 'command-rules.json';
+const scopes = ['user', 'workspace'];
+const shells = ['bash', 'powershell'];
+const rank = new Map([['allow', 0], ['ask', 1], ['forbid', 2]]);
+
+function ruleFile(scope, {dataDir, workspace}) {
+  if (scope === 'user') return dataDir ? path.join(dataDir, FILE) : null;
+  if (scope === 'workspace') return workspace ? path.join(workspace, '.umeko', FILE) : null;
+  throw new Error('Rule scope must be user or workspace.');
+}
+
+function ruleEntry({pattern, decision, shell}) {
+  if (!Array.isArray(pattern) || !pattern[0]?.trim?.() ||
+      pattern.some(token => typeof token !== 'string' || token.includes('\0')))
+    throw new Error('Rule pattern must be a nonempty array of command tokens.');
+  if (!rank.has(decision)) throw new Error('Rule decision must be allow, ask or forbid.');
+  if (shell !== undefined && !shells.includes(shell)) throw new Error('Rule shell must be bash or powershell.');
+  return shell === undefined ? {pattern, decision} : {pattern, decision, shell};
+}
+
+function readRules(file) {
+  if (!file) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    if (!Array.isArray(data)) throw new Error('Expected an array of prefix rules.');
+    return data.map((item, index) => {
+      try { return ruleEntry(item); }
+      catch (error) { throw new Error(`Rule ${index + 1}: ${error.message}`); }
+    });
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw new Error(`${file}: ${error.message}`, {cause: error});
+  }
+}
+
+export function listCommandRules(context, scope) {
+  return (scope === undefined ? scopes : [scope]).flatMap(name =>
+    readRules(ruleFile(name, context)).map(rule => ({scope: name, ...rule})),
+  );
+}
+
+export function changeCommandRule(action, {scope, ...input}, context) {
+  const rule = ruleEntry(input);
+  const file = ruleFile(scope, context);
+  if (!file) throw new Error(`The ${scope} rule file is unavailable in this session.`);
+  if (action === 'remove' && !fs.existsSync(file)) return {changed: false, scope, ...rule};
+  fs.mkdirSync(path.dirname(file), {recursive: true});
+  // Separate bridge processes can write the same profile. Lock the read/modify/write
+  // and rename into place so readers always see a whole policy file.
+  const lock = `${file}.lock`;
+  const fd = fs.openSync(lock, 'wx');
+  const temp = `${file}.${randomUUID()}.tmp`;
+  try {
+    const rules = readRules(file);
+    const same = entry => JSON.stringify(entry) === JSON.stringify(rule);
+    const exists = rules.some(same);
+    const changed = action === 'add' ? !exists : exists;
+    if (changed) {
+      const next = action === 'add' ? [...rules, rule] : rules.filter(entry => !same(entry));
+      fs.writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, {flag: 'wx'});
+      fs.renameSync(temp, file);
+    }
+    return {changed, scope, ...rule};
+  } finally {
+    fs.closeSync(fd);
+    fs.unlinkSync(lock);
+    fs.rmSync(temp, {force: true});
+  }
+}
+
+function matchesPrefix(pattern, tokens, shell) {
+  if (pattern.length > tokens.length) return false;
+  return pattern.every((token, index) => shell === 'powershell' && index === 0
+    ? token.toLowerCase() === tokens[index].toLowerCase()
+    : token === tokens[index]);
+}
+
+// Recognize the subcommand from each program's vocabulary. A positional
+// operand such as a filename or script name does not identify a command class.
+// This also excludes Codex's banned broad prefixes: bare git, interpreters and
+// shells, launchers, rm, and npm/pnpm/yarn run.
+const reusableSubcommands = new Map([
+  ['git', new Set(['add', 'branch', 'clone', 'commit', 'diff', 'fetch', 'grep', 'log', 'ls-files', 'pull',
+    'push', 'remote', 'restore', 'rev-parse', 'show', 'status', 'switch', 'tag'])],
+  ['npm', new Set(['ci', 'install', 'list', 'test'])],
+  ['pnpm', new Set(['install', 'list', 'test'])],
+  ['yarn', new Set(['install', 'test'])],
+  ['cargo', new Set(['build', 'check', 'doc', 'fmt', 'test'])],
+]);
+const reusableStandalone = {
+  bash: new Set(['cat', 'echo', 'head', 'ls', 'mkdir', 'printf', 'pwd', 'tail', 'touch', 'wc']),
+  powershell: new Set(['get-childitem', 'get-content', 'get-item', 'get-location', 'set-content', 'test-path', 'write-output']),
+};
+
+function reusablePrefix(tokens, shell, suggestion) {
+  const [program, subcommand] = tokens;
+  if (typeof program !== 'string' || !/^[a-z][a-z0-9-]*(?:\.exe)?$/i.test(program)) return undefined;
+  const name = executable(program);
+  let derived;
+  if (reusableSubcommands.get(name)?.has(subcommand)) derived = [program, subcommand];
+  if (reusableStandalone[shell]?.has(name)) derived = [program];
+  if (derived && Array.isArray(suggestion) && suggestion.length === derived.length &&
+      derived.every((word, index) => word === suggestion[index])) return [...suggestion];
+  return derived;
+}
+
+export function evaluateCommandRules({parts, plain}, rules, shell, mode, suggestedPrefix) {
+  const applicable = rules.filter(rule => !rule.shell || rule.shell === shell);
+  let strictest;
+  let allAllowed = plain && parts.length > 0;
+  for (const tokens of parts) {
+    let allowed = false;
+    for (const rule of applicable) {
+      if (!matchesPrefix(rule.pattern, tokens, shell)) continue;
+      if (!strictest || rank.get(rule.decision) > rank.get(strictest.decision)) strictest = rule;
+      if (rule.decision === 'allow') allowed = true;
+    }
+    allAllowed &&= allowed;
+  }
+  if (strictest?.decision === 'forbid' || strictest?.decision === 'ask') return strictest;
+  if (allAllowed) return {decision: 'allow'};
+  if (mode === 'ask') return {decision: 'ask', remember: plain && parts.length === 1
+    ? reusablePrefix(parts[0], shell, suggestedPrefix) : undefined};
+  // A script whose executable tokens cannot all be determined needs a person
+  // to review it when a restriction could apply to one of those tokens.
+  if (!plain && applicable.some(rule => rule.decision !== 'allow')) return {decision: 'ask'};
+  return null;
+}
+
+export function isCommandRuleOperation(operation) {
+  return ['command_rules.list', 'command_rules.add', 'command_rules.remove'].includes(operation);
+}
+
+export async function commandRuleOperation(operation, args, context, confirm) {
+  if (operation === 'command_rules.list') return {rules: listCommandRules(context, args.scope || undefined)};
+  if (context.readOnly) throw new Error('Command rules are read-only in this session.');
+  const action = operation === 'command_rules.add' ? 'add' : 'remove';
+  const rule = ruleEntry({...args, shell: args.shell === '' ? undefined : args.shell});
+  if (!ruleFile(args.scope, context)) throw new Error(`The ${args.scope} rule file is unavailable in this session.`);
+  if (action === 'add' && args.scope === 'workspace' && rule.decision === 'allow' && context.workspaceTrusted === false)
+    throw new Error('Workspace allow rules require a trusted workspace.');
+  const relaxes = action === 'add' ? rule.decision === 'allow' : rule.decision !== 'allow';
+  if (relaxes) {
+    const zh = context.language === 'zh';
+    const title = zh ? '批准命令规则变更' : 'Approve command rule change';
+    if (typeof confirm !== 'function' || await confirm(title, JSON.stringify({action, scope: args.scope, ...rule}, null, 2)) !== true)
+      throw new Error(zh ? '未批准命令规则变更。' : 'Command rule change was not approved.');
+  }
+  return changeCommandRule(action, {scope: args.scope, ...rule}, context);
 }

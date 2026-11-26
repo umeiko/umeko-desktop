@@ -6,6 +6,7 @@ from pathlib import Path
 from .platform_support import data_directory, legacy_data_directory
 
 DEFAULTS = {'autoOpenSubmissions': True, 'webDisplay': 'embedded', 'chatWidthHints': True,
+            'coworkEnabled': False, 'teamCollaborationEnabled': False, 'remoteWorkspaceEnabled': False,
             'disableDxgiVblankThread': False}
 
 
@@ -14,6 +15,9 @@ def normalize(value):
     return {'autoOpenSubmissions': value.get('autoOpenSubmissions') if type(value.get('autoOpenSubmissions')) is bool else True,
             'webDisplay': value.get('webDisplay') if value.get('webDisplay') in ('embedded', 'external') else 'embedded',
             'chatWidthHints': value.get('chatWidthHints') if type(value.get('chatWidthHints')) is bool else True,
+            'coworkEnabled': value.get('coworkEnabled') is True,
+            'teamCollaborationEnabled': value.get('teamCollaborationEnabled') is True,
+            'remoteWorkspaceEnabled': value.get('remoteWorkspaceEnabled') is True,
             'disableDxgiVblankThread': value.get('disableDxgiVblankThread') is True}
 
 
@@ -24,8 +28,9 @@ def validate_patch(value):
         raise ValueError('autoOpenSubmissions must be boolean')
     if 'chatWidthHints' in value and type(value['chatWidthHints']) is not bool:
         raise ValueError('chatWidthHints must be boolean')
-    if 'disableDxgiVblankThread' in value and type(value['disableDxgiVblankThread']) is not bool:
-        raise ValueError('disableDxgiVblankThread must be boolean')
+    for key in ('coworkEnabled', 'teamCollaborationEnabled', 'remoteWorkspaceEnabled', 'disableDxgiVblankThread'):
+        if key in value and type(value[key]) is not bool:
+            raise ValueError(key + ' must be boolean')
     if 'webDisplay' in value and value['webDisplay'] not in ('embedded', 'external'):
         raise ValueError('webDisplay must be embedded or external')
     return value

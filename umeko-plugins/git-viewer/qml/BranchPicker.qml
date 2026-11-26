@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "../../../app/qml" as Umeko
 Popup {
     id: root
     objectName: "gitBranchPicker"
@@ -14,10 +15,10 @@ Popup {
     signal operation(string method,var arguments)
     readonly property var choices: {
         const query=search.text.trim().toLowerCase()
-        const actions=mode==="checkout"?[{kind:"action",action:"create",name:"新建分支…",icon:"add"},{kind:"action",action:"createFrom",name:"从指定引用新建分支…",icon:"add"},{kind:"action",action:"detach",name:"以游离 HEAD 检出…",icon:"debug-disconnect"}]:[]
+        const actions=mode==="checkout"?[{kind:"action",action:"create",name:Umeko.I18n.t("新建分支…"),icon:"add"},{kind:"action",action:"createFrom",name:Umeko.I18n.t("从指定引用新建分支…"),icon:"add"},{kind:"action",action:"detach",name:Umeko.I18n.t("以游离 HEAD 检出…"),icon:"debug-disconnect"}]:[]
         return actions.filter(row=>!query||row.name.toLowerCase().includes(query)).concat(entries.filter(row=>(row.name+" "+row.hash+" "+row.subject).toLowerCase().includes(query)))
     }
-    function age(timestamp) {const days=Math.floor((Date.now()/1000-Number(timestamp))/86400);return days<1?"今天":days<7?days+" 天前":days<30?Math.floor(days/7)+" 周前":Math.floor(days/30)+" 个月前"}
+    function age(timestamp) {const days=Math.floor((Date.now()/1000-Number(timestamp))/86400);return days<1?Umeko.I18n.t("今天"):days<7?days+Umeko.I18n.t(" 天前"):days<30?Math.floor(days/7)+Umeko.I18n.t(" 周前"):Math.floor(days/30)+Umeko.I18n.t(" 个月前")}
     function choose(row) {
         if(!row)return
         if(row.kind==="action") {
@@ -36,7 +37,7 @@ Popup {
         spacing:5
         TextField {
             id:search;objectName:"gitBranchSearch";Layout.fillWidth:true;implicitHeight:28*root.s
-            placeholderText:root.mode==="createFrom"?"选择新分支的起点":root.mode==="detach"?"选择引用或输入提交 ID":"搜索分支、远程分支或标签"
+            placeholderText:root.mode==="createFrom"?Umeko.I18n.t("选择新分支的起点"):root.mode==="detach"?Umeko.I18n.t("选择引用或输入提交 ID"):Umeko.I18n.t("搜索分支、远程分支或标签")
             color:root.c.ink;placeholderTextColor:root.c.muted;selectByMouse:true;font.family:"Segoe UI";font.pixelSize:13*root.s
             background:Rectangle {radius:3;color:root.c.bg;border.color:root.c.accent}
             onTextChanged:list.currentIndex=0
@@ -59,7 +60,7 @@ Popup {
                         VsIcon {name:row.modelData.kind==="action"?row.modelData.icon:row.modelData.kind==="branch"?"git-branch":row.modelData.kind==="tag"?"tag":"cloud";size:16*root.s;color:root.c.muted}
                         Text {text:row.modelData.name;textFormat:Text.PlainText;color:root.c.ink;font.pixelSize:13*root.s;font.family:"Segoe UI";Layout.fillWidth:true;elide:Text.ElideRight}
                         Text {visible:row.modelData.kind!=="action";text:root.age(row.modelData.timestamp||0);color:root.c.muted;font.pixelSize:11*root.s}
-                        Text {text:({branch:"分支",remote:"远程分支",tag:"标签"})[row.modelData.kind]||"";color:root.c.muted;font.pixelSize:11*root.s}
+                        Text {text:({branch:Umeko.I18n.t("分支"),remote:Umeko.I18n.t("远程分支"),tag:Umeko.I18n.t("标签")})[row.modelData.kind]||"";color:root.c.muted;font.pixelSize:11*root.s}
                     }
                     Text {visible:row.modelData.kind!=="action";text:(row.modelData.author||"")+" · "+(row.modelData.hash||"")+" · "+(row.modelData.subject||"");textFormat:Text.PlainText;color:root.c.muted;font.pixelSize:12*root.s;font.family:"Segoe UI";Layout.fillWidth:true;Layout.leftMargin:22*root.s;elide:Text.ElideRight}
                 }
@@ -69,9 +70,9 @@ Popup {
     }
     Dialog {
         id:createDialog;objectName:"gitCreateBranchDialog";parent:root.parent;anchors.centerIn:parent
-        width:Math.min(440*root.s,parent.width-24);modal:false;focus:true;title:"新建分支";palette.window:root.c.surface;palette.windowText:root.c.ink
+        width:Math.min(440*root.s,parent.width-24);modal:false;focus:true;title:Umeko.I18n.t("新建分支");palette.window:root.c.surface;palette.windowText:root.c.ink
         onOpened:nameField.forceActiveFocus()
-        contentItem:TextField {id:nameField;objectName:"gitNewBranchName";placeholderText:"输入分支名称";selectByMouse:true;color:root.c.ink;font.pixelSize:13*root.s;onAccepted:if(text.trim()){createDialog.close();root.operation("createBranch",{name:text.trim(),ref:root.source})}}
-        footer:RowLayout {Item {Layout.fillWidth:true}Button {text:"取消";onClicked:createDialog.close()}Button {objectName:"gitCreateBranchConfirm";text:"创建";enabled:!!nameField.text.trim();onClicked:{createDialog.close();root.operation("createBranch",{name:nameField.text.trim(),ref:root.source})}}}
+        contentItem:TextField {id:nameField;objectName:"gitNewBranchName";placeholderText:Umeko.I18n.t("输入分支名称");selectByMouse:true;color:root.c.ink;font.pixelSize:13*root.s;onAccepted:if(text.trim()){createDialog.close();root.operation("createBranch",{name:text.trim(),ref:root.source})}}
+        footer:RowLayout {Item {Layout.fillWidth:true}Button {text:Umeko.I18n.t("取消");onClicked:createDialog.close()}Button {objectName:"gitCreateBranchConfirm";text:Umeko.I18n.t("创建");enabled:!!nameField.text.trim();onClicked:{createDialog.close();root.operation("createBranch",{name:nameField.text.trim(),ref:root.source})}}}
     }
 }

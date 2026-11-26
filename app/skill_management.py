@@ -116,7 +116,10 @@ class SkillJobs(QObject):
         if not folder:
             raise ValueError('请刷新当前工作区和全局 Skill 目录后重试')
         _, cwd, agent_dir, _ = self.b.piManagement._context()
-        current_root = Path(agent_dir).resolve() / 'skills' if folder['scope'] == 'global' else Path(cwd).resolve() / '.pi/skills'
+        if getattr(record, 'cowork', ''):
+            current_root = self.b.cowork.skill_roots(record.cowork).get(folder['scope'])
+        else:
+            current_root = Path(agent_dir).resolve() / 'skills' if folder['scope'] == 'global' else Path(cwd).resolve() / '.pi/skills'
         if current_root != folder['root'] or folder['scope'] == 'project' and not record.workspace:
             raise ValueError('Skill 目录配置已变化，请刷新后重试')
         return folder
@@ -131,6 +134,9 @@ class SkillJobs(QObject):
         elif any(row['status'] == 'running' and row['operation'] != 'skills.preview' for row in self.jobs.values()):
             raise ValueError('Skill manager is busy; retry shortly')
         release, cwd, agent_dir, agent = self.b.piManagement._context()
+        cowork = getattr(record, 'cowork', '')
+        scoped = self.b.cowork.skill_roots(cowork) if cowork else None
+        selected = list(self.b.cowork.selected_skills(record)) if cowork else []
         key = (record.key, record.workspace)
         rows = self.catalog.get(key, [])
         row = next((row for row in rows if row['id'] == args.get('id')), None)
@@ -148,6 +154,10 @@ class SkillJobs(QObject):
                        skillsEnabled=self.host.m.skills_enabled(record))
         preview = self.preview_for(request, args['id']) if operation == 'skills.import' else None
         destination = (Path(cwd) / '.pi/skills' if args.get('project') else Path(agent_dir) / 'skills') if operation == 'skills.importPreview' or direct_import else None
+        if scoped and destination is not None:
+            if not args.get('project'):
+                raise ValueError('请选择当前 Coworker 的工作区 / Choose the current coworker workspace')
+            destination = scoped['project']
         folder_import = key in self.folders
         import_rows = rows
         if destination is not None and (folder_import or direct_import):
@@ -155,7 +165,10 @@ class SkillJobs(QObject):
         if destination is not None and args.get('project') and not record.workspace:
             raise ValueError('Choose a project before importing project skills')
         folder_ops = ('skills.preview', 'skills.open', 'skills.copy', 'skills.insert', 'skills.rename', 'skills.delete')
-        folder = self.folder_for(request, args['id']) if operation in folder_ops or operation == 'skills.attach' and row.get('kind') == 'folder' else None
+        if scoped and row and row.get('scope') in ('builtin', 'bundled') and (operation in ('skills.rename', 'skills.delete') or
+                (operation == 'skills.open' and args.get('mode') == 'edit')):
+            raise ValueError('内置 Cowork Skill 为只读 / Built-in Cowork skills are read-only')
+        folder = self.folder_for(request, args['id']) if operation in folder_ops or (scoped and operation == 'skills.details') or operation == 'skills.attach' and row.get('kind') == 'folder' else None
         clipboard_source = ''
         if operation == 'skills.paste':
             data = QGuiApplication.clipboard().mimeData()
@@ -166,14 +179,24 @@ class SkillJobs(QObject):
         def finish_browse(value):
             from .bundled_skills import describe_bundled
             from .skill_folders import folder_snapshots
-            roots = {'global': Path(agent_dir).resolve() / 'skills'}
-            if record.workspace:
-                roots['project'] = Path(cwd).resolve() / '.pi/skills'
-            describe_bundled(value.get('skills', []), agent_dir)
+            roots = scoped or {'global': Path(agent_dir).resolve() / 'skills'}
+            if not scoped:
+                if record.workspace:
+                    roots['project'] = Path(cwd).resolve() / '.pi/skills'
+                describe_bundled(value.get('skills', []), agent_dir)
+            else:
+                for row in value.get('skills', []):
+                    row['source'] = self.b.cowork._skill_source(row)
             value['roots'] = {scope: str(path) for scope, path in roots.items()}
             value['_folderApprovals'] = folder_snapshots(value, roots)
             return value
         def run():
+            if scoped and operation in ('skills.browse', 'skills.list'):
+                return finish_browse(self.b.cowork.discover_skills(release, cwd, agent_dir, agent,
+                                     scoped, selected, options['skillsEnabled']))
+            if scoped and operation == 'skills.details':
+                from .skill_folders import preview_folder
+                return {'ok': True, 'details': {'id': args['id'], **preview_folder(folder)}}
             if operation == 'skills.browse':
                 return finish_browse(skill_command(release, Path(cwd).resolve(), Path(agent_dir).resolve(), agent,
                                       action='browse', includeProject=bool(record.workspace), **options))
@@ -234,7 +257,7 @@ class SkillJobs(QObject):
             if completed is None: break
             self.jobs.pop(completed)
         name = 'widget-skills:' + identifier
-        if operation == 'skills.browse':
+        if operation == 'skills.browse' and not scoped:
             def received(result):
                 if identifier not in self.jobs:
                     return
@@ -264,16 +287,19 @@ class SkillJobs(QObject):
                 if selected.get('kind')=='folder':
                     from .skill_folders import checked_folder
                     checked_folder(self.folder_for(job['owner'],selected['id']))
-                old = dict(record.skill_modes)
-                record.skill_modes[value['path']] = value['enabled']
-                try:
-                    if record.id:
-                        self.b.store.data['sessionMeta'].setdefault(record.id, {})['skillModes'] = dict(record.skill_modes)
-                        self.b.store.save()
-                except (OSError, RuntimeError):
-                    record.skill_modes = old
-                    self.b.store.data['sessionMeta'].setdefault(record.id, {})['skillModes'] = old
-                    raise
+                if getattr(record, 'cowork', ''):
+                    self.b.cowork.set_skill_enabled(record, selected['selectionId'], value['enabled'])
+                else:
+                    old = dict(record.skill_modes)
+                    record.skill_modes[value['path']] = value['enabled']
+                    try:
+                        if record.id:
+                            self.b.store.data['sessionMeta'].setdefault(record.id, {})['skillModes'] = dict(record.skill_modes)
+                            self.b.store.save()
+                    except (OSError, RuntimeError):
+                        record.skill_modes = old
+                        self.b.store.data['sessionMeta'].setdefault(record.id, {})['skillModes'] = old
+                        raise
                 if selected:
                     selected['enabled'] = value['enabled']
                 record.stale = True
@@ -290,7 +316,7 @@ class SkillJobs(QObject):
                     'errors': preview['errors'], 'project': job['project'], 'sourceName': Path(preview['source']).name}}
             elif operation in ('skills.list', 'skills.browse'):
                 self.catalog_owners[(record.key, record.workspace)] = job['owner']
-                if operation == 'skills.browse':
+                if '_folderApprovals' in value:
                     self.folders[(record.key, record.workspace)] = value.pop('_folderApprovals')
                 self.catalog[(record.key, record.workspace)] = value['skills']
                 for item in record.resources.get('skills', []):
@@ -317,7 +343,14 @@ class SkillJobs(QObject):
                     raise ValueError('无法打开文件，请检查系统文件关联')
             elif operation in ('skills.default', 'skills.remove', 'skills.import', 'skills.paste', 'skills.importLocal', 'skills.rename', 'skills.delete'):
                 # Native settings changed. Preserve all chat overrides.
-                self.b._restart_pi()
+                if getattr(record, 'cowork', '') and operation in ('skills.rename', 'skills.delete'):
+                    source = self.catalog.get((record.key, record.workspace), [])
+                    row = next((item for item in source if item['id'] == job['owner']['arguments']['id']), None)
+                    if row:
+                        replacement = str(Path(value['directory']) / 'SKILL.md') if operation == 'skills.rename' else ''
+                        self.b.cowork.replace_skill_path(row['path'], replacement)
+                elif not getattr(record, 'cowork', ''):
+                    self.b._restart_pi()
                 if operation == 'skills.import': self.previews.pop(job['owner']['arguments']['id'], None)
             job['result'], job['status'] = value, 'completed'
         except (ValueError, TypeError, KeyError, OSError, RuntimeError) as error:

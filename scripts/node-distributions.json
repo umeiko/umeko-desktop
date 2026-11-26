@@ -1,10 +1,10 @@
 {
-  "version": "22.23.3",
-  "baseUrl": "https://nodejs.org/dist/v22.23.3/",
+  "version": "24.19.0",
+  "baseUrl": "https://nodejs.org/dist/v24.19.0/",
   "platforms": {
-    "windows-x64": {"name": "node-v22.23.3-win-x64.zip", "sha256": "2b0ff57b049cda1bbcea2240eec20467018713c1efe1f7360c2681859b90ed71"},
-    "linux-x64": {"name": "node-v22.23.3-linux-x64.tar.gz", "sha256": "1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af"},
-    "macos-arm64": {"name": "node-v22.23.3-darwin-arm64.tar.gz", "sha256": "23b25245dcfb9af7262f8ff142e9e2e0af025368117329e7a7458a51e5922f53"},
-    "macos-x64": {"name": "node-v22.23.3-darwin-x64.tar.gz", "sha256": "8a677b0219178efd6eb0e475457c4afb452b521a92f6e67845a73bd85727f2a8"}
+    "windows-x64": {"name": "node-v24.19.0-win-x64.zip", "sha256": "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73"},
+    "linux-x64": {"name": "node-v24.19.0-linux-x64.tar.gz", "sha256": "f625d97cd707df4ff96254916fbc5ff014f09c09effe5a1e0ca8f6d41a8789d4"},
+    "macos-arm64": {"name": "node-v24.19.0-darwin-arm64.tar.gz", "sha256": "8294b7aa9b03997481c06babf1e8b270c859358f27da57a11509afe537ac381d"},
+    "macos-x64": {"name": "node-v24.19.0-darwin-x64.tar.gz", "sha256": "d1b5e999db158c62fe8f7267a4476b035d8bd93b1a605bac24a3f0dd166e3316"}
   }
 }

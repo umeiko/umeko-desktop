@@ -34,7 +34,15 @@ class PackageChangesTests(unittest.TestCase):
                            env=env,check=True,capture_output=True,text=True)
             values=dict(line.split('=',1) for line in output.read_text().splitlines())
             self.assertEqual(values['packages'],'true')
+            manifest=json.loads((ROOT/'scripts/node-distributions.json').read_text(encoding='utf-8'))
+            self.assertEqual(values['node_version'],manifest['version'])
             self.assertEqual(json.loads(values['matrix'])['include'][0]['platform'],'windows-x64')
+
+    def test_bundled_node_change_requests_native_packages_on_all_platforms(self):
+        self.assertTrue(scope.needs_packages(['scripts/node-distributions.json']))
+        platforms = scope.package_matrix('pull_request', '', node_changed=True)['include']
+        self.assertEqual({row['platform'] for row in platforms},
+                         {'windows-x64', 'linux-x64', 'macos-arm64', 'macos-x64'})
 
     def test_source_and_test_changes_keep_the_light_path(self):
         for path in ('app/controller.py','app/qml/Main.qml','app/qml/markdown.js','runtime/bridge.mjs',
@@ -86,6 +94,8 @@ export -f unit_tests dbus-run-session gnome-keyring-daemon flock rm
                 (root/'scripts/ci-ui-smokes.bash').write_text(runner,encoding='utf-8',newline='\n')
                 python=root/'.venv/bin/python';python.parent.mkdir(parents=True)
                 python.write_text('#!/usr/bin/env bash\n'
+                    '[[ "$1" == "-X" && "$2" == "faulthandler" ]] || exit 99\n'
+                    'shift 2\n'
                     'printf "%s\\n" "$XDG_DATA_HOME" "$DBUS_SESSION_BUS_ADDRESS" "$PI_CODING_AGENT_DIR" '
                     '"$UMEKO_DATA_DIR" "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" > "${1##*/}.env"\n'
                     'exit "$UI_STATUS"\n',encoding='utf-8',newline='\n')

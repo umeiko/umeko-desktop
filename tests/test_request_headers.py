@@ -106,7 +106,15 @@ class RequestHeaderTests(unittest.TestCase):
 
     def test_generation_and_poll_headers_external_download_isolation(self):
         self.store.data['requestHeaders'] = self.policy()
-        self.store.data['multimodal'] = {kind:{'providerId':'fixture','model':'actual','voice':'voice'} for kind in ('image','speech','video')}
+        self.store.data['providers'].extend([
+            {'id':'fixture-image','name':'Fixture Image','api':'image','presetId':'openai-image','imageProtocol':'openai',
+             'baseUrl':self.base+'/v1','key':'fixture-key','proxy':{'mode':'direct'},'models':[],'imageModels':['actual']},
+            {'id':'fixture-speech','name':'Fixture Speech','api':'speech','presetId':'openai-speech',
+             'baseUrl':self.base+'/v1','key':'fixture-key','proxy':{'mode':'direct'},'models':[],'generationModels':['actual']},
+            {'id':'fixture-video','name':'Fixture Video','api':'video','presetId':'openai-video',
+             'baseUrl':self.base+'/v1','key':'fixture-key','proxy':{'mode':'direct'},'models':[],'generationModels':['actual']},
+        ])
+        self.store.data['multimodal'] = {kind:{'providerId':'fixture-' + kind,'model':'actual','voice':'voice'} for kind in ('image','speech','video')}
         for kind,body in [('image',{'prompt':'test'}),('speech',{'text':'test'}),('video',{'prompt':'test'})]:
             start = len(self.calls)
             result = generate(self.gateway, {'kind':kind,**body},poll_interval=.01)

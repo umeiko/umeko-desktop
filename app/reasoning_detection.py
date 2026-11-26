@@ -1,9 +1,7 @@
-"""Reasoning effort configuration, explicit metadata, and bounded API discovery.
+"""Reasoning settings and bounded, effect-based discovery without model guesses.
 
-There are no model-name guesses here. Probe results describe values accepted by
-an API; accepting the deliberately invalid value warns that the API may ignore
-the parameter. A caller supplies the small request and preserves its old cache
-if discovery fails for reasons unrelated to effort validation.
+OpenAI-compatible discovery measures one arithmetic probe. Legacy acceptance
+discovery remains available for native protocols and unobservable fallback menus.
 """
 from __future__ import annotations
 
@@ -288,7 +286,7 @@ def _level_result(probe, format: str, first: tuple[bool, object]) -> dict:
     return result
 
 
-def detect_model(request: Callable[[str, str, int], object], advertised_levels=None,
+def detect_model_legacy(request: Callable[[str, str, int], object], advertised_levels=None,
                  manual_levels=None, manual_format=None, protocol="openai",
                  caps=(1, 4, 16)) -> dict:
     """Discover independent effort acceptance and observable thinking controls.
@@ -468,3 +466,356 @@ def detect_model(request: Callable[[str, str, int], object], advertised_levels=N
         final_first = first if final_format == initial else probe(_INVALID_EFFORT, final_format, 1)
         levels = _level_result(probe, final_format, final_first)
     return {"levels": levels, "format": format_result}
+
+
+PROBE_QUESTION = (
+    "A box has 17 red and 9 blue balls. You add 8 red balls, then remove 6 red "
+    "and 4 blue balls. How many balls remain? Reply with only the integer."
+)
+PROBE_ANSWER = 24
+EFFECT_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+MAX_EFFECT_REQUESTS = 26
+
+
+def probe_answer_correct(answer: object) -> bool:
+    """Require the requested numeric final answer, allowing simple whitespace."""
+    return isinstance(answer, str) and bool(re.fullmatch(r"\s*24(?:\.0+)?\s*[.!]?\s*", answer))
+
+
+def _amount(value: object) -> tuple[str | None, float | int | None]:
+    if not isinstance(value, Mapping):
+        return None, None
+    tokens = value.get("reasoningTokens")
+    chars = value.get("thinkingChars")
+    # Some compatible servers report zero usage even while emitting visible
+    # reasoning. Preserve that positive observation using its character proxy.
+    valid_chars = isinstance(chars, (int, float)) and not isinstance(chars, bool) and chars >= 0
+    if (isinstance(tokens, (int, float)) and not isinstance(tokens, bool) and tokens >= 0
+            and not (tokens == 0 and valid_chars and chars > 0)):
+        return "reasoningTokens", tokens
+    if valid_chars:
+        return "thinkingChars", chars
+    return None, None
+
+
+def _effect_thinking(value: object) -> bool:
+    metric, amount = _amount(value)
+    return bool((metric and amount > 0) or (isinstance(value, Mapping)
+                and value.get("thinking") is True))
+
+
+def _correct(value: object) -> bool:
+    return isinstance(value, Mapping) and (
+        value.get("correct") is True if "correct" in value
+        else probe_answer_correct(value.get("answer")))
+
+
+def _different(left: dict, right: dict) -> bool:
+    """Observed difference on this probe, without a strength or stability claim.
+
+    Zero versus positive identifies a switch even if usage is missing on off.
+    Positive amounts are comparable only when they use the same metric.
+    """
+    metric, a = _amount(left)
+    other, b = _amount(right)
+    if metric is None or other is None:
+        return False
+    if (a == 0) != (b == 0):
+        return True
+    if metric != other:
+        return False
+    return a != b
+
+
+def detect_model(request: Callable[[str, str, int], object], advertised_levels=None,
+                 manual_levels=None, manual_format=None, protocol="openai",
+                 caps=(512,)) -> dict:
+    """Measure real effects, caching identical wire requests (maximum 26 calls).
+
+    Every callback uses PROBE_QUESTION through its caller. HTTP acceptance never
+    verifies a level. Native effort and nested effort are measured separately;
+    pure switches expose only one representative, ``high``. Raw observations,
+    correctness and rejected styles are retained. Metadata supplies custom names
+    but is not evidence of effect. Manual names and formats remain authoritative.
+    """
+    if protocol != "openai":
+        native_cache, native_evidence = {}, []
+
+        def native_request(effort, style, cap):
+            params = format_parameters(style, effort)
+            key = json.dumps([params, cap], sort_keys=True)
+            if key not in native_cache:
+                try:
+                    value = request(effort, style, cap)
+                    native_cache[key] = True, value
+                except Exception as error:
+                    native_cache[key] = False, error
+                ok, value = native_cache[key]
+                metric, amount = _amount(value) if ok else (None, None)
+                native_evidence.append({"format": style, "level": effort,
+                    "parameters": params, "outputCap": cap, "accepted": ok,
+                    "metric": metric, "reasoningAmount": amount,
+                    "correct": _correct(value) if ok else False,
+                    **(dict(value) if ok and isinstance(value, Mapping) else
+                       {"error": _error_text(value)[:500]} if not ok else {})})
+            ok, value = native_cache[key]
+            if not ok:
+                raise value
+            return value
+
+        result = detect_model_legacy(native_request, advertised_levels, manual_levels,
+                                     manual_format, protocol, caps)
+        if not result["format"].get("onObserved"):
+            result["levels"]["verified"] = False
+        for part in result.values():
+            part.update(evidenceVersion=1, requestCount=len(native_cache), evidence=native_evidence)
+        return result
+    if manual_format is not None and not valid_format(manual_format):
+        raise ValueError("Unknown thinking format")
+    if not caps or any(not isinstance(cap, int) or isinstance(cap, bool) or cap < 1 for cap in caps):
+        raise ValueError("Output caps must be positive integers")
+    cap = max(512, max(caps))
+    cache: dict[str, tuple[bool, object]] = {}
+    raw: list[dict] = []
+    blocked: list[str] = []
+    degrading: list[dict] = []
+    insufficient: list[dict] = []
+    on_attempts, off_attempts, tried = [], [], []
+    effort_facts = {}
+
+    def probe(effort, style):
+        params = format_parameters(style, effort)
+        key = json.dumps(params, sort_keys=True)
+        if key not in cache:
+            if len(cache) >= MAX_EFFECT_REQUESTS:
+                return False, ValueError("Probe request budget exhausted")
+            try:
+                value = request(effort, style, cap)
+                cache[key] = True, value
+            except Exception as error:
+                cache[key] = False, error
+                status = getattr(error, "status_code", None)
+                if (status in (401, 403, 408, 429) or isinstance(status, int) and status >= 500
+                        or _UNRELATED.search(_error_text(error))):
+                    blocked.append(_error_text(error)[:500])
+        ok, value = cache[key]
+        if not any(item["parameters"] == params for item in raw):
+            metric, amount = _amount(value) if ok else (None, None)
+            item = {"level": effort, "format": style, "parameters": params,
+                    "metric": metric, "reasoningAmount": amount,
+                    "correct": _correct(value) if ok else False,
+                    "accepted": ok, "outputCap": cap}
+            if ok and isinstance(value, Mapping):
+                item.update({name: value.get(name) for name in (
+                    "reasoningTokens", "thinkingChars", "answer", "finishReason", "thinking", "content")})
+            elif not ok:
+                item["error"] = _error_text(value)[:500]
+            raw.append(item)
+        return ok, value
+
+    baseline_ok, baseline = probe("off", "openai")
+    base_thinking = _effect_thinking(baseline) if baseline_ok else False
+
+    def reject(style, reason):
+        if not any(row["format"] == style and row["reason"] == reason for row in degrading):
+            degrading.append({"format": style, "reason": reason})
+
+    def unsafe(style, effort, value):
+        reason = None
+        if baseline_ok and _correct(baseline) and not _correct(value):
+            if isinstance(value, Mapping) and value.get("finishReason") in ("length", "max_tokens"):
+                insufficient.append({"format": style, "level": effort,
+                    "reason": "probe output truncated before a correct numeric answer"})
+                return True
+            reason = "correct baseline became incorrect or lost its numeric answer"
+        elif base_thinking and effort != "none" and not _effect_thinking(value):
+            reason = "enabling thinking removed the baseline reasoning"
+        if reason:
+            reject(style, reason)
+        return reason is not None
+
+    def measure(style, efforts):
+        if style not in tried:
+            tried.append(style)
+        rows = []
+        facts = effort_facts.setdefault(style, {"accepted": [], "enum": None})
+        for effort in efforts:
+            ok, value = probe(effort, style)
+            metric, amount = _amount(value) if ok else (None, None)
+            attempt = {"format": style, "effort": effort, "outputCap": cap,
+                       "status": "rejected" if not ok else "thinking" if _effect_thinking(value)
+                       else "not-observable", "thinkingObserved": ok and _effect_thinking(value),
+                       "ordinaryContentObserved": ok and _correct(value),
+                       "reasoningAmount": amount, "metric": metric}
+            if not ok:
+                attempt["error"] = _error_text(value)[:500]
+            on_attempts.append(attempt)
+            if ok:
+                facts["accepted"].append(effort)
+                if effort != "none" and unsafe(style, effort, value):
+                    return []
+                if _correct(value):
+                    rows.append((effort, value))
+            elif blocked:
+                break
+            else:
+                enum = allowed_levels(value)
+                if enum is not None:
+                    facts["enum"] = enum
+                    for custom in enum:
+                        if custom not in efforts and custom != "off" and len(efforts) < 10:
+                            efforts.append(custom)
+                if _parameter_unsupported(value):
+                    break
+        return rows
+
+    declared = (metadata_levels(advertised_levels) if isinstance(advertised_levels, Mapping)
+                else _canonical_levels(advertised_levels) if advertised_levels is not None else [])
+    efforts = list(manual_levels) if manual_levels is not None else list(EFFECT_EFFORTS)
+    if manual_levels is None:
+        efforts.extend(value for value in (declared or []) if value not in efforts)
+    efforts = efforts[:10]
+    selected, selected_rows, selected_off = None, [], None
+
+    def off_for(style):
+        ok, value = probe("off", style)
+        if ok and baseline_ok and _correct(baseline) and not _correct(value):
+            if isinstance(value, Mapping) and value.get("finishReason") in ("length", "max_tokens"):
+                insufficient.append({"format": style, "level": "off",
+                    "reason": "off probe output truncated before a correct numeric answer"})
+            else:
+                reject(style, "off control changed a correct baseline to an incorrect or missing numeric answer")
+        disabled = ok and _correct(value) and not _effect_thinking(value) and _amount(value)[0] is not None
+        off_attempts.append({"format": style, "parameters": format_parameters(style, "off"),
+            "status": "disabled" if disabled else "still-thinking" if ok and _effect_thinking(value)
+            else "not-observable" if ok else "rejected", "thinkingObserved": ok and _effect_thinking(value),
+            "ordinaryContentObserved": ok and _correct(value), "outputCap": cap,
+            **({"error": _error_text(value)[:500]} if not ok else {})})
+        return disabled, value
+
+    def effective(rows, off):
+        return any(_effect_thinking(value) and _different(value, off)
+                   for effort, value in rows if effort != "none")
+
+    if baseline_ok and not blocked:
+        styles = [manual_format] if manual_format else ["openai-none", "qwen-switch",
+            "reasoning-switch", "deepseek-switch", "template-thinking", "chat-template", "qwen", "deepseek"]
+        for style in styles:
+            pure = style in ("qwen-switch", "reasoning-switch", "deepseek-switch", "template-thinking")
+            choices = [efforts[0] if manual_levels else "high"] if pure and (efforts or manual_levels is None) else list(efforts)
+            if not pure and style in ("qwen", "deepseek") and manual_levels is None:
+                choices = ["high"]
+            rows = measure(style, choices)
+            if blocked:
+                break
+            disabled, off = off_for(style)
+            # Keep measured native grades while independently finding an off
+            # control. A later boolean wire can disable thinking even when its
+            # on request does not implement the native vocabulary.
+            if selected and disabled and effective(selected_rows, off):
+                selected_off = style
+                break
+            if any(item["format"] == style for item in degrading):
+                continue
+            if disabled and effective(rows, off):
+                selected, selected_rows, selected_off = style, rows, style
+                break
+            # An always-thinking model can still expose measured effort levels.
+            if not selected and not pure and rows and any(_different(a, b) for _, a in rows for _, b in rows):
+                selected, selected_rows = style, rows
+
+    level_verified, level_status, uncertainty = False, "unconfirmed", None
+    if selected:
+        positive = [(effort, *_amount(value)) for effort, value in selected_rows
+                    if effort != "none" and _amount(value)[1] is not None and _amount(value)[1] > 0]
+        positive_amounts = {(metric, amount) for _, metric, amount in positive}
+        canonical = sorted((row for row in positive if row[0] in EFFECT_EFFORTS),
+                           key=lambda row: EFFECT_EFFORTS.index(row[0]))
+        comparable = bool(canonical) and len({metric for _, metric, _ in canonical}) == 1
+        monotonic = comparable and all(a[2] <= b[2] for a, b in zip(canonical, canonical[1:]))
+        pure_selected = selected in ("qwen-switch", "reasoning-switch", "deepseek-switch", "template-thinking")
+        if pure_selected or len(positive_amounts) == 1 and selected_off:
+            level_verified, level_status = True, "toggle-observed"
+        elif comparable and not monotonic:
+            level_status = "non-monotonic"
+            uncertainty = "One-probe reasoning amounts do not increase consistently with named effort; graded effects are unconfirmed."
+        elif monotonic and len({amount for _, _, amount in canonical}) >= 2:
+            level_verified, level_status = True, "graded-observed"
+        else:
+            uncertainty = "The probe did not establish comparable, ordered differences between positive effort levels."
+
+    groups: list[list[tuple[str, dict]]] = []
+    for effort, value in selected_rows:
+        group = next((group for group in groups if all(_amount(value) == _amount(other)
+                     for _, other in group)), None)
+        if group is None:
+            groups.append([(effort, value)])
+        else:
+            group.append((effort, value))
+    # Off responses often omit token usage and fall back to zero characters.
+    # Zero is always the first amount; metric names must not make it strongest.
+    if level_status == "non-monotonic":
+        groups.sort(key=lambda group: min(_RANK.get(effort, len(_RANK)) for effort, _ in group))
+    else:
+        groups.sort(key=lambda group: ((_amount(group[0][1])[1] or 0) != 0,
+            _amount(group[0][1])[0] or "", _amount(group[0][1])[1] or 0))
+    representatives, aliases = [], {}
+    for group in groups:
+        names = [effort for effort, _ in group]
+        representative = "high" if "high" in names else names[-1]
+        representatives.append(representative)
+        aliases.update({name: representative for name in names})
+
+    observable = any((item.get("reasoningAmount") or 0) > 0 or item.get("thinking") is True for item in raw)
+    verified = bool(selected and selected_off)
+    fallback_style = None
+    if manual_levels is not None:
+        level_result = {"state": "known", "source": "manual", "levels": list(manual_levels),
+                        "verified": False, "levelStatus": "manual"}
+    elif selected:
+        level_result = {"state": "known", "source": "effect", "levels": representatives,
+                        "verified": level_verified, "levelStatus": level_status}
+        if uncertainty:
+            level_result["uncertaintyReason"] = uncertainty
+    else:
+        # An unobservable provider retains a clearly unverified compatibility
+        # menu from this run's actual schema facts, without sampling again.
+        # Observable but ignored/degrading controls never invent levels.
+        fallback = []
+        if not observable:
+            if advertised_levels is not None and declared is not None:
+                fallback = list(declared)
+            else:
+                for style, facts in effort_facts.items():
+                    if style in ("qwen-switch", "reasoning-switch", "deepseek-switch", "template-thinking"):
+                        continue  # A boolean switch supplies no effort enum.
+                    if any(item["format"] == style for item in degrading):
+                        continue
+                    if facts["enum"] is not None or facts["accepted"]:
+                        fallback = list(facts["enum"] if facts["enum"] is not None else facts["accepted"])
+                        fallback_style = "openai" if style == "openai-none" else style
+                        break
+        level_result = {"state": "known", "source": "fallback" if not observable else "effect",
+                        "levels": fallback,
+                        "verified": False}
+    format_result = {"state": "known", "source": "manual" if manual_format else "effect",
+        "format": manual_format or selected or fallback_style or "openai", "verified": verified,
+        "offVerified": bool(selected_off), "offSupported": bool(selected_off),
+        "offFormat": selected_off, "offObserved": bool(selected_off),
+        "onObserved": bool(selected), "onEffort": next((x for x in reversed(representatives) if x != "none"), "high"),
+        "status": "on-off-verified" if selected_off else "cannot-disable" if selected else "on-not-observable",
+        "formatsTried": tried, "onAttempts": on_attempts, "offSwitchesTried": off_attempts,
+        "degradingStyles": degrading, "insufficientEvidence": insufficient,
+        "outputCap": cap, "evidenceVersion": 1,
+        "verificationScope": "One arithmetic probe; only equal amounts in the same metric are merged. Observed amounts do not establish stable strength rankings."}
+    if manual_format and not selected:
+        format_result["offSupported"] = None
+    if blocked or not baseline_ok:
+        error = blocked[0] if blocked else _error_text(baseline)
+        level_result.update(state="failed", levels=[], verified=False, error=error)
+        format_result.update(state="failed", status="unknown", verified=False,
+                             offVerified=False, offSupported=None, error=error)
+    count = len(cache)
+    level_result.update(evidence=raw, aliases=aliases, requestCount=count, evidenceVersion=1)
+    format_result.update(requestCount=count, evidence=raw)
+    return {"levels": level_result, "format": format_result}

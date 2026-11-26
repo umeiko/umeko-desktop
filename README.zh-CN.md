@@ -25,12 +25,12 @@
 
 <!-- umeko-downloads:standard:start -->
 
-**下载 v0.7.8 · 点击下载**
+**下载 v0.7.9 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.8/Umeko-0.7.8-windows-x64-bdfe904.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.8/Umeko-0.7.8-macos-arm64-bdfe904.dmg)
-[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.8/Umeko-0.7.8-macos-x64-bdfe904.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.8/Umeko-0.7.8-linux-x64-bdfe904.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.9/Umeko-0.7.9-windows-x64-ea95e03.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.9/Umeko-0.7.9-macos-arm64-ea95e03.dmg)
+[![macOS Intel DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-x64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.9/Umeko-0.7.9-macos-x64-ea95e03.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.9/Umeko-0.7.9-linux-x64-ea95e03.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 
@@ -141,6 +141,17 @@ bash Start-Umeko.sh
 Windows 使用 `./build.ps1`，macOS/Linux 使用 `bash build.sh` 打包。CI 在各平台的原生环境中构建，检查打包后的应用再上传。
 
 [构建详情](docs/user-guide.md#build) · [测试方法](docs/user-guide.md#validation) · [CI 流水线](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml)
+
+## CLI 实验版
+
+从源码运行 `./setup.sh` 后，将仓库目录加入 PATH。在目标工作目录执行 `umeko` 即可聊天，`umeko desktop` 打开桌面窗口。两者共用同一个 Umeko 配置和会话。
+
+- `umeko session list` 列出会话，`umeko chat --resume <id>` 继续会话。
+- 生成期间，`Enter` 排队，`Ctrl+S` 优先介入，`Ctrl+Q` 保持排队，`Ctrl+C` 停止本轮。`Ctrl+B` 展开只读子智能体状态。
+- 输入 `/` 可选择 `/models` 或 `/compact [说明]`。`/models` 支持搜索模型，按方向键选择模型与思考强度，并提供新增常见、自定义 API 或 ZIP 供应商的入口。ZIP 导入后的登录在桌面端完成。`/compact` 在忙碌时排队。
+- 普通滚轮浏览终端滚动历史。`PgUp` 进入历史视图，`Ctrl+End` 返回最新输出，`Ctrl+O` 展开思考和工具详情。
+- `umeko provider install <plugin.zip>` 导入供应商 ZIP 并返回账号 ID。用 `umeko provider config <id> <config.json>` 更新插件配置。普通供应商用 `umeko provider save <config.json>`，配置包含 `name`、`api`、`baseUrl`、`keyEnv` 以及 `models`（每项为 `upstream` 和 `alias`）。`keyEnv` 引用调用端的环境变量。
+- ACP 编辑器可以配置该可执行文件并传入 `acp` 参数。预览版使用 stdio 和文本提示，`mcpServers` 使用空数组。
 
 ## 致谢
 

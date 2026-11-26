@@ -31,7 +31,7 @@ class ToolPermissionTests(unittest.TestCase):
         backend.store = Store(self.directory / "profile")
         backend.store.data["ui"]["language"] = "en"
         backend.adapter = object()
-        backend._view = SimpleNamespace(key="current", busy=True, process=object(), global_agent="")
+        backend._view = SimpleNamespace(key="current", busy=True, process=object(), global_agent="", cowork="")
         background = SimpleNamespace(key="background", busy=True, process=object())
         unloaded = SimpleNamespace(key="unloaded", busy=False, process=None)
         backend._pool = SimpleNamespace(records={r.key: r for r in (backend._view, background, unloaded)},

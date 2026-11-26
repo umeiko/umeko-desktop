@@ -146,6 +146,34 @@ class DesktopPreferencesTests(unittest.TestCase):
             finally:
                 record.process = None; record.phase = 'idle'; controller.close()
 
+    def test_team_switch_disables_saved_roles_without_discarding_them(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR': temp}):
+            controller = Controller(ROOT)
+            try:
+                view = controller._view
+                view.draft_model_roles = {'planningModel': 'planned-before-upgrade'}
+                self.assertEqual(controller.sessionModelRoles, {})
+                self.assertFalse(controller.selectRoleModel('planningModel', ''))
+                board = controller.desktopPlugins.global_agents.team_board
+                with self.assertRaisesRegex(ValueError, '开启团队协作'):
+                    board.execute('team_members', {})
+                self.assertTrue(controller.saveDesktopSettings('{"teamCollaborationEnabled":true}'))
+                self.assertEqual(controller.sessionModelRoles, view.draft_model_roles)
+                bus = controller.desktopPlugins.global_agents
+                member = {'id': 'fixture-member', 'name': 'Reviewer', 'model': 'prior'}
+                bus.agents[member['id']] = member
+                routes = [{'id': 'replacement', 'providerID': 'fixture'}]
+                with patch.object(controller.gateway, 'models', return_value=routes):
+                    self.assertTrue(controller.selectRoleModel('executionModel', 'replacement'))
+                    self.assertTrue(controller.selectTeamMemberModel(member['id'], 'replacement'))
+                    self.assertEqual(controller.teamMemberModels, [{'id': member['id'], 'name': member['name'], 'model': 'replacement'}])
+                self.assertTrue(controller.saveDesktopSettings('{"teamCollaborationEnabled":false}'))
+                self.assertEqual(controller.sessionModelRoles, {})
+                self.assertEqual(view.draft_model_roles,
+                                 {'planningModel': 'planned-before-upgrade', 'executionModel': 'replacement'})
+            finally:
+                controller.close()
+
     def test_auto_delivery_policy_does_not_remove_cards_or_affect_manual_actions(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'UMEKO_DATA_DIR':temp}):
             controller = Controller(ROOT)

@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createJiti } from "jiti";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { createInputQueue } from "./input-queue.mjs";
 
@@ -153,7 +153,7 @@ export function subagentTool(previous, channel, event, record = {}, invocation =
   };
 }
 
-export function createSubagentExtension({ emit, loadPackage, restoreSession, getParentRun } = {}) {
+export function createSubagentExtension({ emit, loadPackage, restoreSession, getParentRun, getCowork } = {}) {
   const calls = new AsyncLocalStorage();
   const rows = new Map();
   const parentRuns = new Map();
@@ -427,6 +427,11 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
         subagentId: "subagent:" + event.id });
     }
     const tool = subagentTool(previous?.tool, channel, event, record, scope?.args);
+    const role = getCowork?.()?.subagents?.find(row => row.id === tool.subagent.type);
+    if (role) {
+      tool.subagent.profileName = role.name;
+      tool.subagent.character ??= role.character || "";
+    }
     if (channel === "resuming") tool.subagent.avatarSlot = ensureSlot(event.id);
     if (!Number.isInteger(tool.subagent.avatarSlot)) tool.subagent.avatarSlot = ensureSlot(event.id);
     if (record.avatarSlot !== undefined) tool.subagent.avatarSlot = record.avatarSlot;
@@ -460,21 +465,27 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     }
   }
 
-  async function extension(pi) {
+  async function extension(pi, { worktrees = false } = {}) {
     dispose(); api = pi;
     hook = (session,options) => observe(session,options);
     globalThis[sessionHook] = hook;
     const loaded = loadPackage ? await loadPackage() : await (async () => {
       // Keep generated TypeScript cache out of the signed/read-only app bundle.
-      const cache = join(process.env.PI_CODING_AGENT_DIR || join(homedir(),".pi","agent"),"cache","umeko-subagents");
+      const cowork = getCowork?.();
+      const cache = join(process.env.PI_CODING_AGENT_DIR || join(homedir(),".pi","agent"),"cache",cowork ? "umeko-cowork-subagents" : "umeko-subagents");
       const jiti = createJiti(import.meta.url, { moduleCache: false, tryNative: false, fsCache:cache,
-        alias: { "#src/settings": fileURLToPath(new URL("./subagent-settings.mjs", import.meta.url)), "@earendil-works/pi-coding-agent": fileURLToPath(new URL("./subagent-sdk.mjs", import.meta.url)) } });
+        alias: { "#src/settings": fileURLToPath(new URL("./subagent-settings.mjs", import.meta.url)),
+          ...(cowork ? { "#src/config/custom-agents": fileURLToPath(new URL("./cowork-subagents.mjs", import.meta.url)) } : {}),
+          "@earendil-works/pi-coding-agent": fileURLToPath(new URL("./subagent-sdk.mjs", import.meta.url)) } });
       const root = new URL("../", import.meta.resolve("@gotgenes/pi-subagents"));
       const factory = await jiti.import(fileURLToPath(new URL("index.ts", root)), { default: true });
       const service = await jiti.import("@gotgenes/pi-subagents");
       const { AskParentTool } = await jiti.import(fileURLToPath(new URL("session/ask-parent-tool.ts",root)));
       const { NotifyParentTool } = await jiti.import(fileURLToPath(new URL("session/notify-parent-tool.ts",root)));
-      return { factory, getService: service.getSubagentsService,
+      const worktreeFactory = worktrees
+        ? await jiti.import(fileURLToPath(import.meta.resolve("@gotgenes/pi-subagents-worktrees")), { default: true })
+        : undefined;
+      return { factory, worktreeFactory, getService: service.getSubagentsService,
         resumeTools:report=>[new AskParentTool(report).toToolDefinition(),new NotifyParentTool(report).toToolDefinition()] };
     })();
     getService = loaded.getService;
@@ -500,6 +511,10 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
         return tool => {
           if (tool.name !== "subagent") return target.registerTool(tool);
           target.registerTool({ ...tool, execute: async (toolCallId, args, signal, onUpdate, ctx) => {
+            const cowork = getCowork?.();
+            const profile = cowork?.subagents?.find(row => row.id === args.subagent_type);
+            if (cowork && !profile) return {isError:true, content:[{type:"text",text:"Select a subagent enabled for this coworker."}]};
+            if (profile) args = {...args, inherit_context: profile.context === "chat"};
             const ownerEntryId = ctx.sessionManager?.getBranch().find(entry => entry.type === "message" &&
               Array.isArray(entry.message.content) && entry.message.content.some(block => block.type === "toolCall" && block.id === toolCallId))?.id;
             const scope = { toolCallId, args, ownerEntryId, parentRun:getParentRun?.() };
@@ -533,6 +548,17 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     }));
     const service = getService?.();
     getService = () => service;
+    if (loaded.worktreeFactory) {
+      const path = join(process.env.PI_CODING_AGENT_DIR, "subagents-worktrees.json");
+      try {
+        writeFileSync(path, JSON.stringify({ worktreeAgents: ["general-purpose"] }, null, 2) + "\n", { flag: "wx" });
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+      loaded.worktreeFactory(new Proxy(pi, {
+        get(target, name) { return name === "registerCommand" ? () => {} : target[name]; },
+      }));
+    }
   }
   function automaticTool(sessionId,event) {
     const owner = [...sessions].find(([_id,value]) => value.session.sessionManager.getSessionId() === sessionId);

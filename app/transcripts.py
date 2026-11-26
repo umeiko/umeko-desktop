@@ -9,6 +9,12 @@ from uuid import UUID
 from .chatbox import result_media
 
 
+def patch_files(value):
+    if not isinstance(value, list):
+        return []
+    return [item['path'] for item in value if isinstance(item, dict) and isinstance(item.get('path'), str)]
+
+
 def tool_view(tool_id, name, arguments, cwd, result=None):
     details = result.get('details') if isinstance(result, dict) else None
     if name == 'analyze_image' and isinstance(details, dict) and details.get('model'):
@@ -24,6 +30,8 @@ def tool_view(tool_id, name, arguments, cwd, result=None):
         "result": content_text(result.get("content", []))[:8192] if result else ""}
     media = result_media(name, result)
     if media: row["media"] = media
+    if name == 'apply_patch' and row['state'] == 'done' and isinstance(details, dict):
+        row['patchFiles'] = patch_files(details.get('patchFiles'))
     return row
 
 
@@ -163,6 +171,16 @@ def present(entries, cwd, active_compactions=()):
         thinking = content_thinking(content)
         text = text or ("" if message.get("stopReason") == "aborted" else message.get("errorMessage", ""))
         role = message.get("role", "")
+        if role == "bashExecution":
+            command, output = message.get("command", ""), message.get("output", "")
+            identifier = entry["id"]
+            status = "interrupted" if message.get("cancelled") else "done" if message.get("exitCode") == 0 else "error"
+            tree.append({"id": identifier, "role": role, "text": command[:80]})
+            messages.append({"role": "assistant", "text": "", "entryId": identifier,
+                             "timestamp": message.get("timestamp") or entry.get("timestamp"),
+                             "tools": [{"id": identifier, "name": "bash", "arguments": {"command": command},
+                                        "path": "", "state": status, "result": output[:8192]}]})
+            continue
         tree.append({"id": entry["id"], "role": role, "text": text[:80]})
         calls = [block for block in content if isinstance(block, dict) and block.get("type") == "toolCall"] if isinstance(content, list) else []
         if role in ("user", "assistant") and (text or thinking or calls):

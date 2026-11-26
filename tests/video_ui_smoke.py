@@ -126,12 +126,16 @@ def run():
                 workspace.mkdir()
                 backend.store.data['workspace'] = str(workspace)
                 backend._view.workspace = str(workspace)
-                assert backend.saveProvider('', 'Test provider', 'openai',
+                assert backend.saveProvider('', 'Chat LLM', 'openai',
                     f'http://127.0.0.1:{server.server_port}/v1', 'local-test-key', json.dumps([{
                         'upstream': 'test-video-model', 'alias': 'test-video-model',
                         'reasoningLevels': [], 'reasoningLevelsAuto': False,
                         'reasoningFormat': 'openai', 'reasoningFormatAuto': False}]))
-                provider = backend.store.data['providers'][0]
+                backend.store.data['providers'][0]['proxy'] = {'mode': 'direct', 'url': ''}
+                assert backend.saveCustomMultimodalProvider('video', json.dumps({
+                    'name': 'Test provider', 'baseUrl': f'http://127.0.0.1:{server.server_port}/v1',
+                    'model': 'test-video-model', 'key': 'local-test-key'}))
+                provider = next(p for p in backend.store.data['providers'] if p['api'] == 'video')
                 provider['proxy'] = {'mode': 'direct', 'url': ''}
                 backend.changed.emit()
                 window.resize(1320, 2000)

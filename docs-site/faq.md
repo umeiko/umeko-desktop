@@ -6,7 +6,7 @@ Umeko 连接你自己配置的 API 或供应商插件，不附带模型账号或
 
 ## 和系统里的 pi 是同一个实例吗？ {#is-it-the-same-instance-as-my-system-pi}
 
-Umeko 使用完整的 Pi 内核，它内嵌在桌面会话中，模型连接来自桌面的供应商设置。系统全局 `pi` 有自己的版本和配置。让 Agent 用 `run_pi_command` 操作内嵌 Pi，管理终端也从应用内打开。见[扩展与 MCP](./guide/skills)。
+Umeko 使用完整的 Pi 内核，它内嵌在桌面会话中，模型连接来自桌面的供应商设置。系统全局 `pi` 有自己的版本和配置。让 Agent 用 `umeko_desktop` 的 `pi.run` 操作内嵌 Pi，管理终端也从应用内打开。见[扩展与 MCP](./guide/skills)。
 
 ## 为什么模型说不知道某个工具？ {#why-does-the-model-not-know-a-tool}
 

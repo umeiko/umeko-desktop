@@ -156,6 +156,25 @@ Item {
                         onOpenRequested: { root.multimodalOpen = true; settingsScroll.contentItem.contentY = 0 }
                         onBackRequested: { root.multimodalOpen = false; settingsScroll.contentItem.contentY = 0 }
                     }
+                    ItemDelegate {
+                        objectName: "modelGroupSettingsEntry"
+                        visible: !root.multimodalOpen; width: parent.width
+                        implicitHeight: Math.max(60, groupEntry.implicitHeight + 28)
+                        leftPadding: 20; rightPadding: 20
+                        background: Rectangle { radius: 10; color: parent.hovered ? Theme.hover : Theme.surface; border.color: Theme.line }
+                        contentItem: RowLayout {
+                            id: groupEntry; spacing: 12
+                            Glyph { name: "layers"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.muted }
+                            Text { text: I18n.t("模型组"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14) }
+                            HelpButton {
+                                objectName: "modelGroupHelp"
+                                help: I18n.t("启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。")
+                            }
+                            Item { Layout.fillWidth: true }
+                            Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
+                        }
+                        onClicked: root.openModelGroup(true)
+                    }
                     ProviderPluginsSection { visible: !root.multimodalOpen; width: parent.width }
                     SectionCard {
                         objectName: "commonProvidersSection"
@@ -201,25 +220,7 @@ Item {
                             }
                         }
                     }
-                    ItemDelegate {
-                        objectName: "modelGroupSettingsEntry"
-                        visible: !root.multimodalOpen; width: parent.width
-                        implicitHeight: Math.max(60, groupEntry.implicitHeight + 28)
-                        leftPadding: 20; rightPadding: 20
-                        background: Rectangle { radius: 10; color: parent.hovered ? Theme.hover : Theme.surface; border.color: Theme.line }
-                        contentItem: RowLayout {
-                            id: groupEntry; spacing: 12
-                            Glyph { name: "layers"; width: Theme.icon(20); height: Theme.icon(20); color: Theme.muted }
-                            Text { text: I18n.t("模型组"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14) }
-                            HelpButton {
-                                objectName: "modelGroupHelp"
-                                help: I18n.t("启用后可在聊天中选择模型组。遇到网络故障、限流或额度用尽时，会按顺序自动切换到下一个可用模型。")
-                            }
-                            Item { Layout.fillWidth: true }
-                            Glyph { name: "chevron-right"; width: Theme.icon(16); height: Theme.icon(16); color: Theme.muted }
-                        }
-                        onClicked: root.openModelGroup(true)
-                    }
+
                 }
                 Loader {
                     width: parent.width
@@ -242,8 +243,8 @@ Item {
                                 HelpButton { objectName: "mappingHelp"; help: I18n.t("左侧填写供应商的原始模型名称，右侧是聊天与 API 代理服务使用的别名。每个供应商可有多条映射，别名必须唯一。插件供应商的模型 ID 由模型发现提供。") }
                             }
                             ColumnLayout { visible: !root.mappingAccount; Layout.fillWidth: true; spacing: 8
-                                Text { font.family: Theme.fontFamily; visible: !backend.config.providers.some(p => p.api !== "image"); text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                                Repeater { model: backend.config.providers.filter(p => p.api !== "image")
+                                Text { font.family: Theme.fontFamily; visible: !backend.config.providers.some(p => !["image", "speech", "video"].includes(p.api)); text: I18n.t("添加供应商后设置模型别名"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+                                Repeater { model: backend.config.providers.filter(p => !["image", "speech", "video"].includes(p.api))
                                     ItemDelegate {
                                         required property var modelData
                                         objectName: "mappingProvider_" + modelData.id
@@ -252,7 +253,7 @@ Item {
                                         contentItem: RowLayout { spacing: 12
                                             ColumnLayout { id: providerLabel; Layout.fillWidth: true; spacing: 3
                                                 Text { font.family: Theme.fontFamily; text: modelData.name; textFormat: Text.PlainText; color: Theme.ink; font.pixelSize: Theme.font(12, visible); Layout.fillWidth: true; elide: Text.ElideRight }
-                                                Text { font.family: Theme.fontFamily; text: modelData.models.length + I18n.t(" 个模型"); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
+                                                Text { font.family: Theme.fontFamily; text: I18n.modelCount(modelData.models.length); color: Theme.muted; font.pixelSize: Theme.font(10, visible) }
                                             }
                                             Glyph { name: "chevron-right"; width: Theme.icon(18); height: Theme.icon(18); color: Theme.muted }
                                         }

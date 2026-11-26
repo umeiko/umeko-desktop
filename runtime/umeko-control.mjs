@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { prepareDocumentation } from './umeko-documents.mjs';
 import { CORE_TOOLS } from './session-capabilities.mjs';
+import { commandRuleOperation, isCommandRuleOperation } from './tool-permissions.mjs';
 
 export const UMEKO_TOOL = 'umeko_desktop';
 export const SEND_TO_USER = 'send_to_user';
@@ -14,11 +15,12 @@ export const coordinatorNativeTools = value => Array.isArray(value)
 let instanceDocs;
 export const umekoDocs = () => instanceDocs?.docsRoot || fileURLToPath(new URL('./umeko-docs/', import.meta.url));
 export const umekoHelp = () => ({...(instanceDocs || { docsRoot: umekoDocs(), entry: fileURLToPath(new URL('./umeko-docs/README.md', import.meta.url)) }),
-  topics:{plugins:'plugins.md',provider:'provider-plugins.md',widget:'widget-plugins.md',agents:'global-agents.md'}});
+  topics:{plugins:'plugins.md',provider:'provider-plugins.md',widget:'widget-plugins.md',agents:'global-agents.md',command_rules:'command-rules.md'}});
 export function configureUmekoDocs(options) { instanceDocs = prepareDocumentation(options); }
 export const UMEKO_PROMPT = 'umeko-desk 的临时文件存放在 ./.umeko 目录下。 Umeko owns providers, credentials, themes, desktop settings, projects and chats; Pi provider configuration does not apply. First call umeko_desktop operation help to discover its documentation. Discover enabled Widgets with widgets.list (activeOnly true) and read widgets.docs before using them. Apply desktop changes through umeko_desktop, not by editing its settings files.';
 
-export function createUmekoControl({ emit, timeoutMs = 90000, getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
+export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesContext, refreshShellEnvironment, remoteOperation, getSandbox,
+  getPetAssistantBinding = () => '', getPetReminderBinding = () => '', waitForSpeech = (ms, signal) => delay(ms, undefined, {signal}) }) {
   const pending = new Map();
   let speechTail = Promise.resolve(), speechLife = new AbortController();
   function cancellable(promise, signal) {
@@ -51,7 +53,7 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getPetAssistantBin
     },
     response(event) { finish(event.id, null, event.result); },
     clear() { for (const id of [...pending.keys()]) finish(id, 'Umeko connection closed');speechLife.abort();speechLife=new AbortController();speechTail=Promise.resolve(); },
-    extension(pi) {
+    extension(pi, { runPiCommand, canRunPiCommand = () => false } = {}) {
       if (getPetAssistantBinding()) pi.registerTool({
         name: SEND_TO_USER, label: '告诉用户', exposure: 'direct',
         description: 'Speak through your bound desktop pet. For pet input, task briefs and notifications, reply here without repeating it in ordinary chat. Direct questions in the agent chat may use ordinary chat. Prefer 10–30 visible characters per call, at most 80. Longer replies may use multiple calls; each returns after a reading pause and concurrent calls are displayed in order. Stop on unavailable or binding_changed.',
@@ -93,10 +95,56 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getPetAssistantBin
       });
       pi.registerCommand('help', { description: 'Umeko documentation directory', handler: async (_args, ctx) => ctx.ui.notify(umekoDocs(), 'info') });
       pi.registerTool({ name: UMEKO_TOOL, label: '管理 Umeko', exposure: 'direct',
-        description: 'Inspect and configure this running Umeko desktop. Start with help for documentation; widgets.list and widgets.docs discover enabled Widgets and their interfaces. Queued or accepted operations are not completed.',
+        description: 'Inspect and configure this running Umeko desktop. Start with help for documentation; widgets.list and widgets.docs discover enabled Widgets and their interfaces. Queued or accepted operations are not completed.' +
+          (canRunPiCommand() ? ' Use pi.run with arguments.command (and optional scope: global or project) for commands in the embedded Pi session.' : ''),
         parameters: Type.Object({ operation: Type.String({ minLength: 1, maxLength: 80 }), arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
-        execute: async (_id, params, signal) => {
-          const result = await this.request(params.operation, params.arguments || {}, signal);
+        execute: async (id, params, signal, onUpdate, ctx) => {
+          const args = params.arguments || {};
+          const current = getSandbox?.();
+          const operations = params.operation === 'batch' && Array.isArray(args.operations) ? args.operations : [params];
+          const weakening = current?.enabled && operations.some(item => item?.operation === 'settings.setWindowsSandbox' &&
+            (item.arguments?.enabled === false || (!current.allowNetwork && item.arguments?.allowNetwork === true)));
+          if (weakening && !(await ctx?.ui?.confirm('Change Windows sandbox protection?', 'This change would allow future Agent commands to run with fewer restrictions.'))) {
+            return { content: [{ type: 'text', text: 'The user did not approve reducing Windows sandbox protection.' }], isError: true };
+          }
+          let result;
+          if (params.operation === 'pi.run') {
+            try {
+              if (!runPiCommand || !canRunPiCommand()) throw new Error('Pi commands are disabled in this session');
+              if (typeof args.command !== 'string' || Object.keys(args).some(key => key !== 'command' && key !== 'scope') ||
+                  ![undefined, '', 'global', 'project'].includes(args.scope))
+                throw new Error('pi.run requires command and accepts optional scope: global or project');
+              const command = args.command.trimStart();
+              if (command.startsWith('!')) {
+                const bash = command.slice(1).trimStart();
+                if (!bash || args.scope) throw new Error('Use pi.run with ! followed by a Bash command and omit scope.');
+                const { result, isError } = await ctx.executeTool('bash', { command: bash }, { signal, onUpdate });
+                const output = result.content.filter(item => item.type === 'text').map(item => item.text).join('\n');
+                const exitCode = result.structuredContent?.exit_code ?? null;
+                const commandSession = result.details?.commandSession;
+                const status = isError ? 'failed' : commandSession?.status ?? 'completed';
+                return { content: [{ type: 'text', text: JSON.stringify({ ok: !isError, status, exitCode, output }) }], details: result.details, isError };
+              }
+              const output = await runPiCommand(args.command, { signal, toolCallId: id, scope: args.scope || undefined }, ctx);
+              return { content: [{ type: 'text', text: JSON.stringify({ ok: true, ...output }) }], details: { umekoPiCommand: output } };
+            } catch (error) {
+              result = { ok: false, error: error.message };
+            }
+          } else if (params.operation === 'shell.refreshEnvironment' && refreshShellEnvironment) {
+            result = {ok: true, ...await refreshShellEnvironment(ctx)};
+          } else if (getCommandRulesContext && isCommandRuleOperation(params.operation)) {
+            try {
+              signal?.throwIfAborted();
+              const confirm = ctx.hasUI ? async (title, detail) => {
+                const value = await ctx.ui.confirm(title, detail);
+                signal?.throwIfAborted();
+                return value;
+              } : undefined;
+              result = {ok: true, operation: params.operation, ...await commandRuleOperation(params.operation, args, getCommandRulesContext(ctx), confirm)};
+            } catch (error) {
+              result = {ok: false, error: error.message};
+            }
+          } else result = await (remoteOperation?.(params.operation, args, signal, onUpdate) ?? this.request(params.operation, args, signal));
           return { content: [{ type: 'text', text: JSON.stringify(result) }], isError: result.ok === false };
         },
       });
@@ -115,7 +163,8 @@ export function coordinatorToolGate(event, {petAssistant = false, reminderAssist
        event.input?.operation === 'widgets.result')) return;
   if (event.toolName === UMEKO_TOOL && event.input?.operation === 'agent_bus.create')
     return { block: true, reason: 'Only ordinary session Agents may create global subagents. Global subagents cannot create other global subagents.' };
-  if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','agent_bus.connections','agent_bus.set_connection','help','models.list'].includes(event.input?.operation))
+  if (event.toolName !== UMEKO_TOOL || !['agent_bus.overview','agent_bus.dispatch','agent_bus.requests','agent_bus.reply','agent_bus.connections','agent_bus.set_connection',
+    'agent_bus.set_model','agent_bus.team_create','agent_bus.team_members','agent_bus.team_board','agent_bus.team_post','help','models.list'].includes(event.input?.operation))
     return { block: true, reason: 'Global coordinators use the opt-in agent_bus.* API; delegate workspace work to a bridged session.' };
 }
 export function coordinatorExtension(pi, options = {}) { pi.on('tool_call', event => coordinatorToolGate(event, options)); }

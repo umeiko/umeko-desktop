@@ -43,15 +43,23 @@ def saved_viewport(meta):
 @dataclass(eq=False)
 class SessionState:
     search_leaf: str = ""
+    terminal_owned: bool = False
+    terminal_clients: int = 0
     global_agent: str = ""
+    cowork: str = ""
     key: str = field(default_factory=lambda: uuid.uuid4().hex)
     id: str = ""
     file: str = ""
     workspace: str = ""
+    bus_task: str = ""
+    bus_read_only: bool = False
     model: str = ""
     provider: str = ""
     pending_selection: tuple[str, str] | None = None
+    pending_reasoning_effort: str | None = None
+    draft_model_roles: dict = field(default_factory=dict)
     title: str = "新会话"
+    initial_title: str = ""
     messages: list = field(default_factory=list)
     history: list = field(default_factory=list)
     tree: list = field(default_factory=list)
@@ -92,6 +100,7 @@ class SessionState:
     crashed: bool = False
     operation: bool = False
     queue: list = field(default_factory=list)
+    auto_compaction_serial: int = 0
     compaction_running: bool = False
     compaction_event_id: str = ""
     portrait: int = 0
@@ -204,6 +213,8 @@ class PiSessionPool(QObject):
         process.setProcessEnvironment(environment)
         process.setProgram(program)
         process.setArguments([str(bridge)])
+        if payload.get("agent", {}).get("automaticWorktrees"):
+            process.setWorkingDirectory(payload.get("workspace") or payload["defaultCwd"])
         process.started.connect(lambda: self.write(record, payload) if record.process is process else None)
         process.readyReadStandardOutput.connect(lambda: self._read(record, process))
         process.readyReadStandardError.connect(lambda: process.readAllStandardError())
@@ -308,7 +319,7 @@ class PiSessionPool(QObject):
         for record in self.records.values():
             if total <= self.body_limit:
                 break
-            if record is self.current or self.protected(record) or not record.file or not record.loaded:
+            if record is self.current or record.terminal_clients or self.protected(record) or not record.file or not record.loaded:
                 continue
             released = record.body_bytes
             self._clear_body(record)
