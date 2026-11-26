@@ -36,6 +36,7 @@ Rectangle {
     property string error: ""
     property string recipient: "all"
     property int mentionIndex: 0
+    property string shownMentionQuery: ""
     ListModel { id: historyModel; dynamicRoles: true }
     ListModel { id: searchModel; dynamicRoles: true }
     readonly property string searchQuery: searchMode ? searchField.text.trim() : ""
@@ -131,7 +132,10 @@ Rectangle {
     }
     function showSuggestions() {
         if (active && composer.activeFocus && !composer.inputMethodComposing && mentionQuery && suggestions.length) {
-            mentionIndex = 0
+            const query = mentionQuery[1]
+            if (!mentionPopup.opened || query !== shownMentionQuery) mentionIndex = 0
+            else mentionIndex = Math.min(mentionIndex, suggestions.length - 1)
+            shownMentionQuery = query
             if (!mentionPopup.opened) mentionPopup.open()
         } else {
             mentionPopup.close()
@@ -686,6 +690,11 @@ Rectangle {
                         font.pixelSize: 13 * root.scale
                         onActiveFocusChanged: Qt.callLater(root.showSuggestions)
                         onInputMethodComposingChanged: Qt.callLater(root.showSuggestions)
+                        Keys.onShortcutOverride: event => {
+                            if (mentionPopup.opened && !composer.inputMethodComposing
+                                    && [Qt.Key_Up, Qt.Key_Down, Qt.Key_Escape].includes(event.key))
+                                event.accepted = true
+                        }
                         onSubmitted: {
                             if (mentionPopup.opened && root.suggestions.length)
                                 root.selectMention(root.suggestions[root.mentionIndex], true)

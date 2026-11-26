@@ -114,7 +114,11 @@ def run(directory):
         composer.setProperty("cursorPosition", 1)
         wait(lambda: find("groupChatMentionPopup").property("opened"), "Mention suggestions did not open")
         assert evaluate("groupChat", "suggestions.length") == 4
+        wait(composer.hasActiveFocus, "Mention popup took focus from the composer")
         QTest.keyClick(window, Qt.Key_Down)
+        wait(lambda: evaluate("groupChat", "mentionIndex") == 1, "Down did not change the highlighted member")
+        evaluate("groupChat", "showSuggestions()")
+        assert evaluate("groupChat", "mentionIndex") == 1, "Refreshing members reset the highlighted member"
         QTest.keyClick(window, Qt.Key_Return)
         wait(lambda: evaluate("groupChat", "selectedMention?.id") == direct, "Keyboard selection did not set mention")
         assert composer.property("text") == ""
@@ -304,14 +308,24 @@ def run(directory):
         escaped = directory / "outside.txt"
         escaped.write_text("not in the agent workspace", encoding="utf-8")
         calls = []
+        model_tools = []
+        private_tool_names = []
 
         class FileModel:
             ready = True
 
             def complete(self, _model, messages, tools, _max_tokens):
                 last = messages[-1]
+                tool_names = {tool.get("name", tool.get("function", {}).get("name")) for tool in tools}
+                model_tools.append(tool_names)
+                content = last.get("content", "")
+                if isinstance(content, list):
+                    content = "\n".join(block.get("text", "") for block in content if block.get("type") == "text")
+                if last["role"] == "user" and content == "Private check":
+                    private_tool_names.append(tool_names)
+                    return Completion("Private turn")
                 if last["role"] != "tool":
-                    assert any(tool.get("name", tool.get("function", {}).get("name")) == "reply_to_groupchat" for tool in tools)
+                    assert "reply_to_groupchat" in tool_names
                     return Completion(tool_calls=[{"id": "outside", "name": "reply_to_groupchat",
                         "arguments": {"items": [{"path": str(escaped)}]}}])
                 calls.append(last["content"])
@@ -324,7 +338,9 @@ def run(directory):
         fresh = service.handle("groupChatSend", {"recipient": direct, "text": "after clear"})["message"]
         assert fresh["id"] > history["messages"][-1]["id"]
         service.tick()
-        wait(lambda: find("groupChatMessages").property("count") == 2, "The native tool's attachments did not arrive")
+        wait(lambda: find("groupChatMessages").property("count") == 2 or record.failed,
+             "The native tool's attachments did not arrive")
+        assert not record.failed, (model_tools, record.messages[-2:])
         wait(lambda: len(calls) == 2, "Pi did not receive both tool results")
         assert "必须来自当前工作目录" in str(calls[0]) and "forwarded" in str(calls[1])
         delivery = service.handle("groupChatHistory", {})["messages"][-1]
@@ -333,6 +349,12 @@ def run(directory):
         assert saved_zip["name"] == generated.name and saved_zip["bytes"] == generated.stat().st_size
         assert saved_image["pixelWidth"] == image.width() and saved_image["pixelHeight"] == image.height()
         assert Path(saved_zip["path"]).read_bytes() == generated.read_bytes()
+        wait(lambda: not record.busy, "Group turn did not finish")
+        service.handle("send", {"id": identifiers[0], "text": "Private check"})
+        wait(lambda: bool(private_tool_names) or record.failed, "Private turn did not reach the model")
+        assert not record.failed, (model_tools, record.messages[-2:])
+        assert "umeko_desktop" in private_tool_names[0] and "reply_to_groupchat" not in private_tool_names[0]
+        wait(lambda: not record.busy, "Private turn did not finish")
         file_card = f'groupChatFile_{delivery["id"]}_0'
 
         with patch("app.group_chat.open_attachment", return_value=True) as open_file:

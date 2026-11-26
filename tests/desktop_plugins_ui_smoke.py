@@ -234,12 +234,14 @@ try:
     backend.setLanguage('en')
     assert find('webPaneTitle').property('text') == 'Version Control'
     assert manager.openPage('global-agents')
-    wait(lambda:find('globalSubagentsHeading') is not None,'Global Agents widget did not open')
-    assert find('globalSubagentsHeading').property('text') == 'Global Agents'
+    wait(lambda:(heading := find('globalSubagentsHeading')) and heading.isVisible()
+         and heading.property('text') == 'Global Agents','Global Agents heading did not localize')
     assert find('agentBusRequestsTabButton') is None
-    assert find('groupChatTabButton').property('text') == 'Group chat'
+    wait(lambda:(button := find('groupChatTabButton')) and button.property('text') == 'Group chat',
+         'Group chat tab did not localize')
     backend.setLanguage('zh')
-    assert find('globalSubagentsHeading').property('text') == '全局子智能体'
+    wait(lambda:find('globalSubagentsHeading').property('text') == '全局子智能体',
+         'Global Agents heading did not follow the language switch')
     window.setProperty('page','settings');QTest.qWait(200);assert not manager.page;assert not find('webPane').property('opened')
     window.setProperty('page','chat');assert manager.openPage('file-tree');QTest.qWait(200);backend.newSession();QTest.qWait(250);assert not manager.page and set(manager.workers)=={'desktop-pet','global-agents','scheduled-tasks','terminal'}
     manager.setSessionEnabled('file-tree',False);manager.setSessionEnabled('git-viewer',False);manager.setEnabled('global-agents',False);manager.setSessionEnabled('pi-manager',False);manager.setSessionEnabled('skill-manager',False);manager.setSessionEnabled('widget-market',False);manager.setSessionEnabled('task-records',False)
