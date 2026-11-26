@@ -102,6 +102,14 @@ try:
     assert find('remoteEnvironmentHostInput') is None
     assert find('desktopChatWidthHints').property('checked')
     assert find('desktopWebDisplay').property('currentIndex')==1
+    graphics = find('desktopGraphicsCompatibility')
+    assert graphics.isVisible() == (sys.platform == 'win32')
+    if sys.platform == 'win32':
+        assert not graphics.property('checked')
+        click('desktopGraphicsCompatibility')
+        assert graphics.property('checked') and Store(store.directory).data['desktop']['disableDxgiVblankThread']
+        click('desktopGraphicsCompatibility')
+        assert not graphics.property('checked') and not Store(store.directory).data['desktop']['disableDxgiVblankThread']
     for language,scale in [('zh',1.0),('en',2.0)]:
         backend.setLanguage(language);backend.setFontScale(scale);QTest.qWait(150)
         combo=find('desktopWebDisplay');settings=find('umekoDesktopSettings')

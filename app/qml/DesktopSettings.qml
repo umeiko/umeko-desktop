@@ -171,6 +171,44 @@ Column {
     }
     SectionCard {
         width: parent.width
+        visible: Qt.platform.os === "windows"
+        RowLayout {
+            width: parent.width
+            spacing: 12
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                Text {
+                    Layout.fillWidth: true
+                    text: I18n.t("Windows 图形兼容模式")
+                    color: Theme.ink
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(13)
+                    wrapMode: Text.Wrap
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: I18n.t("用于排查桌宠或锁屏恢复后的窗口卡死。从托盘退出 Umeko 并重新打开后生效。")
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(12)
+                    wrapMode: Text.Wrap
+                }
+            }
+            Toggle {
+                objectName: "desktopGraphicsCompatibility"
+                checked: backend.desktopSettings.disableDxgiVblankThread === true
+                Accessible.name: I18n.t("Windows 图形兼容模式")
+                onClicked: {
+                    const value = checked
+                    checked = Qt.binding(function() { return backend.desktopSettings.disableDxgiVblankThread === true })
+                    backend.saveDesktopSettings(JSON.stringify({disableDxgiVblankThread: value}))
+                }
+            }
+        }
+    }
+    SectionCard {
+        width: parent.width
         ColumnLayout {
             width: parent.width; spacing: 20
             Text { text: I18n.t("提交与预览"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }

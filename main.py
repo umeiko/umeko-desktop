@@ -55,8 +55,10 @@ def create_application():
     configure_qml_gc()
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     from app.webview import configure, configure_engine
-    from app.desktop_preferences import startup_settings
-    configure(root, enabled=startup_settings()['webDisplay'] == 'embedded')
+    from app.desktop_preferences import configure_graphics, startup_settings
+    settings = startup_settings()
+    configure_graphics(settings)
+    configure(root, enabled=settings['webDisplay'] == 'embedded')
     from PySide6.QtQuickControls2 import QQuickStyle
     QQuickStyle.setStyle("UmekoStyle")
     QQuickStyle.setFallbackStyle("Basic")

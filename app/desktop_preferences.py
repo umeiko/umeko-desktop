@@ -1,11 +1,13 @@
 """Desktop presentation policy, also readable before native browser libraries load."""
 import json
 import os
+import sys
 from pathlib import Path
 from .platform_support import data_directory, legacy_data_directory
 
 DEFAULTS = {'autoOpenSubmissions': True, 'webDisplay': 'embedded', 'chatWidthHints': True,
-            'coworkEnabled': False, 'teamCollaborationEnabled': False, 'remoteWorkspaceEnabled': False}
+            'coworkEnabled': False, 'teamCollaborationEnabled': False, 'remoteWorkspaceEnabled': False,
+            'disableDxgiVblankThread': False}
 
 
 def normalize(value):
@@ -15,7 +17,8 @@ def normalize(value):
             'chatWidthHints': value.get('chatWidthHints') if type(value.get('chatWidthHints')) is bool else True,
             'coworkEnabled': value.get('coworkEnabled') is True,
             'teamCollaborationEnabled': value.get('teamCollaborationEnabled') is True,
-            'remoteWorkspaceEnabled': value.get('remoteWorkspaceEnabled') is True}
+            'remoteWorkspaceEnabled': value.get('remoteWorkspaceEnabled') is True,
+            'disableDxgiVblankThread': value.get('disableDxgiVblankThread') is True}
 
 
 def validate_patch(value):
@@ -25,7 +28,7 @@ def validate_patch(value):
         raise ValueError('autoOpenSubmissions must be boolean')
     if 'chatWidthHints' in value and type(value['chatWidthHints']) is not bool:
         raise ValueError('chatWidthHints must be boolean')
-    for key in ('coworkEnabled', 'teamCollaborationEnabled', 'remoteWorkspaceEnabled'):
+    for key in ('coworkEnabled', 'teamCollaborationEnabled', 'remoteWorkspaceEnabled', 'disableDxgiVblankThread'):
         if key in value and type(value[key]) is not bool:
             raise ValueError(key + ' must be boolean')
     if 'webDisplay' in value and value['webDisplay'] not in ('embedded', 'external'):
@@ -46,3 +49,9 @@ def startup_settings():
         except (OSError, ValueError, AttributeError):
             return dict(DEFAULTS)
     return dict(DEFAULTS)
+
+
+def configure_graphics(settings):
+    # Qt reads this when it first creates its DXGI vblank service (issue #198).
+    if sys.platform == 'win32' and settings['disableDxgiVblankThread']:
+        os.environ['QT_D3D_NO_VBLANK_THREAD'] = '1'

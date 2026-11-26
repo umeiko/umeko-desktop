@@ -422,7 +422,8 @@ class UmekoControl(QObject):
         if operation == 'documents.previewMode' and (args['fileType'] not in ('markdown', 'html') or args['mode'] not in ('source', 'rendered')): raise ValueError('Invalid document preview mode')
         if operation == 'desktop.configure':
             from .desktop_preferences import validate_patch
-            validate_patch(values[0])
+            if 'disableDxgiVblankThread' in validate_patch(values[0]):
+                raise ValueError('Change Windows graphics compatibility manually in Umeko Desktop settings')
         if operation == 'themes.select' and args['id'] not in [*BASES, *[t['id'] for t in b.customThemes]]: raise ValueError('Theme ID does not exist')
         if operation == 'themes.remove' and args['id'] not in [t['id'] for t in b.customThemes]: raise ValueError('Custom theme ID does not exist')
         if operation == 'items.pin':
