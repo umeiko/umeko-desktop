@@ -13,6 +13,10 @@ elif [[ -x "$root/dist/Umeko.app/Contents/MacOS/Umeko" ]]; then
     exec "$root/dist/Umeko.app/Contents/MacOS/Umeko" --umeko-cli "$@"
 elif [[ -x "$root/dist/Umeko/Umeko" ]]; then
     exec "$root/dist/Umeko/Umeko" --umeko-cli "$@"
+elif [[ -x "$root/../MacOS/Umeko" ]]; then
+    exec "$root/../MacOS/Umeko" --umeko-cli "$@"
+elif [[ -x "$root/Umeko" ]]; then
+    exec "$root/Umeko" --umeko-cli "$@"
 fi
 echo 'Run ./setup.sh in the Umeko checkout first.' >&2
 exit 1

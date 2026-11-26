@@ -50,9 +50,15 @@ with tempfile.TemporaryDirectory(prefix='umeko-document-modes-ui-') as temporary
         QTest.qWait(250)
         submit(markdown,'markdown')
         assert backend.documentPreview.state['mode']=='rendered'
-        assert find('documentPreviewText').property('text').startswith('<!DOCTYPE')
+        assert backend.documentPreview.state.get('chunked')
+        def first_block():
+            try: return find('documentBlockText_0')
+            except AssertionError: return None
+        wait(lambda:first_block() is not None and bool(first_block().property('length')),'Markdown block did not render')
+        assert first_block().property('text').startswith('<!DOCTYPE')
         click('documentMode_source');QTest.qWait(50)
-        assert find('documentPreviewText').property('text')==markdown.read_text(), (backend.documentPreview.state['mode'],repr(find('documentPreviewText').property('text')),repr(markdown.read_text()))
+        wait(lambda:first_block() is not None and first_block().property('text')==markdown.read_text(),'Markdown source did not switch')
+        assert first_block().property('text')==markdown.read_text(), (backend.documentPreview.state['mode'],repr(first_block().property('text')),repr(markdown.read_text()))
         print('MARKDOWN_SOURCE_OK',flush=True)
         submit(markdown2,'markdown')
         assert backend.documentPreview.state['mode']=='source'

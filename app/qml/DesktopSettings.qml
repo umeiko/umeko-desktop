@@ -252,6 +252,32 @@ Column {
             }
         }
     }
+    SectionCard {
+        width: parent.width
+        RowLayout {
+            width: parent.width
+            spacing: 12
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 5
+                Text { text: I18n.t("命令行与 ACP"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+                Text {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    text: backend.packagedCliAvailable
+                          ? I18n.t("将打包版 CLI 加入当前用户的 PATH，之后可从任意目录运行。")
+                          : I18n.t("请使用包含 CLI 启动器的桌面安装包。")
+                    color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+                }
+            }
+            ActionButton {
+                objectName: "configureUmekoCliPath"
+                text: I18n.t("配置 CLI 到 PATH")
+                enabled: backend.packagedCliAvailable
+                onClicked: backend.configureCliPath()
+            }
+        }
+    }
     Component {
         id: remoteEnvironmentSettings
         SectionCard {

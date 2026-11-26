@@ -16,12 +16,15 @@ from PySide6.QtCore import Qt
 from PySide6.QtQml import QQmlExpression
 from PySide6.QtTest import QTest
 from app.storage import Store
-from app import webview
+from app import cli_path, webview
 from main import create_application
 
 store=Store();store.data['desktop']={'autoOpenSubmissions':False,'webDisplay':'external'}
 store.data['sessionMeta']={f'history-{i}':{'draft':'Preserved draft '+str(i), 'viewport':{'index':i,'offset':24}} for i in range(1000)}
 store.save()
+launcher = base / ('Umeko-cli.exe' if sys.platform == 'win32' else 'umeko')
+cli_availability = patch.object(cli_path, 'packaged_cli', return_value=launcher)
+cli_availability.start()
 app,engine,backend=create_application();window=engine.rootObjects()[0];window.resize(1200,900)
 warnings=[];engine.warnings.connect(lambda values:warnings.extend(v.toString() for v in values))
 output=ROOT/'build/desktop-settings-ui';output.mkdir(parents=True,exist_ok=True)
@@ -76,8 +79,21 @@ try:
     assert not backend.webviewAvailable
     window.setProperty('settingsTab',3);window.setProperty('page','settings');QTest.qWait(100)
     assert find('openPiSettingsButton').isVisible() and find('openDesktopPluginsButton').isVisible()
-    click('openUmekoDesktopSettingsButton')
-    assert not find('openPiSettingsButton').isVisible()
+    with patch.object(cli_path, 'configure_path') as configure:
+        click('openUmekoDesktopSettingsButton')
+        assert not find('openPiSettingsButton').isVisible()
+        button = find('configureUmekoCliPath')
+        assert button.isEnabled()
+        settings = find('umekoDesktopSettings')
+        card = button
+        while card.parentItem() != settings:
+            card = card.parentItem()
+        visible_sections = [item for item in settings.childItems() if item.isVisible() and item.height() > 0]
+        assert visible_sections[-1] == card
+        click('configureUmekoCliPath')
+        configure.assert_called_once_with(launcher)
+        assert window.property('notification') == '已配置 CLI 到 PATH，请关闭并重新打开终端。'
+    window.grabWindow().save(str(output/'cli-path.png'))
     assert not find('desktopAutoOpenSubmissions').property('checked')
     assert not find('desktopCoworkEnabled').property('checked')
     assert not find('openCoworkButton').isVisible()
@@ -167,6 +183,7 @@ try:
     assert Store(store.directory).data['sessionMeta']['history-999']['draft']=='Preserved draft 999'
     print('DESKTOP_SETTINGS_UI_OK: persisted policy, Agent navigation, bilingual scaled settings, manual/automatic browser routing, local HTML and no embedded WebView')
 finally:
+    cli_availability.stop()
     backend.close()
     import shiboken6
     shiboken6.delete(engine);app.processEvents();temporary.cleanup()
