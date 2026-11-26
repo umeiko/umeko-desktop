@@ -1,5 +1,6 @@
 .pragma library
 var strings = {
+    "无法预览此工作簿，请打开完整文件": "This workbook cannot be previewed. Open the full file.",
     "群聊": "Group chat",
     "用 @ 点名成员。点击头像进入单聊，右键可以点名或拍一拍。": "Mention members with @. Click an avatar to open its chat, or right-click to mention or poke.",
     "团队看板": "Team board",

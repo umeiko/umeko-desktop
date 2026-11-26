@@ -22,9 +22,11 @@ Column {
             required property int index
             property var item: root.items[index] || ({})
             property string key: root.toolId + "_" + index
+            readonly property bool sheet: backend.cowork.active && item.kind === "file" && /\.xlsx$/i.test(item.path || "")
+            readonly property bool previewable: sheet || ["markdown", "code", "text"].includes(item.kind)
             readonly property bool inlineImage: item.kind === "image" && !!item.preview
             objectName: "chatboxCard_" + key
-            width: inlineImage ? Math.min(root.width, 460, item.pixelWidth || 460) : Math.min(root.width, Math.min(400, Math.max(120, nameSize.advanceWidth + Theme.control(42))))
+            width: inlineImage ? Math.min(root.width, 460, item.pixelWidth || 460) : Math.min(root.width, Math.min(400, Math.max(120, nameSize.advanceWidth + Theme.control(42) + (backend.cowork.active && previewable ? Theme.control(46) : 0))))
             height: content.implicitHeight
             radius: 7
             color: inlineImage ? "transparent" : headerArea.pressed || contextMenu.visible ? Theme.accentBg : headerArea.interactionHovered ? Theme.hover : Theme.surface
@@ -33,7 +35,7 @@ Column {
             TextMetrics { id: nameSize; font: filename.font; text: filename.text }
             function open() {
                 if (item.kind === "web" && root.Window.window) root.Window.window.previewChatWeb(item)
-                else if (["markdown", "code", "text"].includes(item.kind) && root.Window.window) root.Window.window.previewChatDocument(item)
+                else if (previewable && root.Window.window) root.Window.window.previewChatDocument(sheet ? Object.assign({}, item, {kind:"xlsx"}) : item)
                 else if (inlineImage && root.Window.window) root.Window.window.previewChatImage(item, root.items)
                 else backend.openChatboxPath(item.path, false)
             }
@@ -44,9 +46,15 @@ Column {
                     Glyph { visible: !card.inlineImage; x: 9; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "web" ? "globe" : card.item.kind === "code" ? "code" : card.item.kind === "folder" ? "folder" : "file" }
                     Text { font.family: Theme.fontFamily;
                         id: filename; objectName: "chatboxLabel_" + card.key
-                        x: card.inlineImage ? 0 : 16 + Theme.icon(14); width: parent.width - x - 8; anchors.verticalCenter: parent.verticalCenter
+                        x: card.inlineImage ? 0 : 16 + Theme.icon(14); width: parent.width - x - 8 - (previewTag.visible ? previewTag.width + 7 : 0); anchors.verticalCenter: parent.verticalCenter
                         text: card.inlineImage ? [card.item.name || card.item.title, card.item.mime || "image/" + (card.item.name || "").split(".").pop().toLowerCase(), root.sizeLabel(card.item.bytes || 0)].join(" · ") : card.item.title || card.item.name || I18n.t("文件")
                         textFormat: Text.PlainText; elide: Text.ElideMiddle; color: card.inlineImage ? Theme.muted : Theme.ink; font.pixelSize: Theme.font(card.inlineImage ? 11 : 12, visible, root.selectionController)
+                    }
+                    Text {
+                        id: previewTag; visible: backend.cowork.active && card.previewable
+                        text: backend.language === "en" ? "Preview" : "预览"; color: Theme.accent
+                        anchors.right: parent.right; anchors.rightMargin: 9; anchors.verticalCenter: parent.verticalCenter
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
                     }
                     ChatHitArea {
                         id: headerArea; objectName: "openChatbox_" + card.key

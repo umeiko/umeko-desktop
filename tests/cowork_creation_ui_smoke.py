@@ -115,6 +115,7 @@ def test():
             click('openCoworkButton')
             assert cowork.active and not cowork.activeRole and cowork.rows == []
             assert find('coworkEmptyState').isVisible()
+            click('coworkAdvancedRoles')
             assert find('coworkEmptyCreate').isVisible() and find('coworkEmptyCreate').isEnabled()
             assert find('coworkCard_study').isVisible() and find('coworkCard_office').isVisible()
             assert find('coworkCardNewType').isVisible()
@@ -124,7 +125,7 @@ def test():
             assert find('coworkInstanceWorkspace').property('text') == default_workspace
             assert find('coworkInstanceConfirm').isEnabled()
             click('coworkInstanceCancel')
-            click('newChatButton')
+            click('coworkEmptyCreate')
             choose_template('study', workspace)
             assert find('coworkInstanceTitle').property('text') == 'Study Buddy'
             click('coworkInstanceConfirm')
@@ -137,6 +138,7 @@ def test():
             assert cowork.rows[1]['kind'] == 'coworkDraft'
             assert not find('newProjectSession_' + identifier).isVisible()
             assert not find('openWorkspacePickerButton').isVisible() and not find('createCoworkerButton')
+            click('coworkGroupRolesButton')
             assert find('editCoworkType_study').property('glyph') == 'settings'
             click('editCoworkType_study')
             assert find('coworkNameField').property('text') == 'Study Buddy'
@@ -290,6 +292,8 @@ def test():
             assert any(row['id'] == 'cowork-type:study' for row in cowork.rows)
 
             click('newChatButton')
+            click('coworkAdvancedRoles')
+            click('coworkEmptyCreate')
             click('coworkCreateType')
             find('coworkNameField').setProperty('text', '资料归纳')
             click('coworkSaveRole')
@@ -297,8 +301,9 @@ def test():
             assert not any(row['title'] == '资料归纳' for row in cowork.rows)
             click('coworkInstanceCancel')
             assert any(row['label'] == '资料归纳' for row in cowork.templates)
-            click('coworkHeaderOverview')
             wait(lambda: find('coworkEmptyState') and find('coworkEmptyState').isVisible(), 'return to cowork overview')
+            if not find('coworkInstanceCard_' + identifier):
+                click('coworkAdvancedRoles')
             assert find('coworkInstanceCard_' + identifier).isVisible()
             assert find('coworkCard_' + cowork.templates[-1]['id']).isVisible()
             click('coworkInstanceCard_' + identifier)

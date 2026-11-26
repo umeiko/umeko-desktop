@@ -33,6 +33,12 @@ ApplicationWindow {
     property bool searchFocusPending: false
     property int searchHighlightRow: -1
     function openConversationSearch() {
+        if (backend.cowork.active && page === "chat") {
+            dropFocusTimer.stop()
+            if (coworkLauncher.visible) coworkLauncher.close()
+            else coworkLauncher.open()
+            return
+        }
         cancelSidebarSelection(); page = "chat"; searchVisible = true; searchFocusPending = true
     }
     function closeConversationSearch(clear) {
@@ -232,6 +238,7 @@ ApplicationWindow {
         subagentMatrix.close()
         page = "chat"
         backend.cowork.toggle()
+        Qt.callLater(composer.focusInput)
     }
     function editCoworkType(id, folder) {
         coworkEditorLoader.pendingFolder = folder || ""
@@ -246,13 +253,19 @@ ApplicationWindow {
         coworkSessionLoader.active = true
         coworkSessionLoader.item.beginInstance("", "", id, action)
     }
+    property bool coworkLibraryVisible: false
+    property bool coworkRoleGroups: false
+    function closeCoworkLibrary() { coworkLibraryVisible = false; Qt.callLater(composer.focusInput) }
     readonly property bool coworkEmpty: backend.cowork.active && !backend.cowork.activeRole
+    onCoworkEmptyChanged: if (!coworkEmpty) coworkLibraryVisible = false
     function startChat() {
         cancelSidebarSelection()
         if (backend.cowork.active) {
             searchVisible = false
             page = "chat"
-            createCoworker("", "")
+            coworkLibraryVisible = false
+            backend.cowork.showOverview()
+            Qt.callLater(composer.focusInput)
         } else {
             workspacePicker.openForConversation()
         }
@@ -282,7 +295,7 @@ ApplicationWindow {
         if (info.kind === "image" && info.preview) imageViewer.show(info, siblings || [info])
         else backend.openChatboxPath(item.path, false)
     }
-    Timer { id: dropFocusTimer; interval: 80; onTriggered: { backend.activateChatWindow(); composer.focusInput() } }
+    Timer { id: dropFocusTimer; interval: 80; onTriggered: if (!coworkLauncher.visible) { backend.activateChatWindow(); composer.focusInput() } }
     readonly property bool conversationVisible: page === "chat" && visible && visibility !== Window.Minimized && active
     onPageChanged: if (page !== "chat") {
         cancelSidebarSelection()
@@ -297,7 +310,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
-    Shortcut { sequence: "Escape"; enabled: !window.wallpaperDialogVisible && !composer.slashVisible && !workspacePicker.visible && backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
+    Shortcut { sequence: "Escape"; enabled: !coworkLauncher.visible && !window.wallpaperDialogVisible && !composer.slashVisible && !workspacePicker.visible && backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); if (backend.desktopPlugins.page.id !== "global-agents") webPane.dismiss() }
         function onWebRequested(url, title) { if (backend.desktopSettings.webDisplay === "external") backend.openWebPreview(url,title); else {window.page = "chat"; webPane.submit(url, title)} }
@@ -343,6 +356,24 @@ ApplicationWindow {
             coworkSessionLoader.active = true
             coworkSessionLoader.item.begin(identifier)
         }
+    }
+    CoworkLauncher {
+        id: coworkLauncher
+        parent: Overlay.overlay
+        service: backend.cowork
+        onAbilityChosen: identifier => {
+            if (!window.coworkEmpty) backend.cowork.showOverview()
+            backend.cowork.selectLaunchType(identifier)
+            Qt.callLater(composer.focusInput)
+        }
+        onSessionChosen: row => window.selectSidebar(row)
+        onClosed: if (window.page === "chat" && !window.sidebarSwitching) Qt.callLater(composer.focusInput)
+    }
+    FolderDialog {
+        id: coworkFolderPicker
+        title: I18n.t("选择工作目录")
+        onAccepted: { backend.cowork.selectLaunchFolder(selectedFolder.toString()); Qt.callLater(composer.focusInput) }
+        onRejected: Qt.callLater(composer.focusInput)
     }
     FolderDialog { id: folderDialog; title: I18n.t("选择工作目录"); onAccepted: workspacePicker.chooseLocalUrl(selectedFolder.toString()) }
     WorkspacePicker {
@@ -394,7 +425,7 @@ ApplicationWindow {
                     id: newChatAction
                     objectName: "newChatButton"
                     width: parent.width - parent.height - parent.spacing; height: parent.height
-                    text: backend.cowork.active ? (backend.language === "en" ? "New coworker" : "新建 Coworker") : I18n.t("新建会话"); glyph: "plus"; hint: text
+                    text: backend.cowork.active ? (backend.language === "en" ? "New work" : "新建工作") : I18n.t("新建会话"); glyph: "plus"; hint: text
                     onClicked: window.startChat()
                     contentItem: Item {
                         Row {
@@ -412,13 +443,20 @@ ApplicationWindow {
                     onClicked: window.openConversationSearch()
                 }
             }
-            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : backend.cowork.active ? "Coworkers" : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
-            ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: backend.cowork.active ? 22 : 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
+            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : backend.cowork.active ? window.coworkRoleGroups ? (backend.language === "en" ? "Roles" : "角色") : (backend.language === "en" ? "Recent work" : "最近工作") : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
+            ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
+            ActionButton {
+                objectName: "coworkGroupRolesButton"; visible: backend.cowork.active && !backend.showArchived
+                anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7
+                width: Theme.control(26); height: width; glyph: "layers"; quiet: true
+                hint: backend.language === "en" ? "Toggle role grouping" : "切换角色分类"
+                onClicked: window.coworkRoleGroups = !window.coworkRoleGroups
+            }
             ActionButton { objectName: "openWorkspacePickerButton"; visible: !backend.cowork.active; anchors.right: parent.right; anchors.rightMargin: 22; y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "plus"; quiet: true; hint: I18n.t("打开项目文件夹"); onClicked: workspacePicker.openPicker() }
             ListView {
                 id: sessionList; objectName: "projectList"
                 x: 12; y: recentLabel.y + Theme.control(28); width: parent.width - 24; height: apiStatus.y - y - 16
-                spacing: 2; clip: true; model: backend.cowork.active ? backend.cowork.rows : backend.projectRows
+                spacing: 2; clip: true; model: backend.cowork.active ? (backend.showArchived || window.coworkRoleGroups ? backend.cowork.rows : backend.cowork.recent) : backend.projectRows
                 readonly property int selectedRow: model.findIndex(row => window.sidebarSwitching ? row.id === window.pendingSidebarId && row.kind === window.pendingSidebarKind : row.selected && (row.kind === "session" || row.kind === "coworkDraft" || row.kind === "project" && !backend.activeSession))
                 function rowHeight(row) { return row.kind === "project" ? 38 : row.kind === "coworkType" ? 32 : 34 }
                 function syncSelection() {
@@ -471,13 +509,13 @@ ApplicationWindow {
                     readonly property bool project: modelData.kind === "project"
                     objectName: "sidebarRow_" + modelData.id
                     width: sessionList.width; height: sessionList.rowHeight(modelData)
-                    Rectangle { anchors.fill: parent; radius: 7; color: projectDrop.containsDrag && projectDrop.sessionDrop && projectDrop.targetProjectId === modelData.id ? Theme.accentBg : rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
+                    Rectangle { anchors.fill: parent; radius: 7; color: backend.cowork.active && modelData.selected ? Theme.accentBg : projectDrop.containsDrag && projectDrop.sessionDrop && projectDrop.targetProjectId === modelData.id ? Theme.accentBg : rowMouse.containsMouse && !(window.sidebarSwitching ? window.pendingSidebarId === modelData.id : modelData.selected) ? Theme.hover : "transparent" }
                     MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; acceptedButtons: sidebarItem.coworkType ? Qt.LeftButton : Qt.LeftButton | Qt.RightButton; enabled: modelData.kind !== "label"
                         onEntered: if (modelData.kind === "session") backend.sessionPreview.prefetch(modelData.id)
                         onPressed: mouse => { if (mouse.button === Qt.LeftButton && modelData.kind === "session") backend.sessionPreview.prefetch(modelData.id) }
                         onClicked: mouse => { if (mouse.button === Qt.RightButton) { sidebarMenus.openFor(modelData, mapToItem(sidebarMenus, mouse.x, mouse.y)); return } window.selectSidebar(modelData) }
                     }
-                    Glyph { visible: sidebarItem.coworkType || sidebarItem.project && !modelData.cowork; name: modelData.glyph || "folder"; x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
+                    Glyph { visible: sidebarItem.coworkType || sidebarItem.project && !modelData.cowork || !!modelData.cowork; name: modelData.glyph || (modelData.cowork ? "chat" : "folder"); x: 15; anchors.verticalCenter: parent.verticalCenter; width: Theme.icon(16); height: Theme.icon(16) }
                     Text {
                         font.family: Theme.fontFamily
                         x: modelData.kind === "label" ? 17 : sidebarItem.coworkType ? 40 : modelData.cowork ? 48 : 42
@@ -485,7 +523,7 @@ ApplicationWindow {
                             : sidebarItem.project ? Theme.control(56) + (modelData.pinned ? Theme.icon(12) + 12 : 8)
                             : (sidebarStatus.visible ? sidebarStatus.implicitWidth + 20 + (modelData.pinned ? Theme.icon(12) + 6 : 0) : 32)))
                         anchors.verticalCenter: parent.verticalCenter
-                        text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.displayTitle || modelData.title
+                        text: modelData.kind === "label" ? I18n.t(modelData.title) : modelData.cowork && !backend.showArchived && !window.coworkRoleGroups ? modelData.title : modelData.displayTitle || modelData.title
                         elide: Text.ElideRight
                         font.pixelSize: Theme.font(modelData.kind === "label" ? 10 : 11, visible)
                         font.weight: sidebarItem.coworkType ? Font.DemiBold : Font.Normal
@@ -691,7 +729,7 @@ ApplicationWindow {
                 }
                 Text {
                     font.family: Theme.fontFamily
-                    text: window.page === "chat" ? (backend.cowork.active ? "Cowork" : I18n.t("工作空间")) : I18n.t("偏好设置")
+                    text: window.page === "chat" ? (backend.cowork.active ? (backend.language === "en" ? "Cowork" : "协同办公") : I18n.t("工作空间")) : I18n.t("偏好设置")
                     color: coworkHeaderOverview.containsMouse && coworkHeaderOverview.enabled ? Theme.ink : Theme.muted
                     font.pixelSize: Theme.font(11, visible)
                     anchors.verticalCenter: parent.verticalCenter
@@ -705,6 +743,14 @@ ApplicationWindow {
                         onClicked: { window.cancelSidebarSelection(); backend.cowork.showOverview() }
                     }
                 }
+                Rectangle {
+                    objectName: "coworkHeaderExperimentalBadge"
+                    visible: window.page === "chat" && backend.cowork.active
+                    anchors.verticalCenter: parent.verticalCenter; width: modeBadge.implicitWidth + 12
+                    height: modeBadge.implicitHeight + 5; radius: 4; color: Theme.accentBg
+                    Text { id: modeBadge; anchors.centerIn: parent; text: I18n.t("实验版"); color: Theme.muted
+                        font.family: Theme.fontFamily; font.pixelSize: Theme.font(9, visible) }
+                }
                 Text { visible: window.page !== "chat" || !window.coworkEmpty; font.family: Theme.fontFamily; text: "/"; color: Theme.line; font.pixelSize: Theme.font(12, visible); anchors.verticalCenter: parent.verticalCenter }
                 Text {
                     visible: window.page !== "chat" || !window.coworkEmpty
@@ -713,8 +759,7 @@ ApplicationWindow {
                         if (window.page !== "chat")
                             return [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]
                         const title = window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle
-                        const prefix = backend.cowork.active ? backend.cowork.roleName + " · " : ""
-                        return prefix + (title || I18n.t("新会话"))
+                        return title || I18n.t("新会话")
                     }
                     color: Theme.ink; font.pixelSize: Theme.font(11, visible)
                     width: 225; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter
@@ -733,21 +778,52 @@ ApplicationWindow {
             visible: window.page === "chat"
             opacity: visible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 180 } }
+            Column {
+                objectName: "coworkEmptyState"
+                visible: window.coworkEmpty
+                x: composer.x; width: composer.width
+                anchors.bottom: composer.top; anchors.bottomMargin: Theme.control(19); spacing: 4
+                Text {
+                    text: backend.language === "en" ? "What would you like to get done?" : "今天想完成什么？"
+                    color: Theme.ink; font.family: Theme.fontFamily; font.weight: Font.DemiBold
+                    font.pixelSize: Theme.font(27, visible); width: parent.width; elide: Text.ElideRight
+                }
+            }
+            Row {
+                visible: window.coworkEmpty
+                x: composer.x; anchors.top: composer.bottom; anchors.topMargin: Theme.control(8); spacing: 5
+                ActionButton {
+                    objectName: "coworkLaunchDirectory"
+                    text: I18n.t("工作目录") + " · " + backend.cowork.launchFolder.split(/[\\/]/).pop()
+                    width: Math.min(implicitWidth, Math.max(120, composer.width - Theme.control(148)))
+                    height: Theme.control(28); quiet: true; glyph: "folder"; hint: backend.cowork.launchFolder
+                    onClicked: { coworkFolderPicker.currentFolder = backend.cowork.folderUrl(backend.cowork.launchFolder); coworkFolderPicker.open() }
+                }
+                ActionButton {
+                    objectName: "coworkAdvancedRoles"
+                    quiet: true; glyph: "sliders"; height: Theme.control(28)
+                    hint: backend.language === "en" ? "Configure coworker roles" : "配置办公角色"
+                    onClicked: window.coworkLibraryVisible = true
+                }
+            }
             Loader {
-                id: coworkOverviewLoader
-                active: window.coworkEmpty
+                id: coworkLibraryLoader
+                active: window.coworkEmpty && window.coworkLibraryVisible
                 anchors.fill: parent; z: 110
                 sourceComponent: CoworkOverview {
-                    objectName: "coworkEmptyState"
                     service: backend.cowork
                     onCreateRequested: typeId => window.createCoworker(typeId, "")
                     onEditTypeRequested: typeId => window.editCoworkType(typeId, "")
-                    onOpenInstanceRequested: instanceId => {
-                        window.cancelSidebarSelection()
-                        window.page = "chat"
-                        backend.cowork.openRole(instanceId)
-                    }
+                    onOpenInstanceRequested: instanceId => backend.cowork.openRole(instanceId)
                 }
+            }
+            ActionButton {
+                anchors.right: parent.right; anchors.rightMargin: 20; y: 9; z: 111
+                visible: coworkLibraryLoader.active; quiet: true; glyph: "x"
+                objectName: "closeCoworkRoleLibrary"
+                width: Theme.control(32); height: width
+                hint: backend.language === "en" ? "Close role library" : "关闭角色库"
+                onClicked: window.closeCoworkLibrary()
             }
             ChatWallpaperLayer {
                 id: chatWallpaper
@@ -755,7 +831,7 @@ ApplicationWindow {
                 readonly property var settings: backend.chatWallpaper.settings
                 readonly property bool custom: settings.source !== ""
                 anchors.fill: parent
-                visible: custom || useCharacter || seaSaltDecorations
+                visible: custom || !window.coworkEmpty && (useCharacter || seaSaltDecorations)
                 source: custom ? settings.source : ""
                 useCharacter: !custom && strength > 0
                 seaSaltDecorations: Theme.yanami && !custom
@@ -767,7 +843,7 @@ ApplicationWindow {
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: welcomeMascot.height + 60
                 x: composer.x + (composer.width - width) / 2; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -119
-                visible: conversationHost.revealPending ? conversationHost.heldWelcome : backend.messageCount === 0
+                visible: !window.coworkEmpty && (conversationHost.revealPending ? conversationHost.heldWelcome : backend.messageCount === 0)
                 WelcomeMascot { id: welcomeMascot; anchors.horizontalCenter: parent.horizontalCenter; portraitIndex: backend.portrait }
                 Connections { target: backend; function onViewChanged() { welcomeMascot.reset() } }
                 Text { font.family: Theme.fontFamily; objectName: "welcomeGreeting"; anchors.horizontalCenter: parent.horizontalCenter; y: welcomeMascot.height + 21; width: parent.width; text: welcomeMascot.reactionText || welcomeMascot.rareGreeting || Character.greeting(I18n.t(backend.greeting), welcomeMascot.portraitIndex); color: Theme.yanami ? Theme.accent : Theme.muted; font.pixelSize: Theme.font(14, visible); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; lineHeight: 1.35 }
@@ -853,7 +929,7 @@ ApplicationWindow {
                     let pane = panes[key]
                     if (!pane) {
                         pane = conversationComponent.createObject(conversationHost, {
-                            viewKey:key, messageModel:backend.messageModel, renderReady:false
+                            viewKey:key, messageModel:backend.messageModel, renderReady:false, officeMode:backend.cowork.active
                         })
                         if (!pane) return
                         panes[key] = pane
@@ -968,10 +1044,13 @@ ApplicationWindow {
 
             Composer {
                 id: composer; objectName: "composer"
-                enabled: !chatCover.visible && !window.coworkEmpty
-                x: chatWidth.composerLeft; anchors.bottom: parent.bottom
-                anchors.bottomMargin: Math.max(57, Math.max(footerActions.height, desktopPluginMenu.height) + Theme.control(10) + 13) + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
-                width: parent.width - chatWidth.composerLeft - chatWidth.composerRight
+                enabled: !chatCover.visible
+                launchMode: window.coworkEmpty
+                onConfigureProvider: window.settings(0)
+                onChooseCapability: window.openConversationSearch()
+                x: launchMode ? (parent.width - width) / 2 : chatWidth.composerLeft; anchors.bottom: parent.bottom
+                anchors.bottomMargin: launchMode ? Math.max(65, Math.round(parent.height * 0.36)) : Math.max(57, Math.max(footerActions.height, desktopPluginMenu.height) + Theme.control(10) + 13) + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
+                width: launchMode ? Math.min(600, parent.width - 46) : parent.width - chatWidth.composerLeft - chatWidth.composerRight
                 onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
                 onMessageSent: if (!conversation.followTail) conversation.jumpToLatest()
@@ -984,7 +1063,7 @@ ApplicationWindow {
                 contentHeld: conversationHost.revealPending
                 onRevealed: if (window.page === "chat") composer.focusInput()
             }
-            Row { id: footerActions; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
+            Row { id: footerActions; visible: !window.coworkEmpty; x: composer.x + (composer.width - width) / 2; anchors.bottom: parent.bottom; anchors.bottomMargin: 13; spacing: 8
                 ActionButton { height: Theme.control(28); quiet: true; text: "Agent"; glyph: "sliders"; onClicked: window.settings(3) }
                 ActionButton { objectName: "forkSessionButton"; visible: backend.messageCount > 0 && backend.sessionBackend !== "dsh"; enabled: !backend.busy; height: Theme.control(28); quiet: true; text: I18n.t("分支"); glyph: "chat-fork"; onClicked: backend.forkSession() }
             }

@@ -5,15 +5,19 @@ import "ReasoningLevels.js" as Reasoning
 
 Item {
     id: root
+    property bool launchMode: false
+    readonly property bool modelConfigured: !!backend.config.selectedModel || backend.modelGroupSelected
+    signal configureProvider()
+    signal chooseCapability()
     readonly property Item modelAnchor: modelButton
     readonly property int queueOffset: queued.height
     readonly property var attachmentItems: backend ? backend.attachments : []
-    height: 157 + footer.height - 33 + (attachmentItems.length ? Theme.control(48) : 0) + queueOffset
+    height: (launchMode ? 116 : 157) + footer.height - 33 + (attachmentItems.length ? Theme.control(48) : 0) + queueOffset
     signal openModels()
     signal chooseFiles()
     signal messageSent()
     property bool slashDismissed: false
-    readonly property bool slashVisible: prompt.activeFocus && !prompt.inputMethodComposing && /^\//.test(prompt.text) && !slashDismissed
+    readonly property bool slashVisible: !launchMode && prompt.activeFocus && !prompt.inputMethodComposing && /^\//.test(prompt.text) && !slashDismissed
     function chooseSlash(entry) {
         if (entry.group === "命令") {
             setText(entry.command + " ")
@@ -26,6 +30,12 @@ Item {
     function setText(value) { prompt.text = value; prompt.forceActiveFocus(); prompt.cursorPosition = value.length }
     function sendMessage(steering) {
         if (backend.kernelBusy || backend.loading) return
+        if (launchMode) {
+            if (!prompt.text.trim().length && !backend.attachments.length) return
+            if (!modelConfigured) { configureProvider(); return }
+            if (backend.cowork.launch(prompt.text)) messageSent()
+            return
+        }
         if (/^\//.test(prompt.text)) {
             if (backend.slashCommands.execute(prompt.text)) setText("")
             return
@@ -61,11 +71,13 @@ Item {
             onRemoveRequested: id => backend.removeAttachment(id)
         }
         ScrollView {
-            x: 20; y: root.attachmentItems.length ? Theme.control(48) + 15 : 15; width: parent.width - 40; height: 82; clip: true
+            x: 20; y: root.attachmentItems.length ? Theme.control(48) + 15 : 15; width: parent.width - 40; height: root.launchMode ? 40 : 82; clip: true
             ChatInput {
                 id: prompt; objectName: "promptInput"
                 color: Theme.ink; placeholderTextColor: Theme.muted
-                placeholderText: backend.config.workspace ? I18n.t("在 ") + backend.workspaceName + I18n.t(" 项目下开展工作") : I18n.t("输入任务…")
+                placeholderText: root.launchMode ? (backend.language === "en" ? "Describe the task or drop in a file" : "描述你要做的事，也可以直接拖入文件")
+                    : backend.cowork.active && backend.messageCount > 0 ? (backend.language === "en" ? "Add instructions…" : "继续补充要求…")
+                    : backend.config.workspace ? I18n.t("在 ") + backend.workspaceName + I18n.t(" 项目下开展工作") : I18n.t("输入任务…")
                 wrapMode: TextArea.Wrap; selectByMouse: true
                 padding: 0; topPadding: 3; font.pixelSize: Theme.font(13, visible)
                 font.family: Theme.fontFamily
@@ -90,7 +102,7 @@ Item {
             id: footer; objectName: "composerToolbar"
             x: 14; width: parent.width - 28; anchors.bottom: parent.bottom; anchors.bottomMargin: 12
             readonly property real gap: 8
-            readonly property real minimumModelWidth: Theme.control(96)
+            readonly property real minimumModelWidth: root.launchMode ? 0 : Theme.control(96)
             readonly property bool permissionTextVisible: width >= utilityIcons.naturalWidth + permissionMetrics.advanceWidth + Theme.icon(17) + 36 + minimumModelWidth + sendButton.width + gap * 3
             // Keep the four utility gaps within the live width during pane motion.
             // The permission-label threshold uses natural spacing, avoiding a binding loop.
@@ -109,11 +121,12 @@ Item {
                     id: utilityIcons; objectName: "composerUtilityIcons"; spacing: footer.utilityGap
                     readonly property real naturalWidth: attachButton.width + directoryButton.width + utilityDivider.width + contextIndicator.width + 15
                     ActionButton { id: attachButton; objectName: "attachFilesButton"; glyph: "plus"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("添加文件"); onClicked: root.chooseFiles() }
-                    ActionButton { id: directoryButton; objectName: "openChatDirectoryButton"; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
-                    Rectangle { id: utilityDivider; width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
-                    ContextUsage { id: contextIndicator }
+                    ActionButton { id: directoryButton; objectName: "openChatDirectoryButton"; visible: !root.launchMode; glyph: "folder"; quiet: true; width: Theme.control(31); height: Theme.control(31); hint: I18n.t("在文件管理器中打开当前目录"); onClicked: backend.openChatDirectory() }
+                    Rectangle { id: utilityDivider; visible: !root.launchMode; width: 1; height: 15; color: Theme.line; anchors.verticalCenter: parent.verticalCenter }
+                    ContextUsage { id: contextIndicator; visible: !root.launchMode }
                 }
                 ActionButton {
+                    visible: !root.launchMode;
                     id: permissionButton; objectName: "composerPermissionStatus"
                     glyph: "lock"; quiet: true; height: Theme.control(31)
                     readonly property string fullText: backend.sessionBackend === "dsh" ? I18n.t("单次审批") : (backend.config.agent.toolPermissionMode === "ask" ? I18n.t("询问") : I18n.t("自动")) + (backend.dangerousAllowed ? " · " + I18n.t("本会话已授权") : "")
@@ -143,6 +156,22 @@ Item {
                 }
             }
             ActionButton {
+                objectName: "coworkCapabilityChoice"
+                visible: root.launchMode
+                x: utilityRow.implicitWidth + 8; y: footer.height - height
+                width: Math.max(0, Math.min(implicitWidth, footer.width - x - sendButton.width - 14))
+                height: Theme.control(33); glyph: "sliders"; quiet: true
+                text: {
+                    const id = backend.cowork.launchType
+                    const capability = backend.cowork.catalog.find(item => item.id === id)
+                    if (!root.modelConfigured) return backend.language === "en" ? "Configure models" : "配置模型"
+                    return capability ? capability.name : ""
+                }
+                hint: text || (backend.language === "en" ? "Choose capability (Ctrl+K)" : "选择能力（Ctrl+K）")
+                onClicked: root.modelConfigured ? root.chooseCapability() : root.configureProvider()
+            }
+            ActionButton {
+                visible: !root.launchMode
                 id: modelButton; objectName: "modelSelector"; quiet: true; height: Theme.control(31)
                 x: footer.stacked ? 0 : utilityRow.implicitWidth + footer.gap
                 y: footer.height - Theme.control(33) + (Theme.control(33) - height) / 2

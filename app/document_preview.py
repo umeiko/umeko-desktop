@@ -17,6 +17,8 @@ TEXT_EXTENSIONS = {'txt', 'log', 'csv', 'tsv', 'rst', 'text'}
 
 
 def document_kind(path, kind=''):
+    if kind == 'xlsx':
+        return 'xlsx' if Path(path).suffix.lower() == '.xlsx' else ''
     if kind in ('markdown', 'code', 'text'):
         return kind
     if kind not in ('', 'auto', 'file'):
@@ -50,7 +52,20 @@ def read_preview(path, kind='', cancelled=lambda: False):
             info = os.fstat(stream.fileno())
             if not stat.S_ISREG(info.st_mode):
                 return fail('文件不存在或不支持文本预览')
+            if kind == 'xlsx':
+                from .sheet_preview import read_first_sheet, SHEET_ERRORS
+                try:
+                    sheet, rows, cols, truncated = read_first_sheet(stream, info, cancelled)
+                except InterruptedError:
+                    raise
+                except SHEET_ERRORS:
+                    return fail('无法预览此工作簿，请打开完整文件')
+                return {**result, 'kind': 'xlsx', 'fileType': 'xlsx', 'sheetName': sheet,
+                        'sheetRows': rows, 'sheetColumns': cols, 'truncated': truncated,
+                        'text': '\n'.join('\t'.join(row) for row in rows), 'bytes': info.st_size}
             raw = stream.read(MARKDOWN_LIMIT if kind == 'markdown' else READ_LIMIT)
+    except InterruptedError:
+        raise
     except OSError:
         return fail('文件暂时无法读取')
     truncated = info.st_size > len(raw)

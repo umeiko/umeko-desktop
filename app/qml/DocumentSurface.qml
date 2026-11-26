@@ -32,7 +32,7 @@ Item {
         id: scroll; objectName: "documentPreviewScroll"
         anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
         anchors.top: notices.bottom; anchors.topMargin: 4
-        visible: !root.state.chunked && !root.browserMode && !root.state.busy && !root.state.error
+        visible: root.state.kind !== "xlsx" && !root.state.chunked && !root.browserMode && !root.state.busy && !root.state.error
         contentWidth: availableWidth
         TextArea {
             id: editor; objectName: "documentPreviewText"
@@ -61,6 +61,53 @@ Item {
         active:!!root.state.chunked && !root.state.busy && !root.state.error
         visible:active
         source:active ? "PagedDocument.qml" : ""
+    }
+    Loader {
+        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+        anchors.top: notices.bottom; anchors.margins: 14
+        active: root.state.kind === "xlsx" && !root.state.error
+        sourceComponent: Item {
+            Text {
+                id: sheetTitle; objectName: "workbookSheetTitle"
+                width: parent.width; elide: Text.ElideRight
+                text: root.state.sheetName || ""; color: Theme.ink; font.family: Theme.fontFamily
+                font.pixelSize: Theme.font(12, visible); font.weight: Font.DemiBold
+            }
+            Flickable {
+                id: sheetViewport; objectName: "workbookPreview"
+                anchors.top: sheetTitle.bottom; anchors.topMargin: 10; anchors.bottom: parent.bottom; width: parent.width
+                readonly property int columns: root.state.sheetColumns || 1
+                readonly property real cellWidth: Math.max(Theme.control(105), width / columns)
+                contentWidth: Math.max(width, columns * cellWidth); contentHeight: sheetRows.height
+                clip: true; boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                Column {
+                    id: sheetRows
+                    Repeater {
+                        model: root.state.sheetRows || []
+                        Row {
+                            id: spreadsheetRow; required property var modelData; required property int index
+                            Repeater {
+                                model: spreadsheetRow.modelData
+                                Rectangle {
+                                    required property string modelData
+                                    width: sheetViewport.cellWidth; height: Theme.control(34)
+                                    color: spreadsheetRow.index === 0 ? Theme.hover : Theme.surface
+                                    border.color: Theme.line
+                                    Text {
+                                        anchors.fill: parent; anchors.leftMargin: 9; anchors.rightMargin: 9
+                                        text: parent.modelData; textFormat: Text.PlainText; verticalAlignment: Text.AlignVCenter
+                                        horizontalAlignment: /^[-+]?\d+(\.\d+)?$/.test(text) ? Text.AlignRight : Text.AlignLeft
+                                        font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); elide: Text.ElideRight; color: Theme.ink
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     Timer { interval: 0; running: root.browserMode && root.browserAllowed && !root.browserReady; onTriggered: root.browserReady = true }
     Loader {

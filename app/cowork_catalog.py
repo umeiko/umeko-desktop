@@ -57,6 +57,10 @@ def recipe(identifier, icon, tone, name, description, prompt, starters, tools=()
 
 
 BUILTINS = [
+    recipe('general', 'spark', 'blue', ('通用办公', 'General work'),
+           ('直接描述工作目标，无需先选角色。', 'Describe your task without choosing a role first.'),
+           'Complete the explicitly requested work using the selected folder and attachments. Preserve source files unless the user asks for changes. Deliver requested output files with submit_to_chatbox.',
+           [], ('read', 'find', 'grep', 'write', 'bash', 'powershell', 'submit_to_chatbox'), ('office-artifacts',), 'files'),
     recipe('study', 'bulb', 'sage', ('Study Buddy', 'Study Buddy'),
            ('拆解难点，陪你练习和复盘。', 'Work through tricky concepts and check your understanding.'),
            'Tutor with worked examples and short recall exercises. Start with the learner’s goal. Offer hints before revealing answers when practicing. Cite retrieved sources for factual research.',
