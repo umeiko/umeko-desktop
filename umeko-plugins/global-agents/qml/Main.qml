@@ -426,7 +426,8 @@ Rectangle {
                         }
                         LabelText {
                             objectName:"agentBusWorktreeDetails";visible:!!requestData.worktree
-                            text:requestData.worktree ? requestData.worktree.branch+"\n"+requestData.worktree.path+(requestData.worktreeState==="removed"?" · "+Umeko.I18n.t("已清理"):"") : ""
+                            text:requestData.worktree ? requestData.worktree.branch+"\n"+
+                                 (requestData.worktreeState==="removed" ? Umeko.I18n.t("工作树已清理") : requestData.worktree.path) : ""
                             color:root.c.muted;wrapMode:Text.WrapAnywhere;elide:Text.ElideNone;Layout.fillWidth:true;font.pixelSize:11*root.sdk.scale
                         }
                         RowLayout {

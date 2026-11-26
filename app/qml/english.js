@@ -715,7 +715,7 @@ var strings = {
   "保存并合并工作树": "Saving and merging worktree",
   "打开工作树": "Open worktree",
   "清理工作树": "Clean up worktree",
-  "已清理": "Removed",
+  "工作树已清理": "Worktree removed",
   "暂无请求": "No requests",
   "保留分支": "Keep branch",
   "正在检查工作树…": "Inspecting worktree…",
