@@ -144,6 +144,8 @@ Windows 使用 `./build.ps1`，macOS/Linux 使用 `bash build.sh` 打包。CI �
 
 ## CLI 实验版
 
+带 CLI 的桌面包可在「设置 → Agent → Umeko Desktop」一键配置 PATH。Windows 使用 `Umeko-cli`，macOS 和 Linux 使用 `umeko`。[打包版 PATH 配置与 ACP 接入](runtime/umeko-docs/cli-acp.md)
+
 从源码运行 `./setup.sh` 后，将仓库目录加入 PATH。在目标工作目录执行 `umeko` 即可聊天，`umeko desktop` 打开桌面窗口。两者共用同一个 Umeko 配置和会话。
 
 - `umeko session list` 列出会话，`umeko chat --resume <id>` 继续会话。

@@ -8,6 +8,8 @@ ApplicationWindow {
     id: window
     objectName: "mainWindow"
     readonly property var appWindow: window
+    readonly property real chatWallpaperAspect: Math.max(1, chatPage.width - (page === "chat" ? 0 : webPane.animatedWidth)) / Math.max(1, chatPage.height)
+    property bool wallpaperDialogVisible: false
     readonly property var sharedRequestInspector: requestInspector
     readonly property var conversation: conversationHost.currentPane ? conversationHost.currentPane.view : emptyConversation
     readonly property bool chatWheelScrolling: !!conversationHost.currentPane && conversation.scrollDirection !== 0
@@ -295,7 +297,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+B"; onActivated: window.toggleSidebar() }
     Shortcut { sequences: [StandardKey.Copy]; enabled: chatSelection.activeFocus && chatSelection.hasSelection; onActivated: Qt.callLater(chatSelection.copy) }
     Shortcut { sequences: [StandardKey.SelectAll]; enabled: chatSelection.activeFocus; onActivated: chatSelection.selectAll() }
-    Shortcut { sequence: "Escape"; enabled: !composer.slashVisible && !workspacePicker.visible && backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
+    Shortcut { sequence: "Escape"; enabled: !window.wallpaperDialogVisible && !composer.slashVisible && !workspacePicker.visible && backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); if (backend.desktopPlugins.page.id !== "global-agents") webPane.dismiss() }
         function onWebRequested(url, title) { if (backend.desktopSettings.webDisplay === "external") backend.openWebPreview(url,title); else {window.page = "chat"; webPane.submit(url, title)} }
@@ -747,14 +749,20 @@ ApplicationWindow {
                     }
                 }
             }
-            Item {
-                anchors.fill: parent; visible: Theme.yanami; clip: true
-                Rectangle { width: parent.width * 0.9; height: width; radius: width / 2; x: parent.width * 0.45; y: -height * 0.55; opacity: 0.38; gradient: Gradient { GradientStop { position: 0; color: "#ccdfff" } GradientStop { position: 1; color: "#f4f7ff" } } }
-                Rectangle { width: parent.width * 0.55; height: width; radius: width / 2; x: -width * 0.45; y: parent.height * 0.6; color: "#e2eaff"; opacity: 0.5 }
-                Repeater { model: [{x:0.17,y:0.16,size:12},{x:0.82,y:0.30,size:17},{x:0.27,y:0.65,size:9},{x:0.73,y:0.73,size:11}]
-                    Glyph { required property var modelData; x: parent.width * modelData.x; y: parent.height * modelData.y; width: modelData.size; height: modelData.size; name: "spark"; opacity: 0.28 }
-                }
-                CharacterArt { objectName: "yanamiWatermark"; anchors.fill: parent; fallbackSource: "../icons/yanami-chat-watermark.png"; artwork: Character.asset("background", fallbackSource); fillMode: Image.PreserveAspectCrop; horizontalAlignment: Image.AlignHCenter; verticalAlignment: Image.AlignVCenter; mipmap: true; opacity: 0.055 }
+            ChatWallpaperLayer {
+                id: chatWallpaper
+                objectName: "chatWallpaperLayer"
+                readonly property var settings: backend.chatWallpaper.settings
+                readonly property bool custom: settings.source !== ""
+                anchors.fill: parent
+                visible: custom || useCharacter || seaSaltDecorations
+                source: custom ? settings.source : ""
+                useCharacter: !custom && strength > 0
+                seaSaltDecorations: Theme.yanami && !custom
+                mode: settings.mode
+                strength: Theme.wallpaperOpacity(settings.opacity, custom)
+                zoom: settings.zoom
+                offsetX: settings.offsetX; offsetY: settings.offsetY; angle: settings.angle
             }
             Item {
                 id: welcome; width: Math.min(parent.width - 70, 620); height: welcomeMascot.height + 60

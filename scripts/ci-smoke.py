@@ -12,11 +12,13 @@ import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.pi_runtime import RELEASE_NAME, PINNED_VERSION
 from app.builtin_widgets import WITHHELD_BUILTIN_WIDGETS
+from app.cli_path import WINDOWS_CLI
 from app.project_info import VERSION, git_output
 from scripts.ci_process import run_logged
 
@@ -42,6 +44,68 @@ def verify_preview_network(node, resources, environment):
         category = None
     if result.returncode or category != 'certificate':
         raise RuntimeError('Packaged Preview network helper is unavailable')
+
+
+def verify_packaged_cli(executable, environment, report_dir):
+    if sys.platform == 'win32':
+        launcher = executable.with_name(WINDOWS_CLI)
+    elif sys.platform == 'darwin':
+        launcher = executable.parent.parent / 'Resources/umeko'
+    else:
+        launcher = executable.with_name('umeko')
+    env = {**environment, 'PYTHONIOENCODING': 'ascii'}
+    if os.name != 'nt':
+        env['PATH'] = os.defpath  # The launcher uses standard system shell utilities.
+
+    def run(*args, input=None):
+        result = subprocess.run([str(launcher), *args], env=env, input=input, capture_output=True, timeout=30)
+        if result.returncode:
+            raise RuntimeError(f'Packaged CLI {args} failed: {result.stderr.decode("utf-8", "replace")}')
+        return result.stdout.decode('utf-8')
+
+    help_text = run('--help')
+    assert all(command in help_text for command in ('chat', 'session', 'acp'))
+    diagnostic = report_dir / 'packaged-cli-host.log'
+    diagnostic.unlink(missing_ok=True)
+    with TemporaryDirectory(prefix='packaged-cli-', dir=report_dir) as directory:
+        profile = Path(directory)
+        isolated_profile(profile)
+        env.update(UMEKO_DATA_DIR=str(profile), UMEKO_DIAGNOSTICS=str(diagnostic))
+        title = '打包会话 ✨'
+        (profile / 'sessions.json').write_text(json.dumps([
+            {'id': 'cli-fixture', 'title': title, 'workspace': str(profile)}
+        ], ensure_ascii=False), encoding='utf-8')
+        with subprocess.Popen([str(executable), '--cli-host'], env=env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as host:
+            try:
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline and host.poll() is None:
+                    if diagnostic.exists() and 'QML_READY' in diagnostic.read_text(encoding='utf-8'):
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise RuntimeError('Could not start the packaged CLI host')
+                rows = json.loads(run('session', 'list'))
+                assert [(row['id'], row['title']) for row in rows] == [('cli-fixture', title)]
+                requests = [
+                    ('initialize', {'protocolVersion': 1}),
+                    ('session/list', {'cwd': str(profile)}),
+                ]
+                messages = ''.join(json.dumps({
+                    'jsonrpc': '2.0', 'id': index, 'method': method, 'params': params
+                }) + '\n' for index, (method, params) in enumerate(requests))
+                responses = [json.loads(line) for line in run('acp', input=messages.encode('utf-8')).splitlines()]
+                assert [response['id'] for response in responses] == [0, 1]
+                assert responses[0]['result']['protocolVersion'] == 1
+                assert responses[1]['result']['sessions'] == [
+                    {'sessionId': 'cli-fixture', 'title': title, 'cwd': str(profile)}
+                ]
+            finally:
+                host.terminate()
+                try:
+                    host.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    host.kill()
 
 
 def verify_windows_preview(executable, environment, report_dir):
@@ -186,6 +250,7 @@ def main():
         raise RuntimeError("Frozen GUI did not render a screenshot")
     from terminal_smoke import verify_terminal_worker
     verify_terminal_worker([str(executable),'--umeko-plugin-worker'],resources,environment,report_dir)
+    verify_packaged_cli(executable, environment, report_dir)
     metadata = json.loads((resources / "build-info.json").read_text(encoding="utf-8"))
     if metadata["version"] != VERSION or metadata["commit"] != git_output(ROOT, "rev-parse", "HEAD"):
         raise RuntimeError("Frozen build provenance is missing")
@@ -221,8 +286,8 @@ def main():
                        env=environment, check=True, timeout=45)
     if sys.platform == "darwin":
         subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(output / "Umeko.app")], check=True)
-    (report_dir / "result.json").write_text(json.dumps({"scope": "preview" if args.preview else "full", "gui": "passed", "pi": "passed", "terminal":"passed", "build": metadata}, indent=2), encoding="utf-8")
-    print("Packaged GUI rendered; bundled Pi self-test and build provenance verified")
+    (report_dir / "result.json").write_text(json.dumps({"scope": "preview" if args.preview else "full", "gui": "passed", "pi": "passed", "terminal":"passed", "cli": "passed", "build": metadata}, indent=2), encoding="utf-8")
+    print("Packaged GUI rendered; CLI, ACP, bundled Pi and build provenance verified")
 
 
 if __name__ == "__main__": main()

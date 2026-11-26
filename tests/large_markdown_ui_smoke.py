@@ -111,6 +111,16 @@ with tempfile.TemporaryDirectory(prefix='umeko-large-markdown-') as temporary:
 
         invoke(view, 'positionViewAtEnd')
         wait(lambda: any('END-OF-DOCUMENT' in str(i.property('text')) for i in items() if i.objectName().startswith('documentBlockText_')))
+        # Scrolling back up through mixed prose/table/code delegates must preserve plain code text.
+        for _ in range(30):
+            QMetaObject.invokeMethod(view, 'scrollBy', Q_ARG('QVariant', -480.0))
+            QTest.qWait(5)
+        QTest.qWait(100)
+        for ed in [i for i in items() if i.objectName().startswith('documentBlockText_')]:
+            parent = ed.parentItem()
+            if parent and parent.property('code') and not parent.property('pooled'):
+                code_plain = QMetaObject.invokeMethod(ed, 'getText', Qt.DirectConnection, Q_RETURN_ARG(str), Q_ARG(int, 0), Q_ARG(int, ed.property('length')))
+                assert '<!DOCTYPE' not in code_plain and 'let best = previous.max' in code_plain, code_plain
         backend.documentPreview.setMode('markdown','source')
         invoke(view, 'positionViewAtEnd')
         wait(lambda: any('END-OF-DOCUMENT' in str(i.property('text')) for i in items() if i.objectName().startswith('documentBlockText_')))

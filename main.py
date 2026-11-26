@@ -3,6 +3,17 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+
+if __name__ == '__main__':
+    cli_flag = sys.argv[1:2] == ['--umeko-cli']
+    console_launcher = (
+        sys.platform == 'win32' and getattr(sys, 'frozen', False)
+        and Path(sys.executable).stem.casefold() == 'umeko-cli'
+    )
+    if cli_flag or console_launcher:
+        from app.terminal_client import main as terminal_main
+        sys.exit(terminal_main(sys.argv[2:] if cli_flag else sys.argv[1:]))
+
 if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-bash-job']:
     from app.bash_job_windows import main as bash_job_main
     os._exit(bash_job_main())
@@ -10,10 +21,6 @@ if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-bash-job']:
 if __name__ == '__main__' and '--update-process-helper' in sys.argv:
     from app.update_windows import main as update_process_main
     sys.exit(update_process_main(sys.argv[sys.argv.index('--update-process-helper') + 1:]))
-
-if __name__ == '__main__' and sys.argv[1:2] == ['--umeko-cli']:
-    from app.terminal_client import main as terminal_main
-    sys.exit(terminal_main(sys.argv[2:]))
 
 if __name__ == '__main__':
     from app.preview_launch import route_start

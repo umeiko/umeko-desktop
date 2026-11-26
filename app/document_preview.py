@@ -1,8 +1,7 @@
-"""Read and cache local documents off the GUI thread; render large Markdown in blocks."""
+"""Read and cache local documents off the GUI thread; render Markdown in blocks."""
 import codecs
 import json
 import os
-import re
 import stat
 import threading
 from collections import OrderedDict
@@ -65,9 +64,10 @@ def read_preview(path, kind='', cancelled=lambda: False):
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     if cancelled():
         raise InterruptedError('Document changed')
-    # Markdown is a document, not a code snippet. Keep its source intact and
-    # virtualize large documents instead of cutting lines or flattening tables.
-    if kind == 'markdown' and (len(text) > 24000 or text.count('\n') > 400 or text.count('|') > 256 or text.count('[') > 256 or any(len(line) > 1000 for line in text.split('\n'))):
+    # Render all Markdown through the block-virtualized path so tables live in
+    # isolated TextEdit delegates (avoiding Qt 6 QQuickTextEdit blanking above
+    # QTextTable on scroll-up) and rendering stays consistent across file sizes.
+    if kind == 'markdown':
         note = ''
         try:
             blocks = parse_markdown(text, cancelled)
@@ -91,22 +91,10 @@ def read_preview(path, kind='', cancelled=lambda: False):
             line, truncated = line[:LINE_LENGTH] + ' …', True
         lines.append(line)
     text = '\n'.join(lines)
-    html, simple = '', False
-    if kind == 'markdown':
-        simple = len(text) > 24000 or len(lines) > 400 or text.count('|') > 256 or text.count('[') > 256 or any(len(line) > 1000 for line in lines)
-        if not simple:
-            document = LocalDocument()
-            document.setMarkdown(text)
-            html = re.sub(r'<img\b[^>]*>', '[图片]', document.toHtml(), flags=re.IGNORECASE)
-            html = re.sub(r'<body[^>]*>', '<body>', html)
-            html = re.sub(r'''\b(?:src|background)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)''', '', html, flags=re.IGNORECASE)
-            html = re.sub(r'url\([^)]*\)', '', html, flags=re.IGNORECASE)
-            if len(html) > 256 * 1024:
-                html, simple = '', True
     highlight = kind == 'code' and len(text) <= 24000 and len(lines) <= 500 and all(len(line) <= 1000 for line in lines)
     suffix = Path(path).suffix.lower()
-    file_type = 'html' if suffix in ('.html', '.htm') else 'markdown' if kind == 'markdown' else kind
-    result.update(kind=kind, fileType=file_type, text=text, html=html, language=suffix.lstrip('.'), bytes=info.st_size, truncated=truncated, simple=simple, highlight=highlight)
+    file_type = 'html' if suffix in ('.html', '.htm') else kind
+    result.update(kind=kind, fileType=file_type, text=text, html='', language=suffix.lstrip('.'), bytes=info.st_size, truncated=truncated, simple=False, highlight=highlight)
     return result
 
 
