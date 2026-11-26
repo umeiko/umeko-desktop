@@ -11,6 +11,30 @@ from app.document_blocks import source_blocks, parse_markdown
 
 
 class DocumentPreviewTests(unittest.TestCase):
+    def test_short_markdown_also_uses_isolated_block_virtualization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'short.md'
+            text = (
+                '# 短文档\n\n顶部说明段落。\n\n'
+                '| 列一 | 列二 |\n| --- | --- |\n| A | B |\n\n'
+                '```html\n<div>hello</div>\n```\n\n'
+                '![No network](http://127.0.0.1:1/never.png)\n'
+            )
+            path.write_text(text, encoding='utf-8')
+            result = read_preview(str(path))
+            self.assertTrue(result['chunked'])
+            self.assertFalse(result['truncated'])
+            self.assertEqual(result['html'], '')
+            self.assertEqual(result['text'], text)
+            self.assertEqual(''.join(b['text'] for b in result['_source']), text)
+            table_blocks = [b for b in result['_blocks'] if '<table' in b.get('html', '')]
+            self.assertEqual(len(table_blocks), 1)
+            self.assertNotIn('顶部说明段落', table_blocks[0]['html'])
+            self.assertTrue(all('<img' not in b.get('html', '') for b in result['_blocks']))
+            code_blocks = [b for b in result['_blocks'] if b['kind'] == 'code']
+            self.assertEqual(len(code_blocks), 1)
+            self.assertEqual(code_blocks[0]['text'], '<div>hello</div>')
+
     def test_large_markdown_retains_entire_table_code_and_source(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'large.md'

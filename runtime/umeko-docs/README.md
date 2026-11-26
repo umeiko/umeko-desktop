@@ -17,7 +17,7 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 - [外观、运行、上下文与资源设置](settings.md)
 - [命令规则与记住审批](command-rules.md)
 - [项目、会话、归档、删除与分支](sessions.md)
-- [Umeko CLI 与 ACP：终端聊天、续聊和编辑器接入](cli-acp.md)
+- [Umeko CLI 与 ACP：打包版 PATH 配置、终端续聊和编辑器接入](cli-acp.md)
 - [在远程环境运行命令与传输文件](remote-environments.md)
 - [Pi 扩展、Skills 与 MCP](extensions.md)
 - [API 代理、访问密钥和更新](server-updates.md)

@@ -1,6 +1,7 @@
 """Persisted desktop presentation, appearance and provider transport settings."""
-import math
 import json
+import logging
+import math
 import urllib.parse
 from pathlib import Path
 from PySide6.QtCore import Slot, QUrl
@@ -10,6 +11,20 @@ from umeko_provider_sdk.network import validate_ca_file
 
 
 class PreferencesMixin:
+    @Slot()
+    def configureCliPath(self):
+        from .cli_path import configure_path, packaged_cli
+        try:
+            launcher = packaged_cli()
+            if launcher is None:
+                raise ValueError('packaged CLI launcher unavailable')
+            configure_path(launcher)
+        except (OSError, ValueError, KeyError) as error:
+            logging.getLogger(__name__).warning('Could not configure CLI PATH: %s', error)
+            self.toast.emit('无法配置 CLI 到 PATH，请参照 Umeko CLI 与 ACP 文档手动设置。')
+        else:
+            self.toast.emit('已配置 CLI 到 PATH，请关闭并重新打开终端。')
+
     @Slot(str, result=bool)
     def saveRequestHeaders(self, raw):
         from .request_headers import validate

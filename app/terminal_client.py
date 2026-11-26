@@ -13,6 +13,7 @@ import time
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtNetwork import QLocalSocket
 
+from .cli_path import WINDOWS_CLI
 from .preview_launch import profile_directory
 from .terminal_ipc import encode, endpoint, frames
 
@@ -33,12 +34,18 @@ class TerminalClient:
         if not connect(200):
             if not start:
                 raise OSError("The Umeko terminal host is not available")
-            command = [sys.executable]
-            if not getattr(sys, "frozen", False):
+            executable = Path(sys.executable)
+            environment = os.environ.copy()
+            command = [str(executable)]
+            if getattr(sys, "frozen", False):
+                if sys.platform == "win32" and executable.name.casefold() == WINDOWS_CLI.casefold():
+                    command[0] = str(executable.with_name("Umeko.exe"))
+                environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+            else:
                 command.append(str(Path(__file__).resolve().parents[1] / "main.py"))
             subprocess.Popen([*command, "--cli-host"], stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             cwd=str(Path.home()), start_new_session=os.name != "nt",
+                             cwd=str(Path.home()), env=environment, start_new_session=os.name != "nt",
                              creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             deadline = time.monotonic() + 12
             while not connect(200):
@@ -86,7 +93,11 @@ class TerminalClient:
 
 
 def parser():
-    result = argparse.ArgumentParser(prog="umeko", description="Umeko sessions in your terminal")
+    program = Path(sys.executable).stem
+    result = argparse.ArgumentParser(
+        prog=program if program.casefold() == Path(WINDOWS_CLI).stem.casefold() else "umeko",
+        description="Umeko sessions in your terminal",
+    )
     sub = result.add_subparsers(dest="command")
     chat = sub.add_parser("chat", help="Open a terminal conversation")
     chat.add_argument("--cwd", default=os.getcwd())
@@ -156,6 +167,10 @@ def main(argv):
         argv = ["chat", *argv]
     args = parser().parse_args(argv)
     try:
+        # JSON and ACP use UTF-8 over pipes, independently of the console code page.
+        for stream in (sys.stdin, sys.stdout, sys.stderr):
+            if stream is not None and not stream.isatty() and hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8")
         if args.command == "acp":
             from .terminal_acp import run_acp
             return run_acp()

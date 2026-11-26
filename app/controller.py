@@ -109,6 +109,11 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def desktopSettings(self):
         return dict(self.store.data['desktop'])
 
+    @Property(bool, constant=True)
+    def packagedCliAvailable(self):
+        from .cli_path import packaged_cli
+        return packaged_cli() is not None
+
     @Property(QObject, constant=True)
     def chatWallpaper(self):
         return self._chat_wallpaper

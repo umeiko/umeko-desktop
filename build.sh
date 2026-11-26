@@ -73,6 +73,10 @@ for target in targets:
         report = optimize_payload(target)
         (root / 'build' / ('payload-' + target.name + '.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 shutil.copy2(root / 'README.md', bundle / 'Umeko/README.md')
+if sys.platform == 'darwin':
+    shutil.copy2(root / 'umeko', bundle / 'Umeko.app/Contents/Resources/umeko')
+else:
+    shutil.copy2(root / 'umeko', bundle / 'Umeko/umeko')
 if bundle != output:
     if (output / 'Umeko').exists(): shutil.rmtree(output / 'Umeko')
     shutil.copytree(bundle / 'Umeko', output / 'Umeko', symlinks=False)

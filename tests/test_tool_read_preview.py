@@ -169,11 +169,11 @@ def run_child(base, screenshots=None):
         # Clicking the read row opens the shared document preview for that file.
         pane = find('webPane')
         click(find('toggleToolDetail_read-ok'))
-        wait(lambda: backend.documentPreview.state.get('html') and not pane.property('moving'), 'document preview')
+        wait(lambda: backend.documentPreview.state.get('chunked') and not backend.documentPreview.state.get('busy') and not pane.property('moving') and find('documentBlockText_0') is not None, 'document preview')
         assert pane.property('mode') == 'document', pane.property('mode')
         preview_path = backend.documentPreview.state.get('path')
         assert os.path.normcase(preview_path) == os.path.normcase(str(notes.resolve())), preview_path
-        assert 'Release notes' in find('documentPreviewText').property('text')
+        assert 'Release notes' in find('documentBlockText_0').property('text')
         detail = find('toolDetail_read-ok')
         assert detail is None or not detail.isVisible(), 'read row expanded inline'
         assert not find('toggleToolDetail_read-ok').parentItem().parentItem().property('details')
@@ -208,7 +208,7 @@ def run_child(base, screenshots=None):
             backend.appearanceChanged.emit()
             QTest.qWait(150)
             click(find('toggleToolDetail_read-ok'))
-            wait(lambda: backend.documentPreview.state.get('html') and not pane.property('moving'), 'second-language preview')
+            wait(lambda: backend.documentPreview.state.get('chunked') and not backend.documentPreview.state.get('busy') and not pane.property('moving') and find('documentBlockText_0') is not None, 'second-language preview')
             shot('05-read-preview-open-' + backend.language + '.png')
         assert not warnings, warnings[:10]
         print(json.dumps({'previewPath': os.path.normcase(preview_path),
