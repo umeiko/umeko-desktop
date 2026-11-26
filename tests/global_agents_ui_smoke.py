@@ -138,9 +138,9 @@ try:
     assert (Path(b._view.workspace)/'bridge-proof.txt').read_text()=='approved bridge work'
     coordinator=g.records[identifier];assert coordinator.file and b._view.file and coordinator.file!=b._view.file
     assert all(row['id']!=coordinator.id for row in b._sessions)
-    # The coordinator receives host tools only; the delegation target keeps its native tools.
+    # The coordinator sees only its ordinary host tool outside a group turn.
     assert any({tool.get('name', tool.get('function', {}).get('name')) for tool in tools}
-               == {'umeko_desktop', 'reply_to_groupchat'} for _, tools in fixture.calls)
+               == {'umeko_desktop'} for _, tools in fixture.calls)
     wait(lambda:len([g.presentation.displayMessage(i) for i in range(g.presentation.messageCount)])>0,'Transcript not visible')
     QTest.qWait(500);window.grabWindow().save(str(out/'conversation.png'))
     projected=g.snapshot(identifier)['messages'];last_index=len(projected)-1

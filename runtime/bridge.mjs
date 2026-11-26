@@ -97,6 +97,7 @@ const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const bashHost = process.env.UMEKO_BASH_JOB_HOST;
 const bashHostScript = process.env.UMEKO_BASH_JOB_SCRIPT;
 const blockedSessions = new WeakSet();
+const groupChatSessions = new WeakSet();
 let stopWork, currentRun;
 let pendingMemberModel;
 let windowsSandbox;
@@ -224,7 +225,7 @@ function taskDelivery(source, id, items, failed = 0) {
 const compactionFailures = new WeakMap();
 const promptControllers = new WeakMap();
 const loopReview=createLoopReview({emit});
-const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit});
+const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit,prepareGroupChat: enableGroupChatTool});
 const modelRoles = createModelRoles();
 const QUOTA_MARKER = "[Umeko:model_quota]";
 let checkpointLocked = false;
@@ -410,7 +411,11 @@ async function bindSession(session) {
     if (event.type === "turn_end") queueMicrotask(() => {
       if (runtime?.session === session) emit({type:"history_checkpoint", leafId:session.sessionManager.getLeafId()});
     });
-    widgetMessages.observe(event);
+    const groupDelivery = widgetMessages.observe(event);
+    if (groupDelivery) enableGroupChatTool(session);
+    if (event.type === "agent_end" && groupChatSessions.delete(session)) {
+      exposeNativeTools(session);
+    }
     // Pi can start a parent run without a desktop command, e.g. when a background
     // subagent reports. Track it as a desktop action so busy/done stay truthful.
     if (event.type === "agent_start") adoptAgentRun(session);
@@ -466,6 +471,7 @@ async function bindSession(session) {
     session.agent.beforeToolCall = originalBeforeToolCall;
     session.agent.prepareRequest = originalPrepareRequest;
     compactionFailures.delete(session);
+    groupChatSessions.delete(session);
     clearTimeout(retryTimer);
     httpRetryBoundary.close();
     unbind();
@@ -533,6 +539,15 @@ function coworkMcpFactory(input, tools, owners, onLoad) {
   };
 }
 
+function enableGroupChatTool(session) {
+  if (!config?.globalCoordinator || groupChatSessions.has(session)) return;
+  groupChatSessions.add(session);
+  exposeNativeTools(session);
+  return () => {
+    if (groupChatSessions.delete(session)) exposeNativeTools(session);
+  };
+}
+
 function exposeNativeTools(session) {
   // Use Pi's registry, schemas and execution. Deferred/codemode tools remain reachable
   // through the native discovery tools; explicitly hidden tools stay hidden.
@@ -545,7 +560,8 @@ function exposeNativeTools(session) {
   }
   if (config?.globalCoordinator) {
     const available = new Set(session.getAllTools().map(tool => tool.name));
-    session.setActiveToolsByName([...new Set([UMEKO_TOOL, REPLY_TO_GROUPCHAT,
+    session.setActiveToolsByName([...new Set([UMEKO_TOOL,
+      ...(groupChatSessions.has(session) ? [REPLY_TO_GROUPCHAT] : []),
       ...(config.petAssistantBinding ? [SEND_TO_USER] : []), ...(config.petReminderBinding ? [REMINDER] : []),
       ...(config.coordinatorSkills?.length ? ['read'] : []), ...coordinatorNativeTools(config.coordinatorTools)])]
       .filter(name => available.has(name)));
