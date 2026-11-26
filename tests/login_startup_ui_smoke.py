@@ -67,6 +67,10 @@ class FakeBackend(QObject):
     def loginStartup(self):
         return self.startup
 
+    @Property(bool, constant=True)
+    def packagedCliAvailable(self):
+        return False
+
     @Property("QVariantMap", notify=changed)
     def config(self):
         return self._config
