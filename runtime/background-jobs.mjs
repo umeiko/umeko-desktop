@@ -7,15 +7,28 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createJiti } from "jiti";
 import { getPowerShellConfig, getShellConfig } from "./node_modules/@earendil-works/pi-coding-agent/dist/utils/shell.js";
+import { isUtf8 } from "node:buffer";
 import { assertProcessCommandAllowed, blockedProcessCommand } from "./process-guard.mjs";
 import { launchCommand } from "./command-process.mjs";
+import { formatCommandOutput, outputWindow } from "./command-output.mjs";
 import { sandboxCommand, sandboxFailure } from "./windows-sandbox.mjs";
 
 const modelBytesPerStream = 20_000;
 export const DEFAULT_YIELD_MS = 10_000;
 
-let gbkDecoder;
-const decodeOutput = (bytes, encoding) => encoding === "gbk" ? (gbkDecoder ??= new TextDecoder("gbk")).decode(bytes) : bytes.toString("utf8");
+let gbkDecoder, strictGbkDecoder;
+function tryGbk(bytes) {
+  try { return (strictGbkDecoder ??= new TextDecoder("gbk", { fatal: true })).decode(bytes); }
+  catch { return undefined; }
+}
+// Follow Codex protocol/src/exec_output.rs: accept UTF-8, then try the
+// Windows legacy encoding, and keep a lossy UTF-8 fallback. This port
+// recognizes GBK (CP936); explicit output_encoding bypasses detection.
+function decodeOutput(bytes, encoding) {
+  if (encoding === "gbk") return (gbkDecoder ??= new TextDecoder("gbk")).decode(bytes);
+  if (encoding === "auto" && !isUtf8(bytes)) return tryGbk(bytes) ?? bytes.toString("utf8");
+  return bytes.toString("utf8");
+}
 function gbkPageSize(buffer, count, bytesRead, finished) {
   let i = 0;
   while (i < count) {
@@ -28,6 +41,18 @@ function gbkPageSize(buffer, count, bytesRead, finished) {
     i += 2;
   }
   return i;
+}
+
+function utf8PageSize(buffer, count, bytesRead, finished) {
+  if (count === 0) return 0;
+  let lead = count - 1;
+  while (lead >= 0 && (buffer[lead] & 0xc0) === 0x80) lead--;
+  if (lead < 0) return count;
+  const byte = buffer[lead], width = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+  if (count - lead >= width) return count;
+  if (lead === 0 && bytesRead >= width) return width;
+  // Advance after exit even when the final bytes cannot form a complete character.
+  return finished && bytesRead < lead + width ? bytesRead : lead;
 }
 
 // Fixed pi-bg primitives only: importing its extension entry would replace bash
@@ -48,7 +73,8 @@ const snapshot = job => ({ id: job.id, command: job.command, cwd: job.cwd, pid: 
   ...(job.sandboxNotice ? { sandboxNotice: job.sandboxNotice } : {}),
   ...(job.sandboxFailure ? { sandboxFailure: job.sandboxFailure } : {}) });
 
-export async function createJobManager({ shellPath, cwd = process.cwd(), host, hostScript, onCleanup, waitForSandbox } = {}) {
+export async function createJobManager({ shellPath, cwd = process.cwd(), host, hostScript, onCleanup, waitForSandbox,
+  getBashConfig = getShellConfig } = {}) {
   const { BackgroundRegistry } = await loadPrimitives();
   const registry = new BackgroundRegistry();
   const directory = await mkdtemp(join(tmpdir(), "umeko-background-jobs-"));
@@ -59,24 +85,26 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
     return job;
   }
   async function start({ command, cwd: workingDirectory = cwd, workspace = cwd, env, shellPath: sessionShellPath = shellPath,
-    shellName = "bash", shellConfig, timeoutMs, signal, toolCallId, owner, outputEncoding = "utf8" } = {}) {
+    shellName = "bash", shellConfig, timeoutMs, signal, toolCallId, owner, outputEncoding, stdinOpen = false } = {}) {
     if (disposed) throw new Error("Background job manager is closed");
     if (signal?.aborted) throw new Error("aborted");
     if (typeof command !== "string" || !command.trim()) throw new Error("A command is required");
     assertProcessCommandAllowed(command, shellName);
-    if (outputEncoding !== "utf8" && (outputEncoding !== "gbk" || process.platform !== "win32" || shellName.toLowerCase() !== "powershell")) {
+    if (outputEncoding !== undefined && outputEncoding !== "utf8" &&
+        (outputEncoding !== "gbk" || process.platform !== "win32" || shellName.toLowerCase() !== "powershell")) {
       throw new Error("GBK output encoding is only supported for local Windows PowerShell commands");
     }
     const { shell, args, commandTransport } = shellConfig ||
-      (shellName === "powershell" ? getPowerShellConfig() : getShellConfig(sessionShellPath));
+      (shellName === "powershell" ? getPowerShellConfig() : await getBashConfig(sessionShellPath, signal));
     if (commandTransport === "stdin") throw new Error("Command sessions require a shell that accepts the command as an argument");
     const id = randomUUID(), logPath = join(directory, `${id}.stdout.log`), errPath = join(directory, `${id}.stderr.log`);
     const { policy, notice } = await waitForSandbox?.(signal, { report: true }) || {};
     if (disposed || signal?.aborted) throw new Error("aborted");
-    const launch = sandboxCommand({ file: shell, args: [...args, command], cwd: workingDirectory, env, workspace, policy });
+    const launch = sandboxCommand({ file: shell, args: [...args, command], cwd: workingDirectory, env, workspace, policy, stdinOpen });
+    outputEncoding ??= process.platform === "win32" ? "auto" : "utf8";
     const child = launchCommand({ host, hostScript, file: launch.file, fileArgs: launch.args,
-      cwd: workingDirectory, logPath, errPath, env: launch.env });
-    const job = { id, command, cwd: workingDirectory, child, shellName, logPath, errPath, toolCallId, owner, outputEncoding,
+      cwd: workingDirectory, logPath, errPath, env: launch.env, stdinOpen });
+    const job = { id, command, cwd: workingDirectory, child, shellName, logPath, errPath, toolCallId, owner, outputEncoding, stdinOpen,
       status: "running", exitCode: null, signal: null, startedAt: Date.now(),
       sandboxNotice: [notice, launch.notice].filter(Boolean).join("\n") };
     registry.jobs.set(id, job);
@@ -97,7 +125,7 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
             const offset = Math.max(0, size - 8192);
             const tail = Buffer.alloc(size - offset);
             const { bytesRead } = await handle.read(tail, 0, tail.length, offset);
-            stderr = tail.subarray(0, bytesRead).toString("utf8");
+            stderr = decodeOutput(tail.subarray(0, bytesRead), job.outputEncoding);
           } finally { await handle.close(); }
         } catch { /* The exit result is still available if the log is gone. */ }
         job.sandboxFailure = sandboxFailure(launch.level, launch.allowNetwork, stderr);
@@ -130,25 +158,20 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
         // complete UTF-8 character without losing or duplicating its bytes.
         const buffer = Buffer.alloc(Math.min(maxBytes + 3, size - offset));
         const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
-        // Do not split a UTF-8 codepoint: leave its partial bytes for next read.
-        let count = Math.min(bytesRead, maxBytes);
+        const limit = Math.min(bytesRead, maxBytes);
+        const page = (text, count) => ({ text, offset: offset + count, hasMore: offset + count < size });
         if (job.outputEncoding === "gbk") {
-          count = gbkPageSize(buffer, count, bytesRead, finished);
-        } else if (count) {
-          let lead = count - 1;
-          while (lead >= 0 && (buffer[lead] & 0xc0) === 0x80) lead--;
-          if (lead >= 0) {
-            const byte = buffer[lead], width = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-            if (count - lead < width) {
-              if (lead === 0 && bytesRead >= width) count = width;
-              // After exit there will be no more bytes to complete this suffix.
-              // Buffer's UTF-8 decoder replaces it, and its byte cursor advances.
-              else if (finished && bytesRead < lead + width) count = bytesRead;
-              else count = lead;
-            }
-          }
+          const count = gbkPageSize(buffer, limit, bytesRead, finished);
+          return page(decodeOutput(buffer.subarray(0, count), "gbk"), count);
         }
-        return { text: decodeOutput(buffer.subarray(0, count), job.outputEncoding), offset: offset + count, hasMore: offset + count < size };
+        const count = utf8PageSize(buffer, limit, bytesRead, finished);
+        const utf8 = buffer.subarray(0, count);
+        if (job.outputEncoding === "auto" && !isUtf8(utf8)) {
+          const legacyCount = gbkPageSize(buffer, limit, bytesRead, finished);
+          const legacy = tryGbk(buffer.subarray(0, legacyCount));
+          if (legacy !== undefined) return page(legacy, legacyCount);
+        }
+        return page(utf8.toString("utf8"), count);
       } finally { await handle.close(); }
     }
     const [stdout, stderr] = await Promise.all([chunk(job.logPath, stdoutOffset), chunk(job.errPath, stderrOffset)]);
@@ -189,7 +212,8 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
   }
   async function write(id, input) {
     const job = owned(id);
-    if (job.status !== "running") throw new Error("Command input closed");
+    if (!job.stdinOpen) throw new Error("Standard input is closed for this command. Use background_job start for interactive input.");
+    if (job.status !== "running") throw new Error("Standard input is closed for this command.");
     if (typeof input !== "string" || !input || Buffer.byteLength(input) > 16_384) {
       throw new Error("Input must be between 1 and 16384 UTF-8 bytes");
     }
@@ -221,7 +245,7 @@ const parameters = { type: "object", properties: {
   action: { type: "string", enum: ["start", "status", "read", "write", "wait", "kill", "list"] },
   command: { type: "string", description: "Shell command for start" },
   shell: { type: "string", enum: ["bash", "powershell"], description: "Shell for start (default: bash)" },
-  output_encoding: { type: "string", enum: ["utf8", "gbk"], description: "Windows PowerShell start only: set gbk for native CP936/GBK on both output streams; defaults to utf8" },
+  output_encoding: { type: "string", enum: ["utf8", "gbk"], description: "Windows PowerShell start only: force UTF-8 or GBK; omit to detect the encoding" },
   input: { type: "string", description: "Text to send to standard input; include a newline to submit a line" },
   cwd: { type: "string", description: "Working directory for start" },
   id: { type: "string", description: "Job ID returned by start; only jobs in this session are accessible" },
@@ -259,22 +283,33 @@ export function createBackgroundJobsExtension(options = {}) {
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
     try {
-      await jobs.wait(job.id, { timeoutMs: waitForExit ? Infinity : DEFAULT_YIELD_MS, signal });
-      const chunk = await jobs.read(job.id, { maxBytes: modelBytesPerStream });
-      if (chunk.stdout) onData(Buffer.from(chunk.stdout));
-      if (chunk.stderr) onData(Buffer.from(`${chunk.stdout ? "\n" : ""}${chunk.stderr}`));
-      const details = [chunk.sandboxNotice, chunk.sandboxFailure].filter(Boolean);
-      if (details.length) onData(Buffer.from(`\n${details.join("\n")}\n`));
+      const state = await jobs.wait(job.id, { timeoutMs: waitForExit ? Infinity : DEFAULT_YIELD_MS, signal });
+      let chunk = await jobs.read(job.id, { maxBytes: modelBytesPerStream });
       if (signal?.aborted || chunk.reason === "aborted") throw new Error("aborted");
       if (chunk.status !== "running" && chunk.reason === "timeout") throw new Error(`timeout:${timeout}`);
       if (chunk.error) throw new Error(chunk.error);
-      if (chunk.status === "running" || chunk.hasMore) {
-        return { exitCode: chunk.status === "running" ? null : chunk.exitCode, commandSession: {
-          id: job.id, status: chunk.status, stdoutOffset: chunk.stdoutOffset, stderrOffset: chunk.stderrOffset,
+      const details = [chunk.sandboxNotice, chunk.sandboxFailure].filter(Boolean);
+      if (state.timedOut && chunk.status === "running") {
+        if (chunk.stdout) onData(Buffer.from(chunk.stdout));
+        if (chunk.stderr) onData(Buffer.from(`${chunk.stdout ? "\n" : ""}${chunk.stderr}`));
+        if (details.length) onData(Buffer.from(`\n${details.join("\n")}\n`));
+        return { exitCode: null, commandSession: {
+          id: job.id, status: "running", stdoutOffset: chunk.stdoutOffset, stderrOffset: chunk.stderrOffset,
           stdoutPath: job.stdoutPath, stderrPath: job.stderrPath, hasMore: chunk.hasMore,
         } };
       }
-      return { exitCode: chunk.exitCode ?? 1 };
+      const stdout = outputWindow(), stderr = outputWindow();
+      for (;;) {
+        stdout.append(chunk.stdout);
+        stderr.append(chunk.stderr);
+        if (!chunk.hasMore) break;
+        signal?.throwIfAborted();
+        chunk = await jobs.read(job.id, { stdoutOffset: chunk.stdoutOffset, stderrOffset: chunk.stderrOffset, maxBytes: 65_536 });
+      }
+      const preview = formatCommandOutput(stdout.value, stderr.value, details, job, chunk.stdoutOffset + chunk.stderrOffset);
+      if (preview.text) onData(Buffer.from(preview.text));
+      return { exitCode: chunk.exitCode ?? 1,
+        ...(preview.truncated ? { outputPreview: { fullOutputPath: preview.outputPath } } : {}) };
     } finally {
       signal?.removeEventListener("abort", abort);
       if (cancelled) await cancelled;
@@ -305,7 +340,7 @@ export function createBackgroundJobsExtension(options = {}) {
             const env = await options.getEnvironment?.(ctx, shellPath, shellName);
             const workspace = ctx?.cwd || options.cwd || process.cwd();
             result = await jobs.start({ command: input.command, env, shellPath, shellName, signal, toolCallId,
-              outputEncoding: input.output_encoding,
+              outputEncoding: input.output_encoding, stdinOpen: true,
               workspace, cwd: resolve(workspace, input.cwd || ".") });
           }
           else if (input.action === "list") result = jobs.list();

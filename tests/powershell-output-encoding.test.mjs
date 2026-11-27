@@ -68,7 +68,9 @@ test("Windows Pi PowerShell opt-in decodes CP936 on both streams without changin
       assert.equal(shellUnicode.output.trim(), "中文", shell);
       const original = await run(command("d6d0cec4", "b2e2cad4"));
       assert.equal(original.exit_code, 0, shell);
-      assert.match(original.output, /\uFFFD/u);
+      assert.equal(original.output, "中文\n测试", shell);
+      const forcedUtf8 = await run(command("d6d0cec4", "b2e2cad4"), "utf8");
+      assert.match(forcedUtf8.output, /\uFFFD/u);
       const fixed = await run(command("d6d0cec4", "b2e2cad4"), "gbk");
       assert.equal(fixed.exit_code, 0, shell);
       assert.equal(fixed.output, "中文\n测试", shell);

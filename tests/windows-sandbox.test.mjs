@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createSandboxPreparation, prepareSandboxSearch, sandboxCommand, sandboxFailure } from '../runtime/windows-sandbox.mjs';
+import { createSandboxPreparation, prepareSandboxSearch, resolveLocalBash, sandboxCommand, sandboxFailure, windowsShellHints } from '../runtime/windows-sandbox.mjs';
 import { registerCoworkLocalTools } from '../runtime/cowork-local.mjs';
 
 function fixture(t) {
@@ -81,7 +81,7 @@ test('sandbox search retries temporary storage and launches the original argumen
   assert.equal(existsSync(staged), false);
 });
 
-test('standard-user Git Bash uses the packaged runtime inside the same native sandbox', t => {
+test('both Windows sandbox levels use the packaged Git Bash', t => {
   const input = fixture(t);
   const options = { platform: 'win32' };
   const root = join(input.workspace, '..', 'git');
@@ -91,7 +91,7 @@ test('standard-user Git Bash uses the packaged runtime inside the same native sa
   input.policy.gitRoot = root;
   input.policy.gitReady = true;
   const elevated = sandboxCommand(input, options);
-  assert.equal(elevated.args.at(-3), input.file);
+  assert.equal(elevated.args.at(-3), bash);
   input.policy.elevated = false;
   input.env = { Path: 'original' };
   const standard = sandboxCommand(input, options);
@@ -113,7 +113,7 @@ function preparationFixture(t) {
     request: () => requests++, language: () => 'zh' });
   const update = values => { state = { ...state, ...values }; preparation.changed(); };
   function ready(attempt) {
-    const paths = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe'];
+    const paths = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe', 'usr/bin/rg.exe'];
     for (const path of paths) {
       mkdirSync(join(gitRoot, path, '..'), { recursive: true });
       writeFileSync(join(gitRoot, path), 'MZfixture');
@@ -124,6 +124,33 @@ function preparationFixture(t) {
   }
   return { preparation, gitRoot, ready, update, requests: () => requests };
 }
+
+test('Windows uses packaged Bash if discovery finds another shell or no shell', async t => {
+  const { policy } = fixture(t);
+  const gitRoot = join(policy.home, 'git');
+  const packaged = join(gitRoot, 'usr', 'bin', 'bash.exe');
+  const external = join(policy.home, 'other', 'bash.exe');
+  const prepareBundle = async () => ({ policy: { gitRoot } });
+  for (const getShellConfig of [
+    shell => shell ? { shell } : { shell: external },
+    shell => { if (!shell) throw new Error('No bash'); return { shell }; },
+  ]) {
+    const options = { platform: 'win32', getShellConfig, policy: { bundledGitBash: true }, prepareBundle };
+    assert.equal((await resolveLocalBash(options)).shell, packaged);
+    assert.equal((await resolveLocalBash({ ...options, shellPath: external })).shell, external);
+  }
+  const input = { ...fixture(t), file: external, policy: { ...policy, gitRoot } };
+  const launch = sandboxCommand(input, { platform: 'win32' });
+  assert.equal(launch.level, 'elevated');
+  assert.ok(launch.args.includes(packaged));
+  assert.match(launch.env.PATH, /ucrt64/);
+  const off = sandboxCommand({ ...input, file: packaged, policy: { ...input.policy, enabled: false } },
+    { platform: 'win32' });
+  assert.equal(off.file, packaged);
+  assert.match(off.env.PATH, /ucrt64/);
+  assert.match(windowsShellHints('powershell', { platform: 'win32' }), /use the bash tool/);
+  assert.equal(windowsShellHints('bash', { platform: 'linux' }), '');
+});
 
 test('commands share preparation, cancel independently, and report elapsed time once', async t => {
   const { preparation, ready, requests } = preparationFixture(t);
