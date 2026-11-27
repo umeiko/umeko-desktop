@@ -15,6 +15,7 @@ Windows job host, bounded reads, and separate full-output files.
 Local command standard input, session labels, shell guidance, output previews
 and UTF-8-first decoding adapt the following sources from rust-v0.172.0:
 https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/spawn.rs
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/windows-sandbox-rs/src/process.rs
 https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/unified_exec/process_manager.rs
 https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/tools/context.rs
 https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/context/world_state/environment.rs

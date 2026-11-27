@@ -1,0 +1,65 @@
+--- a/codex-rs/windows-sandbox-rs/src/process.rs
++++ b/codex-rs/windows-sandbox-rs/src/process.rs
+@@ -12,6 +12,7 @@
+ use std::ffi::c_void;
+ use std::os::windows::io::AsRawHandle;
+ use std::os::windows::io::BorrowedHandle;
++use std::os::windows::io::IntoRawHandle;
+ use std::os::windows::io::OwnedHandle;
+ use std::path::Path;
+ use std::ptr;
+@@ -254,19 +255,29 @@
+     let mut err_r: HANDLE = std::ptr::null_mut();
+     let mut err_w: HANDLE = std::ptr::null_mut();
+     unsafe {
+-        if CreatePipe(&mut in_r, &mut in_w, ptr::null_mut(), 0) == 0 {
+-            return Err(anyhow!("CreatePipe stdin failed: {}", GetLastError()));
++        match stdin_mode {
++            // Mirror core/src/spawn.rs. A closed pipe is still a pipe to tools like rg.
++            StdinMode::Closed => in_r = std::fs::File::open(r"\\.\NUL")?.into_raw_handle(),
++            StdinMode::Open => {
++                if CreatePipe(&mut in_r, &mut in_w, ptr::null_mut(), 0) == 0 {
++                    return Err(anyhow!("CreatePipe stdin failed: {}", GetLastError()));
++                }
++            }
+         }
+         if CreatePipe(&mut out_r, &mut out_w, ptr::null_mut(), 0) == 0 {
+             CloseHandle(in_r);
+-            CloseHandle(in_w);
++            if !in_w.is_null() {
++                CloseHandle(in_w);
++            }
+             return Err(anyhow!("CreatePipe stdout failed: {}", GetLastError()));
+         }
+         if matches!(stderr_mode, StderrMode::Separate)
+             && CreatePipe(&mut err_r, &mut err_w, ptr::null_mut(), 0) == 0
+         {
+             CloseHandle(in_r);
+-            CloseHandle(in_w);
++            if !in_w.is_null() {
++                CloseHandle(in_w);
++            }
+             CloseHandle(out_r);
+             CloseHandle(out_w);
+             return Err(anyhow!("CreatePipe stderr failed: {}", GetLastError()));
+@@ -296,7 +307,9 @@
+         Err(err) => {
+             unsafe {
+                 CloseHandle(in_r);
+-                CloseHandle(in_w);
++                if !in_w.is_null() {
++                    CloseHandle(in_w);
++                }
+                 CloseHandle(out_r);
+                 CloseHandle(out_w);
+                 if matches!(stderr_mode, StderrMode::Separate) {
+@@ -319,9 +332,6 @@
+         CloseHandle(out_w);
+         if matches!(stderr_mode, StderrMode::Separate) {
+             CloseHandle(err_w);
+-        }
+-        if matches!(stdin_mode, StdinMode::Closed) {
+-            CloseHandle(in_w);
+         }
+     }
+ 
