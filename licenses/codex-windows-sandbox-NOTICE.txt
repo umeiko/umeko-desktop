@@ -4,6 +4,9 @@ https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/windows-sandbox-rs
 The command entry point adapts codex-rs/cli/src/debug_sandbox.rs and
 codex-rs/core/src/windows_sandbox.rs. The build provides Umeko-specific Windows
 account and firewall identities and requires explicit successful provisioning.
+Preparation for Windows searches reuses ACL grants from
+codex-rs/windows-sandbox-rs/src/acl.rs and adapts the read-directory preparation
+in codex-rs/windows-sandbox-rs/src/setup_provisioning.rs.
 
 Copyright OpenAI. Licensed under the Apache License, Version 2.0.
 https://github.com/openai/codex/blob/rust-v0.172.0/LICENSE
