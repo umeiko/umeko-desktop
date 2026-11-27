@@ -31,12 +31,35 @@ class ReleasePlatformsTests(unittest.TestCase):
                     release_platforms.require_verified_jobs([
                         dict(j, conclusion=conclusion) if j['name']==name else j for j in jobs], {'windows-x64'})
     def test_modes_keep_full_releases_default_and_windows_explicit(self):
-        self.assertEqual(release_platforms.asset_count(release_platforms.select_platforms('all')), 19)
-        self.assertEqual(release_platforms.select_platforms('windows'), {'windows-x64'})
+        minor = release_platforms.select_platforms('all', '0.8.0')
+        patch = release_platforms.select_platforms('all', '0.7.11')
+        self.assertEqual(minor, release_platforms.ALL_PLATFORMS)
+        self.assertEqual(release_platforms.asset_count(minor), 19)
+        self.assertEqual(patch, {'windows-x64', 'linux-x64', 'macos-arm64'})
+        self.assertEqual(release_platforms.asset_count(patch), 14)
+        self.assertEqual(release_platforms.select_platforms('windows', '0.8.0'), {'windows-x64'})
         self.assertEqual(release_platforms.asset_count({'windows-x64'}), 6)
         for invalid in ('', 'macos', 'automatic'):
             with self.assertRaises(ValueError):
-                release_platforms.select_platforms(invalid)
+                release_platforms.select_platforms(invalid, '0.8.0')
+
+    def test_retry_checks_latest_attempt_per_selected_job(self):
+        jobs = [
+            dict(name=name, conclusion='success', run_attempt=1) for name in
+            ('checks', 'Windows x64', 'Linux x64', 'macOS Apple Silicon')
+        ]
+        jobs.append(dict(name='macOS Intel', conclusion='failure', run_attempt=1))
+        patch = release_platforms.select_platforms('all', '0.7.11')
+        release_platforms.require_verified_jobs(jobs, patch)
+        with self.assertRaises(ValueError):
+            release_platforms.require_verified_jobs(jobs, release_platforms.ALL_PLATFORMS)
+        jobs.append(dict(name='Windows x64', conclusion=None, run_attempt=2))
+        with self.assertRaises(ValueError):
+            release_platforms.require_verified_jobs(jobs, patch)
+        jobs[-1]['conclusion'] = 'success'
+        release_platforms.require_verified_jobs(jobs, patch)
+        jobs.append(dict(name='macOS Intel', conclusion='success', run_attempt=2))
+        release_platforms.require_verified_jobs(jobs, release_platforms.ALL_PLATFORMS)
 
     def test_download_buttons_only_include_explicitly_selected_verified_platforms(self):
         names = ['Umeko-0.7.0-windows-x64-aaaaaaa.zip']
@@ -79,7 +102,9 @@ class WindowsPublishTests(unittest.TestCase):
         self.assertEqual(command[0], 'gh')
         args = command[1:]
         if args[:2] == ['run', 'download']:
-            shutil.copytree(self.fixture, Path(args[-1]))
+            names = {args[i + 1] for i, flag in enumerate(args) if flag == '--name'}
+            self.assertEqual(names, {'Umeko-windows-x64', 'Umeko-provider-development'})
+            shutil.copytree(self.fixture, Path(args[args.index('--dir') + 1]))
             return ''
         if args[:2] == ['release', 'edit']:
             self.release['draft'] = False

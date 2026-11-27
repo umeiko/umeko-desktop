@@ -10,6 +10,7 @@ import { webviewStatus } from "./webview-component.mjs";
 
 export const CHATBOX_TOOL = "submit_to_chatbox";
 const DELIVERY_TOOLS = new Set([CHATBOX_TOOL, "image_gen", "voice_gen", "video_gen"]);
+export const isInlineAudio = path => /\.(wav|mp3|m4a|aac|ogg|opus|flac)$/i.test(path);
 function documentKind(path, requested) {
   if (['markdown','code','text'].includes(requested)) return requested;
   if (requested === 'image') return '';
@@ -38,11 +39,11 @@ export function chatboxExtension(pi, getWebview = () => ({}), onDelivery = () =>
   pi.registerTool({
     name: CHATBOX_TOOL, label: "展示产物与网页", exposure: "direct",
     description: "Show artifacts directly in Umeko chat. Accept local files/folders as absolute paths, file URLs or workspace-relative paths, and HTTP(S) URLs. Images preview inline independently of model vision support. Markdown, source code and plain text open in the side pane. Markdown offers source/rendered views; local static HTML offers source/webpage views when the WebView component is available. The desktop remembers the user's view choice globally per file type. Large/complex files use bounded partial, simplified or source previews. Other files have cards for opening or revealing their folder. Webpage/HTML opening follows the user's embedded-view/system-browser preference; automatic opening can be disabled. Users can click delivered cards to reopen previews. URL context actions open the system browser, copy the URL or attach it to chat. Download remote images before submitting them as inline images.",
-    promptSnippet: "Use submit_to_chatbox to show generated artifacts, images, documents, code or webpages in Umeko.",
+    promptSnippet: "Use submit_to_chatbox to show generated artifacts, audio, images, documents, code or webpages in Umeko. Local audio plays inline.",
     promptGuidelines: ["For a better user experience, after creating or updating a user-facing artifact, prefer submitting its local path with submit_to_chatbox rather than only mentioning its path. Also use it when the user asks to see an image or receive a generated/downloaded file. Markdown, code and text are previewed in the side pane; images render independently of model vision support. Large-file previews may be truncated or simplified; the original file remains available."],
     parameters: Type.Object({items: Type.Array(Type.Object({
       path: Type.String({minLength: 1, maxLength: 8192}),
-      kind: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("image"), Type.Literal("file"), Type.Literal("web"), Type.Literal("markdown"), Type.Literal("code"), Type.Literal("text")])),
+      kind: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("image"), Type.Literal("audio"), Type.Literal("file"), Type.Literal("web"), Type.Literal("markdown"), Type.Literal("code"), Type.Literal("text")])),
       title: Type.Optional(Type.String({maxLength: 160})),
       caption: Type.Optional(Type.String({maxLength: 1000})),
     }), {minItems: 1, maxItems: 12})}),
@@ -69,8 +70,10 @@ export function chatboxExtension(pi, getWebview = () => ({}), onDelivery = () =>
           const info = await stat(path);
           if (!info.isFile() && !info.isDirectory()) throw new Error("只支持普通文件或目录");
           const image = /\.(png|jpe?g|webp|gif|bmp)$/i.test(path);
+          const audio = isInlineAudio(path);
+          if (input.kind === "audio" && (!audio || !info.isFile())) throw new Error("Inline audio supports WAV, MP3, M4A, AAC, Ogg, Opus and FLAC files");
           if (input.kind === "image" && (!image || !info.isFile())) throw new Error("图片仅支持 PNG、JPEG、WebP、GIF、BMP");
-          items.push({path, name: basename(path), kind: info.isDirectory() ? "folder" : documentKind(path, input.kind) || (input.kind !== "file" && image ? "image" : "file"),
+          items.push({path, name: basename(path), kind: info.isDirectory() ? "folder" : documentKind(path, input.kind) || (input.kind !== "file" && image ? "image" : input.kind !== "file" && audio ? "audio" : "file"),
             title: input.title?.trim() || basename(path), caption: input.caption || "", bytes: info.size, modified: info.mtimeMs});
           if (info.isFile() && /\.html?$/i.test(path)) webview ||= await webviewStatus(getWebview());
         } catch (error) { errors.push({path: input.path, message: error.code === "ENOENT" ? "文件不存在" : error.message}); }

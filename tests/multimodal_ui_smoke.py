@@ -106,6 +106,7 @@ class FakeProvider(BaseHTTPRequestHandler):
     audio = audio_fixture()
     generated = []
     model_requests = []
+    releases = {}
 
     def log_message(self, *_):
         pass
@@ -123,9 +124,11 @@ class FakeProvider(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         if self.path == '/v1/images/generations':
             self.generated.append(('image', body))
+            assert self.releases['image'].wait(45)
             return self.respond({'data': [{'b64_json': base64.b64encode(self.image).decode()}]})
         if self.path == '/v1/audio/speech':
             self.generated.append(('speech', body))
+            assert self.releases['speech'].wait(45)
             return self.respond(self.audio, 'audio/wav')
         assert self.path == '/v1/chat/completions', self.path
         self.model_requests.append(body)
@@ -272,9 +275,29 @@ def run():
                     backend._view.workspace = str(workspace)
                 FakeProvider.generated.clear()
                 FakeProvider.model_requests.clear()
+                FakeProvider.releases = {kind: threading.Event() for kind in ('image', 'speech')}
                 approvals.clear()
                 prompt = '请生成一张图片和一段语音，并用中文回复。' if language == 'zh' else 'Create an image and a voice file for this workspace.'
                 assert backend.send(prompt)
+                def card_visible(name):
+                    try:
+                        return find(window, name).isVisible()
+                    except AssertionError:
+                        return False
+                for kind, call in (('image', 'image-call'), ('speech', 'voice-call')):
+                    card = 'chatboxGenerating_' + call
+                    spinner = 'chatboxGeneratingSpinner_' + call
+                    until(lambda: card_visible(card), lambda: backend.toolStatus + '; ' + str(warnings))
+                    assert find(window, spinner).property('running')
+                    assert find(window, card).width() < 260
+                    label = find(window, card).property('label')
+                    expected = (('正在生成语音…' if kind == 'speech' else '正在生成图片…') if language == 'zh'
+                                else ('Generating audio…' if kind == 'speech' else 'Generating image…'))
+                    assert label == expected
+                    if language == 'zh' and kind == 'image' and os.environ.get('UMEKO_GENERATION_PREVIEW'):
+                        screenshot(window, Path(os.environ['UMEKO_GENERATION_PREVIEW']))
+                    FakeProvider.releases[kind].set()
+                    until(lambda: not card_visible(card), lambda: str(warnings))
                 until(lambda: not backend.busy, lambda: backend.toolStatus + '; ' + str(warnings))
                 assert len(approvals) == 2, approvals
                 assert all(a['method'] == 'confirm' and 'Test provider' in a['detail'] for a in approvals)
@@ -283,7 +306,7 @@ def run():
                 assert FakeProvider.generated[1][1]['model'] == 'test-voice-model'
                 media = [item for row in backend.displayMessages for activity in row.get('activity', [])
                          if activity['kind'] == 'media' for item in activity['items']]
-                assert {item['kind'] for item in media} == {'image', 'file'}, media
+                assert {item['kind'] for item in media} == {'image', 'audio'}, media
                 assert all(Path(item['path']).is_file() and Path(item['path']).parent == workspace for item in media)
                 # Real provider context receives paths and no base64 or image blocks.
                 last = FakeProvider.model_requests[-1]
@@ -292,6 +315,9 @@ def run():
                 until(lambda: find(window, 'chatboxImage_image-call_0').property('loaded'), lambda: str(warnings))
                 assert find(window, 'chatboxCard_image-call_0').isVisible()
                 assert find(window, 'chatboxCard_voice-call_0').isVisible()
+                assert find(window, 'chatboxAudioPlay_voice-call_0').isVisible()
+                assert find(window, 'chatboxAudioSeek_voice-call_0').isVisible()
+                assert find(window, 'chatboxAudioVolumeButton_voice-call_0').isVisible()
                 backend._view.messages, backend._view.tree = preview(backend._view.file)
                 backend.chatChanged.emit()
                 restored = [item for row in backend.displayMessages for activity in row.get('activity', [])
@@ -301,9 +327,24 @@ def run():
                     window.resize(1320, 860)
                     screenshot(window, screenshot_dir / f'multimodal-chat-{language}.png')
                     window.resize(1320, 1200)
+            backend.newSession()
+            record = backend._view
+            for outcome in ('error', 'exit'):
+                call = 'pending-' + outcome
+                tool_event = {'type': 'tool', 'id': call, 'name': 'voice_gen', 'state': 'running'}
+                backend._handle_pi_event(record, tool_event)
+                assert not card_visible('chatboxGenerating_' + call), 'Waiting for approval is not generating'
+                backend._handle_pi_event(record, {**tool_event, 'generationPending': True})
+                until(lambda: card_visible('chatboxGenerating_' + call), lambda: str(warnings))
+                if outcome == 'exit':
+                    backend._handle_pi_event(record, {'type': 'exit'})
+                else:
+                    backend._handle_pi_event(record, {**tool_event, 'state': 'error', 'result': 'Cancelled'})
+                until(lambda: not card_visible('chatboxGenerating_' + call), lambda: str(warnings))
             assert not warnings, warnings
-            print('MULTIMODAL_UI_OK: bilingual settings, picker/manual IDs, persistence, actual Pi confirmations, fake image+speech, saved paths and chat cards')
+            print('MULTIMODAL_UI_OK: both live spinners, no pre-execution spinner, image/audio cards, failed/cancelled tool and worker exit cleanup')
         finally:
+            for gate in FakeProvider.releases.values(): gate.set()
             backend.close()
             window.hide()
             import shiboken6
