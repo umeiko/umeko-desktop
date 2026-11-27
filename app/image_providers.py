@@ -12,7 +12,7 @@ import uuid
 
 from PySide6.QtCore import Slot
 
-from .multimodal_settings import DEFAULTS
+from .multimodal_settings import DEFAULTS, model_ids, provider_models
 
 
 ARK_MODELS = [
@@ -167,10 +167,25 @@ class ImageProvidersMixin:
                 for p in self.store.data['providers'] if p.get('api') == 'image']
 
     def _multimodal_provider_rows(self):
-        return [{'id': p['id'], 'api': p['api'], 'presetId': p.get('presetId', ''), 'name': p['name'],
-                 'hasKey': bool(p.get('key')), 'baseUrl': p.get('baseUrl', ''),
-                 'model': (p.get('imageModels') or p.get('generationModels') or [''])[0]}
-                for p in self.store.data['providers'] if p.get('api') in MULTIMODAL_APIS]
+        from .generation import capabilities
+        settings = self.store.data['multimodal']
+        rows = []
+        for provider in self.store.data['providers']:
+            kinds = capabilities(provider)
+            if not kinds:
+                continue
+            identifier = provider['id']
+            models = {kind: list(provider_models(provider, kind)) for kind in kinds}
+            for kind in kinds:
+                selection = settings[kind]
+                if selection['providerId'] == identifier and selection['model'] and selection['model'] not in models[kind]:
+                    # Keep manually configured defaults from older profiles selectable.
+                    models[kind].append(selection['model'])
+            rows.append({'id': identifier, 'api': provider['api'], 'presetId': provider.get('presetId', ''),
+                         'name': provider['name'], 'accountLabel': provider.get('accountLabel', ''),
+                         'hasKey': bool(provider.get('key')), 'baseUrl': provider.get('baseUrl', ''),
+                         'kinds': kinds, 'models': models, 'model': (models[kinds[0]] or [''])[0]})
+        return rows
 
     @Slot(str, str, result=bool)
     def saveImageProvider(self, preset_id, key):
@@ -208,7 +223,38 @@ class ImageProvidersMixin:
             self.toast.emit(str(error))
             return False
 
-    def _save_multimodal_account(self, kind, preset, existing, key, name, base, models):
+    @Slot(str, str, result=bool)
+    def saveGenerationProvider(self, kind, raw):
+        try:
+            value = json.loads(raw)
+            if kind not in MULTIMODAL_CUSTOM_PRESETS or not isinstance(value, dict):
+                raise ValueError('多模态供应商配置无效 / Invalid multimodal provider settings')
+            presets = [MULTIMODAL_CUSTOM_PRESETS[kind], *(PRESETS if kind == 'image' else ())]
+            preset = next((row for row in presets if row['id'] == value.get('presetId')), None)
+            if not preset:
+                raise ValueError('多模态供应商类型无效 / Invalid multimodal provider kind')
+            existing = None
+            if value.get('id'):
+                existing = next((p for p in self.store.data['providers'] if p['id'] == value['id']
+                                 and p.get('api') == kind and p.get('presetId') == preset['id']), None)
+                if not existing:
+                    raise ValueError('多模态供应商已不存在 / Multimodal provider no longer exists')
+            models = model_ids(value.get('models'))
+            if preset.get('custom'):
+                from .gateway import validate_base_url
+                base = validate_base_url(_text(value.get('baseUrl'), 2048, 'Base URL'))
+                name = _text(value.get('name'), 60, '供应商名称')
+            else:
+                if any(model not in preset['models'] for model in models):
+                    raise ValueError('请选择该供应商支持的生图模型 / Select a supported image model')
+                name, base = preset['name'], preset['baseUrl']
+            return self._save_multimodal_account(kind, preset, existing, value.get('key', ''), name, base, models,
+                                                 select=False)
+        except (ValueError, TypeError) as error:
+            self.toast.emit(str(error))
+            return False
+
+    def _save_multimodal_account(self, kind, preset, existing, key, name, base, models, *, select=True):
         previous_providers = self.store.data['providers']
         previous_settings = self.store.data['multimodal']
         try:
@@ -236,8 +282,8 @@ class ImageProvidersMixin:
             if existing and settings[kind]['providerId'] == existing['id']:
                 settings[kind]['providerId'] = identifier
                 if settings[kind]['model'] not in models:
-                    settings[kind]['model'] = models[0]
-            else:
+                    settings[kind].update(model=models[0] if select else '', providerId=identifier if select else '')
+            elif select:
                 preserved = {'voice': settings[kind]['voice']} if kind == 'speech' and settings[kind].get('voice') else {}
                 settings[kind] = {**DEFAULTS[kind], **preserved, 'providerId': provider['id'], 'model': models[0]}
             if existing == provider and settings == previous_settings:

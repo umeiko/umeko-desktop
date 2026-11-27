@@ -105,6 +105,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def multimodalProviders(self):
         return self._multimodal_provider_rows()
 
+    @Property('QVariantMap', notify=changed)
+    def multimodalPreferences(self):
+        return copy.deepcopy(self.store.data['multimodal'])
+
     @Property('QVariantMap', notify=desktopSettingsChanged)
     def desktopSettings(self):
         return dict(self.store.data['desktop'])

@@ -24,6 +24,7 @@ from .model_capabilities import normalize_model
 from .model_reasoning import normalize_reasoning
 from .reasoning_detection import metadata_levels
 from .model_context import provider_context_window
+from .multimodal_settings import clear_selections, model_ids
 from .storage import protect
 from .bundled_providers import BundledProviders
 
@@ -424,28 +425,43 @@ class ProviderPlugins(QObject):
 
     @Property("QVariantList", notify=changed)
     def rows(self):
-        rows = []
-        for record in self.c.store.data["providers"]:
-            if record["api"] != "plugin": continue
-            row = {"id": record["id"], "name": record["name"], "version": record["pluginVersion"], "description": "",
-                   "models": copy.deepcopy(record["models"]), "fields": [], "cardFields": [], "cardActions": [], "cardStatus": "", "busy": record["id"] in self.busy,
-                   "status": self.status.get(record["id"], record.get("accountLabel", "尚未登录")),
-                   "loginCancellable": record["id"] in self._login_cancels and not self._login_cancels[record["id"]].is_set()}
-            try:
-                _, (manifest, _, _) = self._package(record)
-                row["description"] = manifest.get("description", "")
-                row["cardFields"] = self._card_fields(record["id"])
-                row["cardActions"] = self._card_actions(record["id"])
-                client = self.clients.get(record["id"])
-                if client: row["cardStatus"] = self._public_message(record["id"], client.card_status())
-                values = self._secrets(record["id"]).get("credentials", {})
-                for field in manifest.get("auth", {}).get("fields", []):
-                    row["fields"].append({**field, "secret": bool(field.get("secret")),
-                        "value": "" if field.get("secret") else values.get(field["key"], ""),
-                        "hasValue": bool(values.get(field["key"]))})
-            except (OSError, ValueError, RuntimeError): row["status"] = "包或凭据不可用，请检查系统密钥环或重新登录"
-            rows.append(row)
-        return rows
+        return [self._account_row(record) for record in self.c.store.data["providers"] if record["api"] == "plugin"]
+
+    @Property("QVariantList", notify=changed)
+    def chatRows(self):
+        return [self._account_row(record) for record in self.c.store.data["providers"]
+                if record["api"] == "plugin" and not record.get("generationOnly")]
+
+    @Slot(str, result="QVariantList")
+    def accountRows(self, provider_id):
+        try:
+            return [self._account_row(self._record(provider_id))]
+        except ProviderError:
+            return []
+
+    def _account_row(self, record):
+        identifier = record["id"]
+        row = {"id": identifier, "name": record["name"], "version": record["pluginVersion"], "description": "",
+               "models": copy.deepcopy(record["models"]), "fields": [], "cardFields": [], "cardActions": [],
+               "cardStatus": "", "busy": identifier in self.busy,
+               "status": self.status.get(identifier, record.get("accountLabel", "尚未登录")),
+               "loginCancellable": identifier in self._login_cancels and not self._login_cancels[identifier].is_set()}
+        try:
+            _, (manifest, _, _) = self._package(record)
+            row["description"] = manifest.get("description", "")
+            row["cardFields"] = self._card_fields(identifier)
+            row["cardActions"] = self._card_actions(identifier)
+            client = self.clients.get(identifier)
+            if client:
+                row["cardStatus"] = self._public_message(identifier, client.card_status())
+            values = self._secrets(identifier).get("credentials", {})
+            for field in manifest.get("auth", {}).get("fields", []):
+                row["fields"].append({**field, "secret": bool(field.get("secret")),
+                    "value": "" if field.get("secret") else values.get(field["key"], ""),
+                    "hasValue": bool(values.get(field["key"]))})
+        except (OSError, ValueError, RuntimeError):
+            row["status"] = "包或凭据不可用，请检查系统密钥环或重新登录"
+        return row
 
     def _submit(self, provider_id, action, function, sensitive=None):
         cancel = threading.Event() if action == "login" else None
@@ -501,12 +517,21 @@ class ProviderPlugins(QObject):
 
     @Slot(str, result=bool)
     def importZip(self, url):
+        return bool(self._import_zip(url))
+
+    @Slot(str, str, result=str)
+    def importGenerationZip(self, url, kind):
+        return self._import_zip(url, kind)
+
+    def _import_zip(self, url, kind=None):
         staging = self.root / "staging" / uuid.uuid4().hex
         self._import_error = {}
         try:
             path = QUrl(url).toLocalFile()
             if not path: raise ProviderError("请选择本机 ZIP 文件")
-            manifest, defaults, _ = unpack_package(path, staging)
+            manifest, _, _ = unpack_package(path, staging)
+            if kind is not None and kind not in manifest['generationCapabilities']:
+                raise ProviderError("这个 ZIP 不支持当前的生成类型")
             destination = self.root / "packages" / manifest["id"] / manifest["version"]
             with self.lock:
                 exists = destination.exists()
@@ -522,6 +547,8 @@ class ProviderPlugins(QObject):
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         staging.rename(destination)
                     record = self._new_account(manifest)
+                    if kind is not None:
+                        record["generationOnly"] = True
                     self.c.store.data["providers"] = previous + [record]
                     self.c.store.save()
                 except Exception:
@@ -531,14 +558,14 @@ class ProviderPlugins(QObject):
                     raise
                 self._notify(save=False)
             self.c.toast.emit("供应商已导入，请在当前页面登录并刷新模型")
-            return True
+            return record["id"]
         except Exception as exc:
             self._import_error = {"message": str(exc) if isinstance(exc, ProviderError) else "无法导入供应商包，请检查 ZIP 和 manifest.json"}
             if isinstance(exc, PackageValidationError):
                 self._import_error.update(entry=exc.entry, rule=exc.rule, detail=exc.detail, conflict=exc.conflict)
             self.changed.emit()
             self.c.toast.emit("供应商导入失败，请查看错误详情")
-            return False
+            return ""
         finally:
             if not staging.is_symlink() and staging.resolve().parent == (self.root / "staging").resolve():
                 shutil.rmtree(staging, ignore_errors=True)
@@ -686,13 +713,20 @@ class ProviderPlugins(QObject):
         try:
             record = self._record(provider_id)
             result = payload["result"]
-            if "models" in result: record["models"] = self._models(record, result["models"])
+            if "models" in result:
+                if record.get("generationOnly"):
+                    rows = result["models"]
+                    if not isinstance(rows, list):
+                        raise ProviderError("供应商返回的模型列表无效")
+                    record["generationModels"] = model_ids([row.get("id") or row.get("upstream") if isinstance(row, dict) else None for row in rows])
+                else:
+                    record["models"] = self._models(record, result["models"])
             if "label" in result: record["accountLabel"] = result["label"]
             self.status[provider_id] = result.get("message") or record.get("accountLabel", "已连接")
             if "models" in result:
                 self.repair_selection(provider_id)
                 self._notify()
-                if hasattr(self.c, '_reasoning_discovery'):
+                if not record.get("generationOnly") and hasattr(self.c, '_reasoning_discovery'):
                     self.c._reasoning_discovery.refresh(provider_id)
             else: self.changed.emit()
             if result.get("url"): QDesktopServices.openUrl(QUrl(self._public_url(provider_id, result["url"])))
@@ -769,6 +803,37 @@ class ProviderPlugins(QObject):
             self.c.toast.emit(str(exc))
             return False
 
+    @Slot(str, str, str, result=bool)
+    def saveGenerationModels(self, provider_id, kind, raw):
+        try:
+            models = model_ids(json.loads(raw))
+            with self.lock:
+                self._idle(provider_id)
+                record = self._record(provider_id)
+                if kind not in record.get('generationCapabilities', []):
+                    raise ProviderError('这个 ZIP 不支持当前的生成类型')
+                data = self.c.store.data
+                previous = data['providers']
+                previous_settings = data['multimodal']
+                overrides = {**record.get('generationModelLists', {}), kind: models}
+                replacement = {**record, 'generationModelLists': overrides}
+                row = previous_settings[kind]
+                if row['providerId'] == provider_id and row['model'] not in models:
+                    data['multimodal'] = {**previous_settings, kind: {**row, 'providerId': '', 'model': ''}}
+                data['providers'] = [replacement if p['id'] == provider_id else p for p in previous]
+                try:
+                    self.c.store.save()
+                except (OSError, RuntimeError):
+                    data['providers'] = previous
+                    data['multimodal'] = previous_settings
+                    raise
+                self._notify(save=False)
+            self.c.toast.emit('模型设置已保存')
+            return True
+        except (ValueError, RuntimeError, OSError) as error:
+            self.c.toast.emit(str(error))
+            return False
+
     @Slot(str)
     def remove(self, provider_id):
         try:
@@ -777,9 +842,10 @@ class ProviderPlugins(QObject):
                 self._invalidate(provider_id)
                 secrets = self._secrets(provider_id)
                 previous = self.c.store.data["providers"]
-                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel")}
+                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel", "multimodal")}
                 self.c.store.data["providers"] = [p for p in self.c.store.data["providers"] if p["id"] != provider_id]
                 try:
+                    self.c.store.data["multimodal"] = clear_selections(selection["multimodal"], {provider_id})
                     self.repair_selection()
                     self.c.store.save()
                 except Exception:
@@ -803,10 +869,11 @@ class ProviderPlugins(QObject):
                 for account in accounts: self._invalidate(account["id"])
                 retired = self._retire_package(path)
                 previous = self.c.store.data["providers"]
-                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel")}
+                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel", "multimodal")}
                 previous_bundles = copy.deepcopy(self.c.store.data.get("bundledProviders"))
                 self.c.store.data["providers"] = [p for p in previous if p not in accounts]
                 try:
+                    self.c.store.data["multimodal"] = clear_selections(selection["multimodal"], {p["id"] for p in accounts})
                     self.bundled.mark_uninstalled(plugin_id, version)
                     self.repair_selection()
                     self.c.store.save()

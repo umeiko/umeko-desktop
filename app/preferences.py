@@ -81,7 +81,8 @@ class PreferencesMixin:
                 raise ValueError('请等待当前任务结束后修改多模态设置')
             patch = validate(json.loads(raw))
             value = normalize({kind: {**row, **patch.get(kind, {})} for kind, row in old.items()})
-            for kind, row in value.items():
+            for kind in patch:
+                row = value[kind]
                 if not row['providerId']:
                     row['model'] = ''
                     continue
@@ -93,7 +94,7 @@ class PreferencesMixin:
                 if provider.get('api') == 'image':
                     from .image_providers import parameters
                     parameters(provider, row['model'], row)
-                if kind == 'speech' and not row['voice']:
+                if kind == 'speech' and provider.get('api') != 'plugin' and not row['voice']:
                     raise ValueError('请输入供应商支持的音色 ID')
             if value == old:
                 return True
