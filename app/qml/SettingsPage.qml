@@ -151,10 +151,11 @@ Item {
 
                 Column {
                     visible: root.tab === 0 && !root.modelGroupOpen; width: parent.width; spacing: 18
-                    AuxiliaryVisionSettings {
+                    MultimodalSettings {
                         width: parent.width; expanded: root.multimodalOpen
                         onOpenRequested: { root.multimodalOpen = true; settingsScroll.contentItem.contentY = 0 }
                         onBackRequested: { root.multimodalOpen = false; settingsScroll.contentItem.contentY = 0 }
+                        onRouteChanged: settingsScroll.contentItem.contentY = 0
                     }
                     ItemDelegate {
                         objectName: "modelGroupSettingsEntry"

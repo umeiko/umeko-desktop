@@ -15,12 +15,13 @@
 | `shell.refreshEnvironment` | 无 | 无 | 否 |
 | `pi.run` | `command: string`, `scope: string=""` | 无 | 否 |
 | `vision.configure` | `config: json` | 无 | 否 |
-| `generation.configure` | `config: json` | 无 | 否 |
+| `generation.configure` | `config: json` | models | 否 |
 | `providers.save` | `id: string=""`, `name: string`, `api: string`, `baseUrl: string`, `key: string=""`, `models: json` | provider | 否 |
 | `providers.addCommon` | `preset: string`, `key: string`, `alias: string=""`, `region: string="cn"` | 无 | 否 |
 | `providers.remove` | `id: string` | provider | 否 |
 | `providers.network` | `id: string`, `mode: string`, `address: string=""` | provider | 否 |
 | `providers.certificate` | `id: string`, `caFile: string=""` | provider | 否 |
+| `providers.timeouts`（仅 python） | `id: string`, `streamIdleTimeoutSeconds: string=""`, `streamMaxRetries: string=""`, `requestMaxRetries: string=""` | provider | 否 |
 | `models.mappings` | `models: json` | all | 否 |
 | `models.applyPatch`（仅 python） | `provider: string`, `model: string`, `enabled: boolean` | 无 | 否 |
 | `pluginSessions.setModel`（仅 python） | `plugin: string`, `profile: string`, `model: string=""`, `provider: string=""`, `reasoningEffort: string=""` | 无 | 否 |

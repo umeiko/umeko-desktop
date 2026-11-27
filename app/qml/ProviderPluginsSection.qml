@@ -6,10 +6,18 @@ import QtQuick.Dialogs
 Column {
     id: root
     property var manager: backend.providerPlugins
+    property string onlyProviderId: ""
+    property var accountRows: []
+    readonly property var displayedRows: onlyProviderId ? accountRows : manager.chatRows
     property string currentId: ""
     property string exportKind: "sdk"
     property var uninstallTarget: ({})
     spacing: 14
+    function refreshAccount() {
+        accountRows = onlyProviderId ? manager.accountRows(onlyProviderId) : []
+    }
+    onOnlyProviderIdChanged: refreshAccount()
+    Connections { target: root.manager; enabled: !!root.onlyProviderId; function onChanged() { root.refreshAccount() } }
     function acceptsPackage(urls) {
         return urls.length === 1 && String(urls[0]).toLowerCase().startsWith("file:") && String(urls[0]).toLowerCase().endsWith(".zip")
     }
@@ -32,6 +40,7 @@ Column {
     }
 
     SectionCard {
+        visible: !root.onlyProviderId
         width: parent.width
         ColumnLayout {
             width: parent.width; spacing: 10
@@ -40,7 +49,7 @@ Column {
                 ColumnLayout {
                     spacing: 5
                     Text { font.family: Theme.fontFamily; textFormat: Text.PlainText; text: I18n.t("自定义供应商"); color: Theme.ink; font.pixelSize: Theme.font(14, visible); font.weight: Font.DemiBold }
-                    Text { font.family: Theme.fontFamily; textFormat: Text.PlainText; text: root.manager.rows.length ? I18n.t("登录、可用模型和连接配置") : I18n.t("导入供应商实现，接入自定义的登录与模型服务"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+                    Text { font.family: Theme.fontFamily; textFormat: Text.PlainText; text: root.displayedRows.length ? I18n.t("登录、可用模型和连接配置") : I18n.t("导入供应商实现，接入自定义的登录与模型服务"); color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
                 }
                 Item { Layout.fillWidth: true }
                 ActionButton { objectName: "importCustomProviderButton"; glyph: "plus"; hint: I18n.t("导入自定义供应商实现"); onClicked: importDialog.open() }
@@ -62,7 +71,7 @@ Column {
         }
     }
     Repeater {
-        model: root.manager.rows
+        model: root.displayedRows
         SectionCard {
             id: card
             required property var modelData
@@ -162,15 +171,15 @@ Column {
                         Text { font.family: Theme.fontFamily; textFormat: Text.PlainText; visible: !!modelData.message; text: modelData.message; color: Theme.muted; font.pixelSize: Theme.font(11, visible); Layout.fillWidth: true; wrapMode: Text.Wrap }
                     }
                 }
-                Rectangle { visible: card.modelData.models.length > 0; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                Rectangle { visible: !root.onlyProviderId && card.modelData.models.length > 0; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
-                    visible: card.modelData.models.length > 0; Layout.fillWidth: true
+                    visible: !root.onlyProviderId && card.modelData.models.length > 0; Layout.fillWidth: true
                     Text { font.family: Theme.fontFamily; textFormat: Text.PlainText; text: I18n.t("可用模型 · ") + card.modelData.models.length; color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
                     Item { Layout.fillWidth: true }
                     ActionButton { objectName: "managePluginModels_" + card.modelData.id; text: I18n.t("模型设置"); quiet: true; enabled: !card.modelData.busy; onClicked: { root.currentId = card.modelData.id; modelsEditor.load(card.modelData.models); modelsDialog.open() } }
                 }
                 Text { font.family: Theme.fontFamily;
-                    visible: card.modelData.models.length > 0; Layout.fillWidth: true
+                    visible: !root.onlyProviderId && card.modelData.models.length > 0; Layout.fillWidth: true
                     text: card.modelData.models.slice(0, 8).map(m => m.alias).join("  ·  ") + (card.modelData.models.length > 8 ? "  …" : "")
                     color: Theme.muted; font.pixelSize: Theme.font(11, visible); wrapMode: Text.Wrap
                 }

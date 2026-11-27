@@ -67,6 +67,7 @@ class WindowsSandbox(QObject):
         self._previous_git = None
         self._cleanup_on_startup = True
         self._setup_pending = False
+        self._command_git_pending = False
         self._retry = None
         self._progress_changed.connect(self._set_progress)
         self._prepared.connect(self._finish_preparation)
@@ -103,9 +104,10 @@ class WindowsSandbox(QObject):
 
     def policy(self):
         state = self.state
-        if not state["enabled"]:
+        if not self._supported:
             return {"enabled": False}
-        return {"enabled": True, "allowNetwork": state["allowNetwork"], "elevated": self._elevated,
+        return {"enabled": state["enabled"], "allowNetwork": state["allowNetwork"], "elevated": self._elevated,
+                "bundledGitBash": self.launcher.is_file() or self.archive.is_file(),
                 "launcher": str(self.launcher), "home": str(self.home), "temp": str(self.temp),
                 "archive": str(self.archive), "gitRoot": state["gitRoot"], "gitReady": bool(self.git),
                 "preparing": self._preparing, "progress": self._progress,
@@ -151,7 +153,7 @@ class WindowsSandbox(QObject):
         self._error = ""
         if enabled:
             self.prepare_for_command()
-        elif not self._setup_pending:
+        elif not self._setup_pending and not self._command_git_pending:
             if self._retry is not None:
                 self._retry.stop()
             self._preparing = self._extracting
@@ -190,8 +192,10 @@ class WindowsSandbox(QObject):
         self._setup_pending = True
         self._prepare()
 
-    def prepare_for_command(self):
-        if not self.state["enabled"]:
+    def prepare_for_command(self, bundled_bash=False):
+        if bundled_bash and self._supported:
+            self._command_git_pending = True
+        if not (self.state["enabled"] or self._command_git_pending):
             return
         if self._retry is not None:
             if self._retry.isActive() and self._preparing:
@@ -207,14 +211,15 @@ class WindowsSandbox(QObject):
         self._retry.start(delay)
 
     def _prepare(self):
-        if self._extracting or not (self.state["enabled"] or self._setup_pending):
+        if self._extracting or not self._needs_git():
             return
-        if not self.archive.is_file() or not self.launcher.is_file():
+        if not self.archive.is_file() or (self.state["enabled"] and not self.launcher.is_file()):
             self._finish_preparation(None, ARCHIVE_MISSING if not self.archive.is_file() else MISSING_ERROR)
             return
         previous = self.git
         if previous is not None and git_bash_ready(previous):
             self._preparing = False
+            self._command_git_pending = False
             if self._setup_pending:
                 self._setup_pending = False
                 self._launch("setup")
@@ -251,6 +256,9 @@ class WindowsSandbox(QObject):
 
         Thread(target=extract, name="Umeko Git Bash preparation", daemon=True).start()
 
+    def _needs_git(self):
+        return self.state["enabled"] or self._setup_pending or self._command_git_pending
+
     @Slot(int)
     def _set_progress(self, progress):
         self._progress = progress
@@ -263,6 +271,7 @@ class WindowsSandbox(QObject):
         self._preparation_attempt += 1
         if result:
             self.git, reused = result
+            self._command_git_pending = False
             self._previous_git = None
             self._preparation_first_use = not self._prepared_before
             self._prepared_before = True
@@ -278,12 +287,12 @@ class WindowsSandbox(QObject):
                 self._launch("setup")
         elif error == STORAGE_ERROR:
             self._failed_attempts += 1
-            self._preparing = self._failed_attempts < 3 and (self.state["enabled"] or self._setup_pending)
+            self._preparing = self._failed_attempts < 3 and self._needs_git()
             if self._failed_attempts >= 3:
                 self._error = error
-            if self.state["enabled"] or self._setup_pending:
+            if self._needs_git():
                 self._schedule_retry(RETRY_INTERVALS_MS[min(self._failed_attempts - 1, len(RETRY_INTERVALS_MS) - 1)])
-        elif error == ARCHIVE_INVALID and not self._archive_failed_once and (self.state["enabled"] or self._setup_pending):
+        elif error == ARCHIVE_INVALID and not self._archive_failed_once and self._needs_git():
             self._archive_failed_once = True
             self._preparing = True
             self._schedule_retry(RETRY_INTERVALS_MS[0])
@@ -291,6 +300,7 @@ class WindowsSandbox(QObject):
             self.git = None
             self._error = error
             self._setup_pending = False
+            self._command_git_pending = False
             self._preparation_started = None
             self._archive_failed_once = False
         self.publish()

@@ -151,8 +151,14 @@ def supervise(request, job, cancelled, emit, stack):
 
 
 def supervise_session(request, job, cancelled, incoming, emit, stack):
-    read_fd, write_fd = os.pipe()
-    stack.callback(os.close, write_fd)
+    write_fd = None
+    if request.get("stdinOpen") is True:
+        read_fd, write_fd = os.pipe()
+        stack.callback(os.close, write_fd)
+    else:
+        # Codex rust-v0.172.0, codex-rs/core/src/spawn.rs uses a null
+        # device for ordinary commands (including ripgrep with no path).
+        read_fd = os.open(os.devnull, os.O_RDONLY | os.O_BINARY)
     try:
         with open(request["stdoutPath"], "wb") as stdout, open(request["stderrPath"], "wb") as stderr:
             for fd in (read_fd, stdout.fileno(), stderr.fileno()):
@@ -178,11 +184,13 @@ def supervise_session(request, job, cancelled, incoming, emit, stack):
                 while pending:
                     pending = pending[os.write(write_fd, pending):]
             except OSError:
-                reply["error"] = "Command input closed"
+                reply["error"] = "Standard input is closed for this command."
             emit(reply)
 
-    writer = threading.Thread(target=write_input, daemon=True)
-    writer.start()
+    writer = None
+    if write_fd is not None:
+        writer = threading.Thread(target=write_input, daemon=True)
+        writer.start()
     code = dword(1)
     while not cancelled.is_set():
         wait = wait_process(info.process, 25)
@@ -193,7 +201,8 @@ def supervise_session(request, job, cancelled, incoming, emit, stack):
             raise ctypes.WinError(ctypes.get_last_error())
     cancelled.set()
     result = cleanup(job)
-    writer.join(timeout=0.15)
+    if writer is not None:
+        writer.join(timeout=0.15)
     return {"exitCode": code.value, **result}
 
 
@@ -223,6 +232,9 @@ def main():
                     if line.strip() == "stop":
                         break
                     message = json.loads(line)
+                    if request.get("stdinOpen") is not True:
+                        emit({"writeId": message["writeId"], "error": "Standard input is closed for this command."})
+                        continue
                     try:
                         incoming.put_nowait(message)
                     except queue.Full:

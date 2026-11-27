@@ -66,6 +66,7 @@ class SessionState:
     resources: dict = field(default_factory=lambda: {"tools": [], "skills": [], "extensions": [], "diagnostics": []})
     context_usage: dict = field(default_factory=dict)
     network_retry: dict = field(default_factory=dict)
+    network_activity_start: int | None = None
     extension_modes: dict = field(default_factory=dict)
     skill_modes: dict = field(default_factory=dict)
     known_skills: dict = field(default_factory=dict)

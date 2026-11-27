@@ -106,6 +106,7 @@ class FakeProvider(BaseHTTPRequestHandler):
     audio = audio_fixture()
     generated = []
     model_requests = []
+    releases = {}
 
     def log_message(self, *_):
         pass
@@ -123,9 +124,11 @@ class FakeProvider(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         if self.path == '/v1/images/generations':
             self.generated.append(('image', body))
+            assert self.releases['image'].wait(45)
             return self.respond({'data': [{'b64_json': base64.b64encode(self.image).decode()}]})
         if self.path == '/v1/audio/speech':
             self.generated.append(('speech', body))
+            assert self.releases['speech'].wait(45)
             return self.respond(self.audio, 'audio/wav')
         assert self.path == '/v1/chat/completions', self.path
         self.model_requests.append(body)
@@ -184,67 +187,60 @@ def run():
             window.setProperty('settingsTab', 0)
             assert QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
             until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
-            assert find(window, 'auxiliaryVisionModel').isVisible()
+
+            def click(name):
+                control = find(window, name)
+                assert control.isVisible() and QMetaObject.invokeMethod(control, 'clicked'), name
+                QCoreApplication.processEvents()
+
+            def category(kind):
+                click('multimodalCategory_' + kind)
+                name = 'auxiliaryVisionModel' if kind == 'vision' else kind + 'GenerationModel'
+                until(lambda: find(window, name).isVisible(), lambda: str(warnings))
+
             assert not find(window, 'apiProvidersSection').isVisible()
-            # Icons match each modality and LLM providers are NOT listed in multimodal pickers.
-            assert find(window, 'imageGenerationGlyph').property('name') == 'image'
-            assert find(window, 'speechGenerationGlyph').property('name') == 'voice'
-            assert find(window, 'videoGenerationGlyph').property('name') == 'video'
-            for kind in ('image', 'speech', 'video'):
-                assert find(window, kind + 'GenerationProvider').property('count') == 1
+            for kind in ('vision', 'image', 'speech', 'video'):
+                assert find(window, 'multimodalCategory_' + kind).isVisible()
+                category(kind)
+                if kind != 'vision':
+                    assert find(window, kind + 'GenerationModel').property('count') == 1
+                click('backMultimodalSettings')
+
             assert backend.saveCustomMultimodalProvider('image', json.dumps({
                 'name': 'Test provider', 'baseUrl': base_url, 'model': 'test-image-model', 'key': 'local-test-key'}))
             assert backend.saveCustomMultimodalProvider('speech', json.dumps({
                 'name': 'Test provider', 'baseUrl': base_url, 'model': 'test-voice-model', 'key': 'local-test-key'}))
-            image_provider = next(p for p in backend.store.data['providers'] if p['api'] == 'image')
-            speech_provider = next(p for p in backend.store.data['providers'] if p['api'] == 'speech')
-            image_provider['proxy'] = {'mode': 'direct', 'url': ''}
-            speech_provider['proxy'] = {'mode': 'direct', 'url': ''}
-            providers_by_kind = {'image': image_provider, 'speech': speech_provider}
+            providers_by_kind = {p['api']: p for p in backend.store.data['providers'] if p['api'] in ('image', 'speech')}
+            for provider in providers_by_kind.values():
+                provider['proxy'] = {'mode': 'direct', 'url': ''}
             backend.changed.emit()
-            QCoreApplication.processEvents()
-            for kind in ('image', 'speech'):
-                picker = find(window, kind + 'GenerationProvider')
-                assert picker.property('count') == 2
-                QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 1))
-                model = find(window, kind + 'GenerationModel')
-                assert model.property('count') == 2
-                QMetaObject.invokeMethod(model, 'activated', Q_ARG(int, 1))
-            image_model = find(window, 'imageGenerationModel')
-            QMetaObject.invokeMethod(image_model, 'activated', Q_ARG(int, 0))
-            manual = find(window, 'imageGenerationModelId')
-            manual.setProperty('text', 'test-manual-image')
-            QMetaObject.invokeMethod(manual, 'textEdited')
+
+            category('image')
+            picker = find(window, 'imageGenerationModel')
+            assert picker.property('count') == 2
+            assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 1))
+            size = find(window, 'imageGenerationSize')
+            size.setProperty('text', '640x240')
             assert backend.saveAuxiliaryVision('{"autoAnalyze":false}')
-            assert manual.property('text') == 'test-manual-image', 'Saving image-understanding preferences must preserve unsaved generation fields'
-            before_reject = dict(backend.store.data['multimodal']['image'])
-            assert QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
-            # Voice has not been set; the shared save rejects the incomplete selection.
-            assert backend.store.data['multimodal']['image'] == before_reject
-            find(window, 'speechGenerationVoice').setProperty('text', 'test-voice')
-            assert QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
-            assert backend.store.data['multimodal']['image']['model'] == 'test-manual-image'
-            QMetaObject.invokeMethod(image_model, 'activated', Q_ARG(int, 1))
-            assert QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
+            assert size.property('text') == '640x240', 'Vision changes must preserve the image draft'
+            size.setProperty('text', '')
+            click('saveMultimodalSettings')
             assert backend.store.data['multimodal']['image']['model'] == 'test-image-model'
-            QCoreApplication.processEvents()
-            for kind in ('image', 'speech'):
-                card = find(window, kind + 'GenerationSettings')
-                provider_picker = find(window, kind + 'GenerationProvider')
-                model_picker = find(window, kind + 'GenerationModel')
-                assert provider_picker.property('currentIndex') == 1
-                assert model_picker.property('currentIndex') == 1
-                assert provider_picker.property('displayText') == 'Test provider'
-                assert model_picker.property('displayText') == 'test-' + ('image' if kind == 'image' else 'voice') + '-model'
+            click('backMultimodalSettings')
+
+            category('speech')
+            picker = find(window, 'speechGenerationModel')
+            assert picker.property('count') == 2
+            assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 1))
+            click('saveMultimodalSettings')
+            assert backend.store.data['multimodal']['speech']['voice'] == ''
+            find(window, 'speechGenerationVoice').setProperty('text', 'test-voice')
+            click('saveMultimodalSettings')
+            assert backend.store.data['multimodal']['speech']['voice'] == 'test-voice'
             assert Store(Path(profile)).data['multimodal'] == backend.store.data['multimodal']
-            assert QMetaObject.invokeMethod(find(window, 'backMultimodalSettings'), 'clicked')
+            click('backMultimodalSettings')
+            click('backMultimodalSettings')
             assert find(window, 'apiProvidersSection').isVisible()
-            assert not find(window, 'imageGenerationSettings').isVisible()
-            assert QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
-            assert find(window, 'auxiliaryVisionModel').isVisible()
-            assert find(window, 'imageGenerationSettings').isVisible()
-            assert find(window, 'speechGenerationSettings').isVisible()
-            assert find(window, 'videoGenerationSettings').isVisible()
             screenshot_dir = ROOT / 'docs/images'
             screenshot_dir.mkdir(exist_ok=True)
             capture = '--screenshots' in sys.argv
@@ -256,12 +252,15 @@ def run():
                 until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
                 QCoreApplication.processEvents()
                 for kind in ('image', 'speech'):
+                    category(kind)
                     card = find(window, kind + 'GenerationSettings')
-                    picker = find(window, kind + 'GenerationProvider')
+                    picker = find(window, kind + 'GenerationModel')
                     assert card.property('providerId') == providers_by_kind[kind]['id']
                     assert card.property('modelId') == backend.store.data['multimodal'][kind]['model']
-                    assert picker.property('displayText') == 'Test provider'
-                assert find(window, 'speechGenerationVoice').property('text') == 'test-voice'
+                    assert picker.property('displayText').endswith(' · Test provider')
+                    if kind == 'speech':
+                        assert find(window, 'speechGenerationVoice').property('text') == 'test-voice'
+                    click('backMultimodalSettings')
                 if capture:
                     window.resize(1320, 1700)
                     screenshot(window, screenshot_dir / f'multimodal-models-{language}.png')
@@ -272,9 +271,29 @@ def run():
                     backend._view.workspace = str(workspace)
                 FakeProvider.generated.clear()
                 FakeProvider.model_requests.clear()
+                FakeProvider.releases = {kind: threading.Event() for kind in ('image', 'speech')}
                 approvals.clear()
                 prompt = '请生成一张图片和一段语音，并用中文回复。' if language == 'zh' else 'Create an image and a voice file for this workspace.'
                 assert backend.send(prompt)
+                def card_visible(name):
+                    try:
+                        return find(window, name).isVisible()
+                    except AssertionError:
+                        return False
+                for kind, call in (('image', 'image-call'), ('speech', 'voice-call')):
+                    card = 'chatboxGenerating_' + call
+                    spinner = 'chatboxGeneratingSpinner_' + call
+                    until(lambda: card_visible(card), lambda: backend.toolStatus + '; ' + str(warnings))
+                    assert find(window, spinner).property('running')
+                    assert find(window, card).width() < 260
+                    label = find(window, card).property('label')
+                    expected = (('正在生成语音…' if kind == 'speech' else '正在生成图片…') if language == 'zh'
+                                else ('Generating audio…' if kind == 'speech' else 'Generating image…'))
+                    assert label == expected
+                    if language == 'zh' and kind == 'image' and os.environ.get('UMEKO_GENERATION_PREVIEW'):
+                        screenshot(window, Path(os.environ['UMEKO_GENERATION_PREVIEW']))
+                    FakeProvider.releases[kind].set()
+                    until(lambda: not card_visible(card), lambda: str(warnings))
                 until(lambda: not backend.busy, lambda: backend.toolStatus + '; ' + str(warnings))
                 assert len(approvals) == 2, approvals
                 assert all(a['method'] == 'confirm' and 'Test provider' in a['detail'] for a in approvals)
@@ -283,7 +302,7 @@ def run():
                 assert FakeProvider.generated[1][1]['model'] == 'test-voice-model'
                 media = [item for row in backend.displayMessages for activity in row.get('activity', [])
                          if activity['kind'] == 'media' for item in activity['items']]
-                assert {item['kind'] for item in media} == {'image', 'file'}, media
+                assert {item['kind'] for item in media} == {'image', 'audio'}, media
                 assert all(Path(item['path']).is_file() and Path(item['path']).parent == workspace for item in media)
                 # Real provider context receives paths and no base64 or image blocks.
                 last = FakeProvider.model_requests[-1]
@@ -292,6 +311,9 @@ def run():
                 until(lambda: find(window, 'chatboxImage_image-call_0').property('loaded'), lambda: str(warnings))
                 assert find(window, 'chatboxCard_image-call_0').isVisible()
                 assert find(window, 'chatboxCard_voice-call_0').isVisible()
+                assert find(window, 'chatboxAudioPlay_voice-call_0').isVisible()
+                assert find(window, 'chatboxAudioSeek_voice-call_0').isVisible()
+                assert find(window, 'chatboxAudioVolumeButton_voice-call_0').isVisible()
                 backend._view.messages, backend._view.tree = preview(backend._view.file)
                 backend.chatChanged.emit()
                 restored = [item for row in backend.displayMessages for activity in row.get('activity', [])
@@ -301,9 +323,24 @@ def run():
                     window.resize(1320, 860)
                     screenshot(window, screenshot_dir / f'multimodal-chat-{language}.png')
                     window.resize(1320, 1200)
+            backend.newSession()
+            record = backend._view
+            for outcome in ('error', 'exit'):
+                call = 'pending-' + outcome
+                tool_event = {'type': 'tool', 'id': call, 'name': 'voice_gen', 'state': 'running'}
+                backend._handle_pi_event(record, tool_event)
+                assert not card_visible('chatboxGenerating_' + call), 'Waiting for approval is not generating'
+                backend._handle_pi_event(record, {**tool_event, 'generationPending': True})
+                until(lambda: card_visible('chatboxGenerating_' + call), lambda: str(warnings))
+                if outcome == 'exit':
+                    backend._handle_pi_event(record, {'type': 'exit'})
+                else:
+                    backend._handle_pi_event(record, {**tool_event, 'state': 'error', 'result': 'Cancelled'})
+                until(lambda: not card_visible('chatboxGenerating_' + call), lambda: str(warnings))
             assert not warnings, warnings
-            print('MULTIMODAL_UI_OK: bilingual settings, picker/manual IDs, persistence, actual Pi confirmations, fake image+speech, saved paths and chat cards')
+            print('MULTIMODAL_UI_OK: bilingual settings, default models, Pi confirmations, image/audio results and pending-card cleanup')
         finally:
+            for gate in FakeProvider.releases.values(): gate.set()
             backend.close()
             window.hide()
             import shiboken6

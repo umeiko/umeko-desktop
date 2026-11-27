@@ -4,7 +4,7 @@ export * from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { SettingsManager as NativeSettingsManager, resizeImage } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { createAgentSession as nativeCreateAgentSession } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { DefaultResourceLoader as NativeResourceLoader } from "./node_modules/@earendil-works/pi-coding-agent/dist/index.js";
-import { NETWORK_RETRY } from "./network-retry.mjs";
+import { GATEWAY_HTTP_IDLE_TIMEOUT_MS, NETWORK_RETRY } from "./network-retry.mjs";
 import { SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { backgroundJobsExtension } from "./background-jobs.mjs";
 import { createToolPermissionExtension, childPermissionPolicy, childPermissionUI } from "./tool-permissions.mjs";
@@ -71,7 +71,9 @@ export class SettingsManager extends NativeSettingsManager {
     const settings = NativeSettingsManager.create(...args);
     const applyRetry = () => {
       const retry = settings.getSettings().retry;
-      settings.applyOverrides({ retry: { ...retry, ...NETWORK_RETRY,
+      const configuredMax = globalThis[Symbol.for("umeko:stream-retry-policy")]?.getMaxRetries?.();
+      const maxRetries = typeof configuredMax === "number" ? configuredMax : NETWORK_RETRY.maxRetries;
+      settings.applyOverrides({ httpIdleTimeoutMs: GATEWAY_HTTP_IDLE_TIMEOUT_MS, retry: { ...retry, ...NETWORK_RETRY, maxRetries,
         provider: { ...retry?.provider, maxRetries: 0 } } });
     };
     applyRetry();

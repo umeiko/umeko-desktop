@@ -14,6 +14,36 @@ IMAGE_FORMATS = ('', 'png', 'jpeg', 'webp')
 SPEECH_FORMATS = ('mp3', 'opus', 'aac', 'flac', 'wav', 'pcm')
 
 
+def model_ids(value):
+    if not isinstance(value, list) or len(value) > 128:
+        raise ValueError('生成模型列表无效')
+    models = []
+    for name in value:
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 200 or any(ord(c) < 32 for c in name):
+            raise ValueError('请输入有效的模型 ID')
+        models.append(name.strip())
+    if len(models) != len(set(models)):
+        raise ValueError('模型 ID 不能重复')
+    return models
+
+
+def provider_models(provider, kind):
+    """Return generation IDs without modifying a provider's chat model mappings."""
+    if provider.get('api') == 'plugin':
+        overrides = provider.get('generationModelLists', {})
+        if kind in overrides:
+            return overrides[kind]
+        if provider.get('generationOnly'):
+            return provider.get('generationModels', [])
+        return [model['upstream'] for model in provider.get('models', [])]
+    return provider.get('imageModels' if kind == 'image' else 'generationModels', [])
+
+
+def clear_selections(settings, provider_ids):
+    return {kind: {**row, 'providerId': '', 'model': ''} if row['providerId'] in provider_ids else row
+            for kind, row in settings.items()}
+
+
 def validate(value):
     """Validate a settings patch before merging it into the saved selections."""
     if not isinstance(value, dict) or set(value) - set(DEFAULTS):

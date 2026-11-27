@@ -207,7 +207,7 @@ test("completed output consumes incomplete or invalid UTF-8 instead of holding i
   const jobs = await createJobManager();
   try {
     for (const bytes of [[0xe9], [0xe9, 0x80], [0xff]]) {
-      const job = await jobs.start({ command: nodeCommand(`process.stdout.write(Buffer.from(${JSON.stringify(bytes)}))`) });
+      const job = await jobs.start({ outputEncoding: "utf8", command: nodeCommand(`process.stdout.write(Buffer.from(${JSON.stringify(bytes)}))`) });
       assert.equal((await jobs.wait(job.id, { timeoutMs: 10000 })).status, "completed");
       const output = await jobs.read(job.id, { maxBytes: 1 });
       assert.equal(output.stdout, "\ufffd");

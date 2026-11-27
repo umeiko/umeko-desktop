@@ -64,7 +64,7 @@ def selection(data, kind):
     if provider.get('api') == 'image':
         from .image_providers import profile
         profile(provider, model)
-    if kind == 'speech' and not settings.get('voice', '').strip():
+    if kind == 'speech' and provider.get('api') != 'plugin' and not settings.get('voice', '').strip():
         raise ValueError('请先配置语音 voice')
     return provider, model, settings
 
@@ -370,7 +370,8 @@ def generate(gateway, body, on_progress=None, *, poll_interval=2.0):
     elif kind == 'speech':
         if options.get('format', 'mp3') not in FORMATS:
             raise ValueError('不支持此音频格式')
-        if not isinstance(options.get('voice'), str) or not options['voice'].strip():
+        voice = options.get('voice', '')
+        if not isinstance(voice, str) or (provider.get('api') != 'plugin' and not voice.strip()):
             raise ValueError('请先配置语音 voice')
         speed = options.get('speed', 1)
         if type(speed) not in (int, float) or not .25 <= speed <= 4:

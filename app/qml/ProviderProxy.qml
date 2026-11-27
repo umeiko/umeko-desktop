@@ -13,20 +13,50 @@ ActionButton {
         mode.currentIndex = Math.max(0, ["system","direct","custom"].indexOf(network.mode))
         address.text = network.url || ""
         caFile.text = network.caFile || ""
+        streamTimeout.text = record.streamIdleTimeoutMs ? String(Math.round(record.streamIdleTimeoutMs / 1000)) : "300"
+        streamRetries.text = record.streamMaxRetries !== undefined && record.streamMaxRetries !== null ? String(record.streamMaxRetries) : "5"
+        requestRetries.text = record.requestMaxRetries !== undefined && record.requestMaxRetries !== null ? String(record.requestMaxRetries) : "2"
         dialog.open()
     }
     Popup {
         id: dialog; objectName: "providerProxyDialog"
         parent: Overlay.overlay; anchors.centerIn: parent
-        width: Math.min(510, parent.width - 40); padding: 24; modal: true; focus: true
+        width: Math.min(540, parent.width - 40); padding: 24; modal: true; focus: true
         background: Rectangle { radius: 14; color: Theme.surface; border.color: Theme.line }
         contentItem: ColumnLayout {
-            spacing: 16
+            spacing: 14
             Text { font.family: Theme.fontFamily; objectName: "providerNetworkTitle"; text: I18n.t("网络设置"); color: Theme.ink; font.pixelSize: Theme.font(17, visible); font.weight: Font.DemiBold }
             Text { font.family: Theme.fontFamily; text: root.record.name || ""; color: Theme.muted; font.pixelSize: Theme.font(12, visible); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
             Text { font.family: Theme.fontFamily; text: I18n.t("代理设置"); color: Theme.ink; font.pixelSize: Theme.font(12, visible); font.weight: Font.Medium }
             Picker { id: mode; objectName: "providerProxyMode"; Layout.fillWidth: true; model: [I18n.t("跟随系统代理"), I18n.t("不使用代理"), I18n.t("使用自定义代理")] }
             InputField { id: address; objectName: "providerProxyAddress"; Layout.fillWidth: true; visible: mode.currentIndex === 2; placeholderText: "http://127.0.0.1:7890" }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { font.family: Theme.fontFamily; text: I18n.t("流式空闲超时（秒）"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
+                HelpButton { help: I18n.t("两次收到模型数据之间的最长等待时间，默认 300 秒（范围 10–1800 秒）。长输出、长思考或大型工具参数生成时若容易超时，可调大此项；留空使用默认值。") }
+            }
+            InputField { id: streamTimeout; objectName: "providerStreamIdleTimeout"; Layout.fillWidth: true; placeholderText: "300" }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 12
+                ColumnLayout {
+                    Layout.fillWidth: true; spacing: 6
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { font.family: Theme.fontFamily; text: I18n.t("流式重连次数"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
+                        HelpButton { help: I18n.t("流式超时或断流后自动重连的最大次数，默认 5 次（范围 0–100，填 0 关闭自动重连）；留空使用默认值。") }
+                    }
+                    InputField { id: streamRetries; objectName: "providerStreamMaxRetries"; Layout.fillWidth: true; placeholderText: "5" }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true; spacing: 6
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { font.family: Theme.fontFamily; text: I18n.t("请求重试次数"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
+                        HelpButton { help: I18n.t("收到 HTTP 429 或 503 时网关层的最大重试次数，默认 2 次（范围 0–100）；留空使用默认值。") }
+                    }
+                    InputField { id: requestRetries; objectName: "providerRequestMaxRetries"; Layout.fillWidth: true; placeholderText: "2" }
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Text { font.family: Theme.fontFamily; text: I18n.t("CA 证书文件（可选）"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
@@ -38,7 +68,7 @@ ActionButton {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 ActionButton { text: I18n.t("取消"); quiet: true; onClicked: dialog.close() }
-                ActionButton { objectName: "saveProviderProxy"; text: I18n.t("保存"); primary: true; onClicked: if (backend.setProviderNetwork(root.providerId, ["system","direct","custom"][mode.currentIndex], address.text, caFile.text)) dialog.close() }
+                ActionButton { objectName: "saveProviderProxy"; text: I18n.t("保存"); primary: true; onClicked: if (backend.setProviderNetworkConfig(root.providerId, ["system","direct","custom"][mode.currentIndex], address.text, caFile.text, streamTimeout.text, streamRetries.text, requestRetries.text)) dialog.close() }
             }
         }
     }

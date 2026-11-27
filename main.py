@@ -113,6 +113,10 @@ def create_application():
     configure_engine(engine)
     engine.warnings.connect(lambda errors: diagnostic("\n".join(e.toString() for e in errors)))
     engine.rootContext().setContextProperty("backend", controller)
+    from app.chatbox_audio import ChatboxAudio
+    audio = ChatboxAudio(engine)
+    engine.rootContext().setContextProperty("chatboxAudio", audio)
+    app.aboutToQuit.connect(lambda: audio.deactivate(audio.activeKey))
     engine.load(QUrl.fromLocalFile(str(root / "app/qml/Main.qml")))
     if not engine.rootObjects():
         controller.close()

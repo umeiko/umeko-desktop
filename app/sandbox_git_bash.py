@@ -7,9 +7,9 @@ import shutil
 import tarfile
 from uuid import uuid4
 
-ARCHIVE_NAME = "git-bash-2.56.1-r4.tar.xz"
+ARCHIVE_NAME = "git-bash-2.56.1-r5.tar.xz"
 VERSION = ARCHIVE_NAME.removesuffix(".tar.xz")
-REQUIRED_FILES = ("bin/bash.exe", "usr/bin/bash.exe", "usr/bin/msys-2.0.dll", "cmd/git.exe", "ucrt64/bin/git.exe")
+REQUIRED_FILES = ("bin/bash.exe", "usr/bin/bash.exe", "usr/bin/msys-2.0.dll", "cmd/git.exe", "ucrt64/bin/git.exe", "usr/bin/rg.exe")
 
 
 def _reparse(path):

@@ -86,6 +86,8 @@ class UmekoControl(QObject):
         if mode == 'view' and (self.b._view.busy or caller and caller.busy): return True
         if mode == 'provider' and args.get('id'):
             return self.b._models_busy(args['id']) or args['id'] in self.b.providerPlugins.busy
+        if mode == 'models':
+            return self.b._models_busy()
         if mode == 'session':
             record = self.b._pool.find(args['id'])
             return bool(record and record.busy or args['id'] in self.b._management_jobs)
@@ -270,13 +272,15 @@ class UmekoControl(QObject):
         if operation == 'help':
             docs = b.store.directory/'agent-docs'
             if not (docs/'README.md').is_file(): docs = b._release/'umeko-docs'
-            topics={'plugins':'plugins.md','provider':'provider-plugins.md','widget':'widget-plugins.md','agents':'global-agents.md','command_rules':'command-rules.md'}
+            topics={'plugins':'plugins.md','provider':'provider-plugins.md','generation':'generation-providers.md','widget':'widget-plugins.md','agents':'global-agents.md','command_rules':'command-rules.md'}
             topic=args.get('topic','')
             topic={'插件':'plugins','provider插件':'provider','widget插件':'widget','供应商':'provider'}.get(str(topic).lower(),str(topic).lower())
-            if topic and topic not in topics:raise ValueError('topic 请选择 plugins、provider、widget、agents 或 command_rules')
+            if topic and topic not in topics:raise ValueError('topic 请选择 ' + '、'.join(topics))
+            if topic == 'generation' and not (docs/topics[topic]).is_file():
+                docs = b._release/'umeko-docs'
             result={'docsRoot':str(docs),'entry':str(docs/(topics[topic] if topic else 'README.md')),'topics':{key:str(docs/value) for key,value in topics.items()}}
-            # Coordinators cannot use file tools. Supply their guide only on demand.
-            if topic=='agents':result['document']=(docs/topics[topic]).read_text(encoding='utf-8')[:65536]
+            # Keep these guides available on demand even without file tools.
+            if topic in ('agents','generation'):result['document']=(docs/topics[topic]).read_text(encoding='utf-8')[:65536]
             if topic in ('widget','plugins'):result['activeWidgets']=b.desktopPlugins.bridge.list(True,caller)
             return result
         if operation.startswith('widgets.'):

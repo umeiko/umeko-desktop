@@ -33,6 +33,8 @@ On macOS, `Start-Umeko.command` also opens from Finder. The launcher includes st
 
 On Linux, install your distribution's Qt/X11/Wayland runtime libraries and desktop keyring first. Credentials are stored only in the keyring; if it is locked or unavailable, Umeko tells you.
 
+Inline audio playback on Linux requires the PulseAudio client library (`libpulse0` on Debian and Ubuntu). If it is missing, you can still open the original audio attachment in a system player.
+
 ## Build
 
 Build on the target OS and CPU architecture:
@@ -55,7 +57,7 @@ The release workflow checks frozen GUI rendering and the bundled Pi on Windows x
 
 ### CI packages
 
-[Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml) runs on pushes to `main`, pull requests, or **Run workflow**. Daily CI runs the complete shared tests and builds Windows x64 using Python 3.12 and Node.js 22. Enable `all_platforms` in a manual main-branch run to also build Linux x64, macOS Apple Silicon and macOS Intel for a stable release. Every selected platform must render the packaged GUI, run its bundled search binaries and pass the bundled Pi self-test before upload.
+[Desktop packages](https://github.com/umeiko/umeko-desktop/actions/workflows/build.yml) runs on pushes to `main`, pull requests, or **Run workflow**. Daily CI runs the complete shared tests and builds Windows x64 using Python 3.12 and Node.js 22. Enable `all_platforms` in a manual main-branch run to build Windows x64, Linux x64 and macOS Apple Silicon for a stable release. Versions ending in `.0` also include macOS Intel. Every selected platform must render the packaged GUI, run its bundled search binaries and pass the bundled Pi self-test before upload.
 
 Download stable builds from [Releases](https://github.com/umeiko/umeko-desktop/releases/latest), or the latest verified main-branch Windows package from the rolling [Preview](https://github.com/umeiko/umeko-desktop/releases/tag/preview). A successful main CI replaces this Preview as its final step; it remains a prerelease. Development artifacts are also available from completed CI runs for seven days, with SHA-256 checksums and verification details. Separate Provider SDK and developer Skill ZIPs are included. Node.js and npm are bundled, so target computers need no separate Node.js installation. macOS packages are ad-hoc signed and not notarized.
 

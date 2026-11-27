@@ -42,9 +42,11 @@ Model settings allow context-length and vision overrides. The upstream service d
 
 ## Multimodal model options {#multimodal-models}
 
-In **Settings → Accounts & Providers → Multimodal model options**, choose an existing account and model separately for image, speech and video generation. Select from the model catalogue or enter a raw upstream model ID. Generation reuses the account's credentials, proxy and CA settings, so no separate Key is needed. The upstream service needs to support the selected generation endpoint and parameters.
+In the Python edition, open **Settings → Accounts & Providers → Multimodal model options**, then choose Image understanding, Image generation, Speech generation or Video generation. Image understanding uses vision models from your chat providers.
 
-Images default to a count of `1`, with optional default size, quality and format. Speech requires a manually entered voice ID supported by the provider, with format `mp3` and speed `1` by default. Every call requests permission before sending the prompt or text, including in auto mode.
+Each generation page starts with a default model selector. Below it, add a provider or edit an existing provider's model list. You can configure a compatible API or import a Provider ZIP that supports the selected generation type. Image generation also offers Volcengine Ark and Alibaba Cloud Model Studio presets.
+
+Images default to a count of `1`, with optional default size, quality and format. For speech, a compatible API requires a supported voice ID. ZIP providers can use their own default voice. The default format is `mp3` and speed is `1`. Every call requests permission before sending the prompt or text, including in auto mode.
 
 Video has optional duration (seconds) and resolution (for example `1280x720`) defaults; leave either blank for the provider default. `video_gen` creates an asynchronous provider job within one tool call. The tool header shows queued/generating state and the provider's progress percentage. The Stop button ends polling, discards the result and tries to delete the provider job; local cancellation takes effect either way. Running video jobs do not resume after an app restart.
 

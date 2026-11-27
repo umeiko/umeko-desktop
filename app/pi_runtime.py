@@ -152,7 +152,7 @@ def patch_command_sessions(release: Path, bridge_source: Path):
         return
     copy_runtime_file(bridge_source.parent / 'command-process.mjs', release / 'command-process.mjs')
     text = path.read_text(encoding="utf-8")
-    if "Command session: " in text:
+    if "command_session: Type.Optional" in text:
         return
     replacements = {
         'if (shellName === "bash" && host) {\n                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });':
@@ -195,7 +195,7 @@ def patch_powershell_output_encoding(release: Path):
                 '            if (outputEncoding === "gbk") throw new Error("GBK output requires the Umeko Windows command host");\n'
                 '            const commandFromStdin = shellConfig.commandTransport === "stdin";',
             '        parameters: bashSchema,': '        parameters: options?.supportsOutputEncoding ? Type.Object({ ...bashSchema.properties,\n'
-                '            output_encoding: Type.Optional(Type.Union([Type.Literal("utf8"), Type.Literal("gbk")], { description: "Set gbk only for native CP936/GBK output on both streams (default: utf8)" })),\n'
+                '            output_encoding: Type.Optional(Type.Union([Type.Literal("utf8"), Type.Literal("gbk")], { description: "Force UTF-8 or GBK on both streams; omit to detect the encoding" })),\n'
                 '        }) : bashSchema,',
             'async execute(_toolCallId, { command, timeout }, signal, onUpdate, ctx)':
                 'async execute(_toolCallId, { command, timeout, output_encoding }, signal, onUpdate, ctx)',
@@ -221,6 +221,67 @@ def patch_powershell_output_encoding(release: Path):
         pending.append((path, text))
     for path, text in pending:
         path.write_text(text, encoding="utf-8")
+
+
+def patch_windows_shell_selection(release: Path):
+    path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+    hook = 'globalThis[Symbol.for("umeko:bash-config")]'
+    if hook in text:
+        return
+    replacements = {
+        "createLocalShellOperations(shellName, resolveShellConfig)":
+            "createLocalShellOperations(shellName, resolveShellConfig, shellPath)",
+        "const shellConfig = resolveShellConfig();":
+            f'const resolveBash = {hook};\n'
+            '            const shellConfig = shellName === "bash" && resolveBash\n'
+            '                ? await resolveBash(shellPath, signal) : resolveShellConfig();',
+        'createLocalShellOperations("bash", () => getShellConfig(options?.shellPath))':
+            'createLocalShellOperations("bash", () => getShellConfig(options?.shellPath), options?.shellPath)',
+        'Optionally provide a timeout in seconds.`,':
+            'Optionally provide a timeout in seconds.' +
+            '${globalThis[Symbol.for("umeko:shell-hints")]?.(config.name) || ""}`,',
+    }
+    for original, replacement in replacements.items():
+        if text.count(original) != 1:
+            raise RuntimeError("Pi shell interface changed; update Windows shell selection")
+        text = text.replace(original, replacement)
+    path.write_text(text, encoding="utf-8")
+
+
+def patch_command_previews(release: Path, bridge_source: Path):
+    path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
+    if not path.is_file():
+        return
+    copy_runtime_file(bridge_source.parent / "command-output.mjs", release / "command-output.mjs")
+    text = path.read_text(encoding="utf-8")
+    if 'Process running with session ID' in text:
+        return
+    replacements = {
+        'let exitCode, commandSession;': 'let exitCode, commandSession, outputPreview;',
+        'commandSession = result.commandSession;':
+            'commandSession = result.commandSession;\n                    outputPreview = result.outputPreview;',
+        'truncated: fullOutput.truncated,': 'truncated: fullOutput.truncated || Boolean(outputPreview),',
+        '...(fullOutput.truncated && snapshot.fullOutputPath\n                        ? { full_output_path: snapshot.fullOutputPath }':
+            '...(outputPreview?.fullOutputPath || (fullOutput.truncated && snapshot.fullOutputPath)\n'
+            '                        ? { full_output_path: outputPreview?.fullOutputPath || snapshot.fullOutputPath }',
+        'let text = appendStatus(snapshot.content, "Command session: " + JSON.stringify(commandSession));':
+            'let text = appendStatus(snapshot.content, `Process running with session ID ${commandSession.id}. '
+            'Use background_job with action read, stdoutOffset ${commandSession.stdoutOffset} and '
+            'stderrOffset ${commandSession.stderrOffset} to continue reading, or action wait to wait for completion.`);',
+        'Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). '
+        'If truncated, full output is saved to a temp file.':
+            'Completed local commands show up to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024} KiB, keeping the '
+            'beginning and end when truncated. Full output remains in the logs. A command that is still running returns a '
+            'session ID for background_job. Use background_job start if a command needs standard input.',
+    }
+    for original, replacement in replacements.items():
+        if text.count(original) != 1:
+            raise RuntimeError("Pi shell interface changed; update the local command preview")
+        text = text.replace(original, replacement)
+    path.write_text(text, encoding="utf-8")
 
 
 def copy_runtime_file(source, destination):
@@ -301,6 +362,8 @@ def verify_runtime(release: Path, bridge_source: Path):
     patch_shell_environment(release, bridge_source)
     patch_command_sessions(release, bridge_source)
     patch_powershell_output_encoding(release)
+    patch_windows_shell_selection(release)
+    patch_command_previews(release, bridge_source)
     patch_search_sandbox(release)
     for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)

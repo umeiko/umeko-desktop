@@ -26,16 +26,18 @@ def api(path):
     separator='&' if '?' in path else '?'
     return json.loads(gh('api',f'repos/{REPO}/'+path+separator+'_umeko='+str(time.time_ns())))
 
-platforms=select_platforms(os.environ.get('RELEASE_PLATFORM_MODE', 'all'))
+platforms=select_platforms(os.environ.get('RELEASE_PLATFORM_MODE', 'all'), version)
 run=api('actions/runs/'+RUN)
 assert run['head_branch']=='main'
 assert run['head_repository']['full_name']==REPO and run['event'] in ('push','workflow_dispatch')
 assert run['path']=='.github/workflows/build.yml'
-require_verified_jobs(api('actions/runs/'+RUN+'/jobs?per_page=100')['jobs'],platforms)
+require_verified_jobs(api('actions/runs/'+RUN+'/jobs?filter=all&per_page=100')['jobs'],platforms)
 commit=run['head_sha']
 base=Path('.release');incoming=base/'input';publish=base/'publish'
 publish.mkdir(parents=True,exist_ok=True)
-gh('run','download',RUN,'--repo',REPO,'--pattern','Umeko-*','--dir',incoming)
+artifact_names = ['Umeko-'+target for target in sorted(platforms)] + ['Umeko-provider-development']
+download_args = [arg for name in artifact_names for arg in ('--name', name)]
+gh('run','download',RUN,'--repo',REPO,'--dir',incoming,*download_args)
 seen=set();sizes=[]
 for metadata in incoming.rglob('build.json'):
     report=json.loads(metadata.read_text(encoding='utf-8'))
@@ -138,7 +140,7 @@ if not minimal:
 assert api('git/ref/tags/'+TAG)['object']['sha']==commit
 refresh_readmes(REPO, TAG, published['assets'], api, gh, platforms=platforms)
 from release_retention import prune_releases
-if platforms == ALL_PLATFORMS:
+if platforms == select_platforms('all', version):
     prune_releases(REPO, TAG, api, gh)
 else:
     print('Retaining older platform releases while publishing Windows first',flush=True)

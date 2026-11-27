@@ -97,67 +97,26 @@ class VideoSettingsTests(unittest.TestCase):
             with self.subTest(kind=kind, settings=settings):
                 fixture = f"""
                     var kind = {json.dumps(kind)}, providerId = '', modelId = '', formatValue = '', imagePreset = null;
-                    var backend = {{config: {{multimodal: {{{kind}: {json.dumps(settings)}}}}}}};
+                    var saved = {json.dumps(settings)};
                     var size = {{}}, quality = {{}}, count = {{}}, voice = {{}}, speed = {{}};
                     var videoSize = {{}}, seconds = {{}};
                     var Qt = {{callLater: function() {{}}}}, syncPickers = function() {{}};
                 """
                 self.assertEqual(self.evaluate(fixture + methods + '\nload(); values();'), settings)
 
-    def test_card_uses_dedicated_video_and_video_capable_plugin_accounts_and_models(self):
+    def test_card_uses_only_accounts_supporting_its_kind(self):
         source = (QML / 'GenerationSettingsCard.qml').read_text(encoding='utf-8')
         expression = re.search(r'property var accounts: (.*)', source).group(1)
         fixture = """
             var root = {kind: 'video'};
-            var backend = {config: {providers: [
-                {id: 'openai-account', api: 'openai'},
-                {id: 'video-account', api: 'video', generationModels: ['video-model']},
-                {id: 'video-plugin', api: 'plugin', generationCapabilities: ['video']},
-                {id: 'speech-plugin', api: 'plugin', generationCapabilities: ['speech']},
-                {id: 'chat-account', api: 'anthropic'}
-            ]}};
+            var backend = {multimodalProviders: [
+                {id: 'video-account', kinds: ['video']},
+                {id: 'video-plugin', kinds: ['image', 'video']},
+                {id: 'speech-plugin', kinds: ['speech']}
+            ]};
         """
         self.assertEqual(self.evaluate(fixture + '(' + expression + ').map(p => p.id)'),
                          ['video-account', 'video-plugin'])
-        models = re.search(r'readonly property var models: (.*)', source).group(1)
-        fixture = "var root = {kind: 'video'}, imagePreset = null, account = {api: 'video', generationModels: ['video-model']};"
-        self.assertEqual(self.evaluate(fixture + '(' + models + ')'), [{'upstream': 'video-model'}])
-        fixture_plugin = "var root = {kind: 'video'}, imagePreset = null, account = {api: 'plugin', models: [{upstream: 'video-model'}]};"
-        self.assertEqual(self.evaluate(fixture_plugin + '(' + models + ')'), [{'upstream': 'video-model'}])
-        self.assertEqual(self.evaluate(fixture + 'account = null; (' + models + ')'), [])
-        self.assertIn('onTextEdited: root.modelId = text', source)
-
-    def test_settings_form_saves_and_reloads_the_real_video_card(self):
-        source = (QML / 'MultimodalSettings.qml').read_text(encoding='utf-8')
-        self.assertIn('objectName: "videoGenerationSettings"', source)
-        self.assertIn('kind: "video"', source)
-        self.assertIn('video: video.values()', source)
-        self.assertNotIn('videoGenerationNotice', source)
-        self.assertNotIn('imageUnderstandingNotice', source)
-        self.assertIn('图片、语音与视频生成', source)
-
-    def test_reload_preserves_unsaved_generation_when_only_vision_changes(self):
-        source = (QML / 'MultimodalSettings.qml').read_text(encoding='utf-8')
-        method = re.search(r'    function reload\(\) \{[\s\S]*?\n    }', source).group(0)
-        fixture = """
-            var savedSignatures = {}, calls = [0, 0, 0], videoDraft = '';
-            var backend = {config: {multimodal: {image: {model: 'saved-image'}, speech: {model: 'saved-speech'}, video: {model: 'saved-video'}}, vision: {}}};
-            var image = {kind: 'image', load: function() {calls[0]++;}};
-            var speech = {kind: 'speech', load: function() {calls[1]++;}};
-            var video = {kind: 'video', load: function() {calls[2]++; videoDraft = backend.config.multimodal.video.model;}};
-        """
-        exercise = """
-            reload();
-            videoDraft = 'unsaved-video';
-            backend.config.vision = {model: 'new-vision'};
-            reload();
-            var preserved = videoDraft === 'unsaved-video' && calls.every(n => n === 1);
-            backend.config.multimodal.video.model = 'updated-video';
-            reload();
-            ({preserved: preserved, draft: videoDraft, calls: calls});
-        """
-        self.assertEqual(self.evaluate(fixture + method + exercise),
-                         {'preserved': True, 'draft': 'updated-video', 'calls': [1, 1, 2]})
 
     def test_video_labels_and_provider_disclosure_have_english_translations(self):
         source = (QML / 'english.js').read_text(encoding='utf-8').replace('.pragma library', '')

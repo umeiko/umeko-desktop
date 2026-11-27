@@ -15,26 +15,31 @@ Popup {
     property var selected: null
     property string editingId: ""
     property bool submitting: false
+    signal zipRequested()
     readonly property bool custom: !!selected && !!selected.custom
     readonly property var presets: kind === "image" ? backend.imageProviderPresets
         : [{id: "openai-" + kind, name: "自定义（OpenAI 兼容）", label: "自定义（OpenAI 兼容）", protocol: "openai", icon: "", keyUrl: "", custom: true}]
     readonly property var kindAccounts: backend.multimodalProviders.filter(p => p.api === root.kind)
-    readonly property var customAccounts: kindAccounts.filter(p => p.presetId === "openai-" + root.kind)
-    readonly property var account: selected ? kindAccounts.find(p => custom ? p.id === editingId : p.presetId === selected.id) || null : null
-    function openFor(targetKind) {
+    readonly property var account: editingId ? kindAccounts.find(p => p.id === editingId) || null : null
+    function openFor(targetKind, editing) {
         kind = targetKind || "image"
+        clearSelection()
+        if (editing) {
+            const preset = presets.find(p => p.id === editing.presetId)
+            if (!preset) return
+            choose(preset, editing.id)
+        }
         open()
     }
     function choose(preset, identifier) {
         apiKey.clear(); selected = preset; editingId = identifier || ""
         accountName.text = account ? account.name : ""
         baseUrl.text = account ? account.baseUrl : ""
-        modelId.text = account ? account.model : ""
+        modelsEditor.load(account ? account.models[kind] : (preset.models || []))
         providerScroll.contentY = 0
         if (custom) accountName.forceActiveFocus(); else apiKey.forceActiveFocus()
     }
     function clearSelection() { apiKey.clear(); selected = null; editingId = ""; providerScroll.contentY = 0 }
-    onOpened: clearSelection()
     onClosed: clearSelection()
     background: Rectangle { color: Theme.surface; radius: 14; border.color: Theme.line }
     Overlay.modal: Rectangle { color: "#66000000" }
@@ -49,7 +54,7 @@ Popup {
             RowLayout {
                 Layout.fillWidth: true; spacing: 10
                 ActionButton {
-                    objectName: "imageProviderBack"; visible: !!root.selected
+                    objectName: "imageProviderBack"; visible: !!root.selected && !root.editingId
                     glyph: "arrow-left"; quiet: true; hint: I18n.t("返回")
                     onClicked: root.clearSelection()
                 }
@@ -67,7 +72,6 @@ Popup {
                     Button {
                         id: vendorButton
                         required property var modelData
-                        readonly property bool configured: !modelData.custom && root.kindAccounts.some(p => p.presetId === modelData.id && p.hasKey)
                         objectName: "imageProvider_" + modelData.id
                         Layout.fillWidth: true; implicitHeight: Math.max(Theme.control(62), vendorContent.implicitHeight + 24)
                         padding: 14; hoverEnabled: true
@@ -82,21 +86,15 @@ Popup {
                                 Glyph { visible: !vendorButton.modelData.icon; anchors.centerIn: parent; name: "settings"; width: Theme.icon(20); height: width; color: Theme.accent }
                             }
                             Text { objectName: "imageProviderName_" + vendorButton.modelData.id; Layout.fillWidth: true; text: I18n.t(vendorButton.modelData.name); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14, visible); elide: Text.ElideRight }
-                            Text { visible: vendorButton.configured; text: I18n.t("已配置"); color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible) }
                             Glyph { name: "chevron-right"; width: Theme.icon(16); height: width; color: Theme.muted }
                         }
                         onClicked: root.choose(modelData)
                     }
                 }
-                Text { visible: root.customAccounts.length > 0; Layout.topMargin: 8; text: I18n.t("已添加的自定义供应商"); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible) }
-                Repeater {
-                    model: root.customAccounts
-                    ActionButton {
-                        required property var modelData
-                        objectName: "editImageProvider_" + modelData.id
-                        Layout.fillWidth: true; text: modelData.name; glyph: "settings"; quiet: true
-                        onClicked: root.choose(root.presets.find(p => p.custom), modelData.id)
-                    }
+                ActionButton {
+                    objectName: "importGenerationZip"; Layout.fillWidth: true
+                    text: I18n.t("导入供应商 ZIP"); glyph: "folder"
+                    onClicked: { root.close(); root.zipRequested() }
                 }
             }
             ColumnLayout {
@@ -118,9 +116,6 @@ Popup {
                     InputField { id: accountName; objectName: "imageProviderCustomName"; Layout.fillWidth: true; maximumLength: 60; placeholderText: root.kind === "image" ? I18n.t("例如：我的生图服务") : root.kind === "speech" ? I18n.t("例如：我的语音合成服务") : I18n.t("例如：我的视频生成服务") }
                     Text { text: "Base URL"; color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible); Layout.topMargin: 7 }
                     InputField { id: baseUrl; objectName: "imageProviderCustomUrl"; Layout.fillWidth: true; maximumLength: 2048; placeholderText: "https://example.com/v1" }
-                    Text { text: I18n.t("模型 ID"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible); Layout.topMargin: 7 }
-                    InputField { id: modelId; objectName: "imageProviderCustomModel"; Layout.fillWidth: true; maximumLength: 200; placeholderText: root.kind === "image" ? I18n.t("填写供应商的生图模型 ID") : root.kind === "speech" ? I18n.t("填写供应商的语音模型 ID") : I18n.t("填写供应商的视频模型 ID") }
-                    Text { Layout.fillWidth: true; text: root.kind === "image" ? "POST /images/generations" : root.kind === "speech" ? "POST /audio/speech" : "POST /videos"; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible) }
                 }
                 Flow {
                     Layout.fillWidth: true; spacing: 8
@@ -146,23 +141,31 @@ Popup {
                     Accessible.name: "API Key"
                     onAccepted: if (saveButton.enabled) saveButton.clicked()
                 }
+                GenerationModelsEditor {
+                    id: modelsEditor; Layout.fillWidth: true
+                    fixedCatalog: !root.custom
+                    catalog: root.selected ? root.selected.modelDetails || [] : []
+                }
                 RowLayout {
                     Layout.fillWidth: true; Layout.topMargin: 4
                     ActionButton {
                         objectName: "removeImageProvider"; visible: !!root.account
                         text: I18n.t("移除"); quiet: true; glyph: "trash"
                         enabled: !root.submitting
-                        onClicked: if (backend.removeMultimodalProvider(root.account.id)) root.clearSelection()
+                        onClicked: if (backend.removeMultimodalProvider(root.account.id)) root.close()
                     }
                     Item { Layout.fillWidth: true }
                     ActionButton { text: I18n.t("取消"); quiet: true; onClicked: root.close() }
                     ActionButton {
-                        id: saveButton; objectName: "saveImageProvider"; text: I18n.t("保存并使用"); primary: true
-                        enabled: !root.submitting && !!root.selected && (apiKey.text.trim().length > 0 || !!root.account && root.account.hasKey) && (!root.custom || accountName.text.trim().length > 0 && baseUrl.text.trim().length > 0 && modelId.text.trim().length > 0)
+                        id: saveButton; objectName: "saveImageProvider"; text: I18n.t("保存"); primary: true
+                        enabled: !root.submitting && !!root.selected && (apiKey.text.trim().length > 0 || !!root.account && root.account.hasKey) && (!root.custom || accountName.text.trim().length > 0 && baseUrl.text.trim().length > 0)
                         onClicked: {
                             root.submitting = true
                             try {
-                                const saved = root.custom ? backend.saveCustomMultimodalProvider(root.kind, JSON.stringify({id: root.editingId, name: accountName.text, baseUrl: baseUrl.text, model: modelId.text, key: apiKey.text})) : backend.saveImageProvider(root.selected.id, apiKey.text)
+                                const saved = backend.saveGenerationProvider(root.kind, JSON.stringify({
+                                    id: root.editingId, presetId: root.selected.id, name: accountName.text,
+                                    baseUrl: baseUrl.text, models: modelsEditor.models, key: apiKey.text
+                                }))
                                 if (saved) root.close()
                             }
                             finally { root.submitting = false }
