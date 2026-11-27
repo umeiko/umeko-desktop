@@ -357,7 +357,7 @@ class KernelUpdateTests(unittest.TestCase):
             controller._job = synchronous_job
             controller._latest = "99.0.0"
             try:
-                with patch("app.controller.subprocess.run", return_value=subprocess.CompletedProcess([], 1)):
+                with patch("app.windows_job.run_managed", return_value=subprocess.CompletedProcess([], 1)):
                     controller.updateKernel()
                 self.assertEqual(controller._release, previous)
                 self.assertFalse((Path(temp) / "kernels/active.json").exists())

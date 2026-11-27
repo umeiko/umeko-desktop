@@ -22,7 +22,7 @@ class RuntimeReaderTests(unittest.TestCase):
             (release/'manifest.json').write_text(json.dumps({'package':PACKAGE,'projection':2}),encoding='utf-8')
             bridge=Path(__file__).resolve().parents[1]/'runtime/bridge.mjs'
             success=subprocess.CompletedProcess([],0,'{"ok":true}','')
-            with patch('app.pi_runtime.node_executable',return_value='node'),patch('app.pi_runtime.node_environment',return_value={}),patch('app.pi_runtime.subprocess.run',return_value=success) as run:
+            with patch('app.pi_runtime.node_executable',return_value='node'),patch('app.pi_runtime.node_environment',return_value={}),patch('app.windows_job.run_managed',return_value=success) as run:
                 verify_runtime(release,bridge)
                 before={str(p):p.stat().st_mtime_ns for p in release.rglob('*') if p.is_file()}
                 with patch('app.pi_runtime.shutil.copy2',side_effect=AssertionError('Prepared adapters must remain immutable')):
@@ -95,7 +95,7 @@ class RuntimePathTests(unittest.TestCase):
         (source_io / "markdown-preview.mjs").write_text("fixture")
         (source_io / "umeko-docs").mkdir()
         (source_io / "umeko-docs/guide.md").write_text("deep docs")
-        with patch("app.pi_runtime.node_executable", return_value="node.exe"), patch("app.pi_runtime.node_environment", return_value={}), patch("app.pi_runtime.subprocess.run", return_value=subprocess.CompletedProcess([], 0, '{"ok":true}', '')) as run:
+        with patch("app.pi_runtime.node_executable", return_value="node.exe"), patch("app.pi_runtime.node_environment", return_value={}), patch("app.windows_job.run_managed", return_value=subprocess.CompletedProcess([], 0, '{"ok":true}', '')) as run:
             verify_runtime(filesystem_path(release), source / "bridge.mjs")
         self.assertEqual(run.call_args.args[0][1], str(release / "bridge.mjs"))
         self.assertEqual((release_io / "umeko-docs/guide.md").read_text(), "deep docs")

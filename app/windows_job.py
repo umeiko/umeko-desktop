@@ -10,8 +10,6 @@ import weakref
 from ctypes import wintypes as w
 
 _log = logging.getLogger(__name__)
-_STDLIB_RUN = subprocess.run
-_STDLIB_POPEN = subprocess.Popen
 
 JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x0800
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
@@ -139,8 +137,6 @@ def assign_subprocess(process):
     handle_value = getattr(process, "_handle", None)
     if isinstance(handle_value, int) and handle_value:
         return assign_process_handle(int(handle_value))
-    if isinstance(process, _STDLIB_POPEN) and isinstance(process.pid, int) and process.pid > 0:
-        return assign_process_id(process.pid)
     return False
 
 
@@ -168,7 +164,7 @@ def manage_qprocess(process):
 
 def run_managed(*popenargs, input=None, capture_output=False, timeout=None, check=False, **kwargs):
     """Drop-in subprocess.run equivalent that assigns Windows children to the Job."""
-    if sys.platform != "win32" or subprocess.run is not _STDLIB_RUN:
+    if sys.platform != "win32":
         return subprocess.run(
             *popenargs, input=input, capture_output=capture_output,
             timeout=timeout, check=check, **kwargs,
@@ -201,7 +197,8 @@ def run_managed(*popenargs, input=None, capture_output=False, timeout=None, chec
 
 def detach_subprocess(process):
     """Release an intentionally detached Popen without emitting ResourceWarning."""
-    if not isinstance(process, _STDLIB_POPEN):
+    popen_type = subprocess.Popen
+    if not isinstance(popen_type, type) or not isinstance(process, popen_type):
         return
     if process.poll() is not None:
         return
