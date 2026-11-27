@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       all_platforms:
-        description: Build all native platforms for a stable release
+        description: Build stable release platforms (macOS Intel only for versions ending in .0)
         type: boolean
         default: false
 

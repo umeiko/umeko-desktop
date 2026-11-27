@@ -12,7 +12,7 @@
 
 正式版需要多平台构建时，在 **Desktop packages → Run workflow** 勾选 `all_platforms`，再按现有正式发布流程选择这个成功的运行。
 
-正式发布默认要求四个平台。需要优先发布 Windows 时，在 **Publish verified desktop release → Run workflow** 选择 `platforms: windows`，填写已成功完成共享测试和 Windows 打包验证的 main CI 运行号。发布说明和 README 只显示实际存在的下载按钮，并保留历史版本的其他平台包。
+正式发布默认包含 Windows x64、Linux x64 和 macOS Apple Silicon。`0.x.0` 系列首个版本也提供 macOS Intel，补丁发布会保留最近一版正式 Intel 下载。需要优先发布 Windows 时，在 **Publish verified desktop release → Run workflow** 选择 `platforms: windows`，填写已成功完成共享测试和 Windows 打包验证的 main CI 运行号。发布说明和 README 的下载按钮对应当前版本的实际产物。
 
 正式发布逐项核验共享测试和所选平台任务；`preview` 上传是独立步骤，它失败时，已经通过测试和成品校验的 Windows 包仍可正式发布。
 
