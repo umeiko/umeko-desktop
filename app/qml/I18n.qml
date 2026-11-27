@@ -31,6 +31,10 @@ QtObject {
                 detail = English.strings["服务器未返回错误详情"] + detail.slice("服务器未返回错误详情".length)
             return "Provider returned HTTP " + providerError[1] + ": " + detail
         }
+        const groupFailed = text.match(/^模型组中的可用模型均请求失败（最后一次失败：([\s\S]*)）$/)
+        if (groupFailed) return "All available models in the model group failed (last error: " + t(groupFailed[1]) + ")"
+        const connectFailed = text.match(/^无法连接供应商：([\s\S]*)$/)
+        if (connectFailed) return "Could not connect to provider: " + connectFailed[1]
         if (Object.prototype.hasOwnProperty.call(English.strings, text)) return English.strings[text]
         const patterns = [
             [/^已压缩：(\d+) → (\d+) tokens$/, English.strings["已压缩：{before} → {after} tokens"].replace("{before}", "$1").replace("{after}", "$2")],
