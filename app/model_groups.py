@@ -29,11 +29,16 @@ def configured_members(data, *, internal_ready=True):
 def descriptor(data, *, internal_ready=True):
     if not data.get("modelGroup", {}).get("enabled"):
         return None
-    models = [normalize_model(model) for _, _, model in configured_members(data, internal_ready=internal_ready) if model]
-    if not models:
+    resolved = [(provider, normalize_model(model)) for _, provider, model in configured_members(data, internal_ready=internal_ready) if model]
+    if not resolved:
         return None
-    return {"id": GROUP_MODEL, "contextWindow": min(row["contextWindow"] for row in models),
-            "input": ["text", "image"] if any(row["vision"] for row in models) else ["text"]}
+    retries = []
+    for provider, _ in resolved:
+        raw = (provider or {}).get("streamMaxRetries")
+        retries.append(int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and 0 <= raw <= 100 else 5)
+    return {"id": GROUP_MODEL, "contextWindow": min(row["contextWindow"] for _, row in resolved),
+            "input": ["text", "image"] if any(row["vision"] for _, row in resolved) else ["text"],
+            "streamMaxRetries": max(retries, default=5)}
 
 
 def settings(data, *, internal_ready=True):

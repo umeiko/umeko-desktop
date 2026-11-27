@@ -1192,7 +1192,9 @@ Item {
                     property int index: rowShell.index
                     readonly property bool compactionNotice: modelData.customType === "umeko-compaction"
                     readonly property bool dshInterruptionNotice: modelData.customType === "umeko-dsh-interruption"
-                    readonly property bool statusNotice: compactionNotice || dshInterruptionNotice
+                    readonly property bool gatewayContinuationNotice: modelData.customType === "umeko-gateway-continuation"
+                    readonly property bool networkRetryNotice: modelData.customType === "umeko-network-retry"
+                    readonly property bool statusNotice: compactionNotice || dshInterruptionNotice || gatewayContinuationNotice || networkRetryNotice
                     readonly property point hoverPoint: chatSelection.mapToItem(messageRow, chatSelection.pointer.x, chatSelection.pointer.y)
                     readonly property bool hovered: chatSelection.hovering && hoverPoint.x >= 0 && hoverPoint.x <= width && hoverPoint.y >= 0 && hoverPoint.y <= height
                     width: conversation.width - 16
@@ -1253,6 +1255,17 @@ Item {
                                 selectionController: chatSelection
                                 messageIndex: messageRow.index
                             }
+                            Text {
+                                objectName: "partialIncompleteNotice_" + messageRow.index
+                                visible: !!modelData.partialIncomplete
+                                width: parent.width
+                                text: I18n.t("已保留中断前的部分回复（未完成）")
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.font(11, visible, chatSelection)
+                            }
                             Loader {
                                 id: userBody
                                 width: parent.width
@@ -1279,16 +1292,31 @@ Item {
                         }
                     }
                     Loader {
-                        active: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                        readonly property bool showDetails: (modelData.diagnosticId || "").length > 0
+                        readonly property bool showStagedContinue: !pane.messagePrefix && !!modelData.stagedContinueAvailable && messageRow.index === conversation.count - 1 && !pane.busy && backend.sessionBackend !== "dsh"
+                        active: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (showDetails || showStagedContinue)
                         visible: active
                         x: 33
-                        sourceComponent: ActionButton {
-                            objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
-                            selectionController: chatSelection
-                            text: I18n.t("查看请求与返回")
-                            glyph: "code"
-                            quiet: true
-                            onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                        sourceComponent: Row {
+                            spacing: 8
+                            ActionButton {
+                                objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
+                                visible: (modelData.diagnosticId || "").length > 0
+                                selectionController: chatSelection
+                                text: I18n.t("查看请求与返回")
+                                glyph: "code"
+                                quiet: true
+                                onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                            }
+                            ActionButton {
+                                objectName: "stagedContinue_" + messageRow.index
+                                visible: !pane.messagePrefix && !!modelData.stagedContinueAvailable && messageRow.index === conversation.count - 1 && !pane.busy && backend.sessionBackend !== "dsh"
+                                selectionController: chatSelection
+                                text: I18n.t("分阶段继续")
+                                glyph: "layers"
+                                primary: true
+                                onClicked: backend.continueInStages()
+                            }
                         }
                     }
                     Text {
@@ -1408,6 +1436,39 @@ Item {
                         sourceComponent: OutputLimitNotice {
                             continuable: messageRow.index === conversation.count - 1 && !pane.busy
                             onContinued: pane.controller.send(I18n.t("继续刚才未完成的回答，从中断处接着输出，不要重复已有内容。"))
+                        }
+                    }
+                    Loader {
+                        active: !modelData._loading && (messageRow.gatewayContinuationNotice || messageRow.networkRetryNotice)
+                        visible: active
+                        x: 33
+                        sourceComponent: Row {
+                            objectName: messageRow.gatewayContinuationNotice ? "gatewayContinuationTag" : "networkRetryActivity"
+                            spacing: 8
+                            Glyph {
+                                name: "refresh-cw"
+                                color: Theme.muted
+                                width: Theme.icon(14)
+                                height: width
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            Loader {
+                                sourceComponent: messageRow.networkRetryNotice ? retryLabel : resumedLabel
+                                Component {
+                                    id: retryLabel
+                                    NetworkRetry { retryState: modelData.networkRetry || ({}) }
+                                }
+                                Component {
+                                    id: resumedLabel
+                                    Text {
+                                        objectName: "gatewayContinuationText"
+                                        text: I18n.t("网关超时，已自动接续")
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.font(13)
+                                        color: Theme.muted
+                                    }
+                                }
+                            }
                         }
                     }
                     Item {

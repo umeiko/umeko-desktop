@@ -1049,13 +1049,12 @@ ApplicationWindow {
                 onConfigureProvider: window.settings(0)
                 onChooseCapability: window.openConversationSearch()
                 x: launchMode ? (parent.width - width) / 2 : chatWidth.composerLeft; anchors.bottom: parent.bottom
-                anchors.bottomMargin: launchMode ? Math.max(65, Math.round(parent.height * 0.36)) : Math.max(57, Math.max(footerActions.height, desktopPluginMenu.height) + Theme.control(10) + 13) + (retryStatus.visible ? retryStatus.implicitHeight + 6 : 0)
+                anchors.bottomMargin: launchMode ? Math.max(65, Math.round(parent.height * 0.36)) : Math.max(57, Math.max(footerActions.height, desktopPluginMenu.height) + Theme.control(10) + 13)
                 width: launchMode ? Math.min(600, parent.width - 46) : parent.width - chatWidth.composerLeft - chatWidth.composerRight
                 onOpenModels: modelPopup.toggle()
                 onChooseFiles: attachmentDialog.open()
                 onMessageSent: if (!conversation.followTail) conversation.jumpToLatest()
             }
-            NetworkRetry { id: retryStatus; anchors.left: composer.left; anchors.top: composer.bottom; anchors.topMargin: 6; width: composer.width }
             ChatWidthControls { id: chatWidth; anchors.fill: parent; z: 25; enabled: !chatCover.visible && !imageViewer.visible }
             ChatFileDrop { id: chatDrop; anchors.fill: parent; z: 70; enabled: !chatCover.visible; chatWindow: window }
             ChatLoadingOverlay {
