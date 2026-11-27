@@ -474,6 +474,9 @@ async function bindSession(session) {
       args: event.toolName === ANALYZE_IMAGE ? {...event.args,model:auxiliaryVision.label(),provider:auxiliaryVision.provider()} : event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
+      generationPending: event.type === "tool_execution_update" &&
+        (event.toolName === "image_gen" || event.toolName === "voice_gen") &&
+        event.partialResult?.details?.generationPending === true ? true : undefined,
       patchFiles: event.toolName === APPLY_PATCH && event.type === "tool_execution_end" && !event.isError ? event.result?.details?.patchFiles : undefined,
       taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });

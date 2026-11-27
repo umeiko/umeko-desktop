@@ -5,6 +5,18 @@ import re
 RETAINED_MILESTONES = frozenset(("v0.7.1",))
 
 
+def latest_intel_release(releases):
+    candidates = []
+    for release in releases:
+        match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", release["tag_name"])
+        if match and not release["draft"] and not release.get("prerelease") and any(
+            "-macos-x64-" in asset.get("name", "") and asset["name"].endswith(".dmg")
+            for asset in release["assets"]
+        ):
+            candidates.append((tuple(map(int, match.groups())), release["tag_name"]))
+    return max(candidates, default=((), None))[1]
+
+
 def obsolete_patches(releases, tag):
     pattern = r"v(\d+)\.(\d+)\.(\d+)(?:-minimal)?"
     current = re.fullmatch(pattern, tag)
@@ -26,15 +38,21 @@ def prune_releases(repo, tag, api, gh):
     assert repo in ("umeiko/umeko-desktop", "umeiko/umeko-desktop-cpp")
     releases = api("releases?per_page=100")
     current = next(r for r in releases if r["tag_name"] == tag)
-    assert not current["draft"] and len(current["assets"]) in (15, 19)
+    assert not current["draft"]
     if repo.endswith("-cpp"):
+        assert len(current["assets"]) in (15, 19)
         standard = tag.removesuffix("-minimal")
         pair = [next((r for r in releases if r["tag_name"] == name), None) for name in (standard, standard + "-minimal")]
         if any(not r or r["draft"] or len(r["assets"]) not in (15, 19) or r["target_commitish"] != current["target_commitish"] for r in pair):
             print("Old patch cleanup deferred until both native editions are published", flush=True)
             return []
+    else:
+        assert len(current["assets"]) in (14, 15, 19)
+    retained_intel = latest_intel_release(releases) if not repo.endswith("-cpp") else None
     removed = []
     for release in obsolete_patches(releases, tag):
+        if release["tag_name"] == retained_intel:
+            continue
         gh("api", "--method", "DELETE", f"repos/{repo}/releases/{release['id']}")
         removed.append(release["tag_name"])
         print("Removed superseded patch Release and assets:", release["tag_name"], flush=True)

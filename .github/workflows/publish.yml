@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       platforms:
-        description: Publish all four platforms or the verified Windows package first
+        description: Publish stable release platforms (macOS Intel only in .0 releases) or Windows first
         type: choice
         options: [all, windows]
         default: all

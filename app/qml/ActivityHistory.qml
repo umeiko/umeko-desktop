@@ -28,7 +28,7 @@ Column {
             property var entry: root.activity[index] || ({kind:"", blockOffset:0})
             property var fold: root.expansionState(entry.kind + ":" + entry.blockOffset)
             width: root.width
-            sourceComponent: ({text: prose, thinking: thinking, tools: tools, media: media, subagents: subagents})[entry.kind] || null
+            sourceComponent: ({text: prose, thinking: thinking, tools: tools, media: media, generation: generation, subagents: subagents})[entry.kind] || null
 
             Component {
                 id: prose
@@ -64,6 +64,20 @@ Column {
                     items: step.entry.items || []; toolId: step.entry.toolId || ""
                     expansionState: step.fold
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockOffset: step.entry.blockOffset
+                }
+            }
+            Component {
+                id: generation
+                Item {
+                    implicitHeight: pendingCard.height
+                    GenerationPendingCard {
+                        id: pendingCard
+                        width: Math.min(parent.width, implicitWidth)
+                        toolName: step.entry.toolName || ""
+                        toolId: step.entry.toolId || ""
+                        sessionActive: !root.selectionController || root.selectionController.sessionActive
+                        selectionController: root.selectionController
+                    }
                 }
             }
             Component {

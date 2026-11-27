@@ -20,7 +20,9 @@ class PackageChangesTests(unittest.TestCase):
         for event,value in [('push',''),('pull_request','true'),('workflow_dispatch','false')]:
             with self.subTest(event=event,value=value):
                 self.assertEqual([row['platform'] for row in scope.package_matrix(event,value)['include']], ['windows-x64'])
-        full = scope.package_matrix('workflow_dispatch','true')['include']
+        patch = scope.package_matrix('workflow_dispatch', 'true', version='0.7.11')['include']
+        self.assertEqual({row['platform'] for row in patch}, {'windows-x64', 'linux-x64', 'macos-arm64'})
+        full = scope.package_matrix('workflow_dispatch', 'true', version='0.8.0')['include']
         self.assertEqual({row['platform'] for row in full},
                          {'windows-x64','linux-x64','macos-arm64','macos-x64'})
 
