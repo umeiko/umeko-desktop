@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl, QTimer, QStandardPaths
 from PySide6.QtGui import QDesktopServices, QGuiApplication
+from umeko_provider_sdk.network import system_tls_context
 
 from .project_info import VERSION, PROJECT_URL, AUTHOR_URL, RELEASES_URL, RELEASE_API, project_info
 from .update_download import platform_target, select_asset, download_asset
@@ -48,10 +49,8 @@ def _release_metadata(proxy):
         if value.get('state') == 'error': raise UpdateNetworkError(value.get('message') or '更新网络连接失败')
         if value.get('code') != 200: raise urllib.error.HTTPError(RELEASE_API, value.get('code', 0), '', {}, None)
         return value['body'].encode('utf-8')
-    # create_default_context loads Windows CA/ROOT stores and keeps hostname
-    # and certificate verification enabled; no certifi-only replacement.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({'https':proxy} if proxy else {}),
-                                         urllib.request.HTTPSHandler(context=ssl.create_default_context()))
+                                         urllib.request.HTTPSHandler(context=system_tls_context()))
     with opener.open(request, timeout=20) as response:
         return response.read(2 * 1024 * 1024 + 1)
 

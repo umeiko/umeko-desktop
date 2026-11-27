@@ -97,15 +97,21 @@ def validate_ca_file(value):
         raise error from cause
 
 
-def tls_context(settings=None):
-    """Extend platform trust for this provider only; keep peer/hostname checks."""
-    settings = policy.get() if settings is None else settings
+def system_tls_context():
+    """Create a verified HTTPS context using platform trust."""
     context = ssl.create_default_context()
     if sys.platform == 'darwin':
         # Bundled OpenSSL can point to a Python installation absent on this Mac.
         defaults = ssl.get_default_verify_paths()
         if not (defaults.cafile or defaults.capath) and _MACOS_CA_FILE.is_file():
             context.load_verify_locations(cafile=str(_MACOS_CA_FILE))
+    return context
+
+
+def tls_context(settings=None):
+    """Extend platform trust for this provider only; keep peer/hostname checks."""
+    settings = policy.get() if settings is None else settings
+    context = system_tls_context()
     files = (os.environ.get('NODE_EXTRA_CA_CERTS'), os.environ.get('UMEKO_MODEL_CA_FILE'), (settings or {}).get('caFile'))
     for path in dict.fromkeys(file for file in files if file):
         context.load_verify_locations(cafile=validate_ca_file(path))
