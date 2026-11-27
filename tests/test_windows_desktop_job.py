@@ -160,8 +160,46 @@ def _cleanup_handles(handles):
                 pass
 
 
-def _spawn_inside_restricted_job(command, *, cwd, env, stdout=None, stderr=None):
-    """Spawn a child inside an outer Windows Job WITHOUT BREAKAWAY_OK."""
+class _StartupInfoW(ctypes.Structure):
+    _fields_ = [
+        ("cb", wintypes.DWORD),
+        ("lpReserved", wintypes.LPWSTR),
+        ("lpDesktop", wintypes.LPWSTR),
+        ("lpTitle", wintypes.LPWSTR),
+        ("dwX", wintypes.DWORD),
+        ("dwY", wintypes.DWORD),
+        ("dwXSize", wintypes.DWORD),
+        ("dwYSize", wintypes.DWORD),
+        ("dwXCountChars", wintypes.DWORD),
+        ("dwYCountChars", wintypes.DWORD),
+        ("dwFillAttribute", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("wShowWindow", wintypes.WORD),
+        ("cbReserved2", wintypes.WORD),
+        ("lpReserved2", ctypes.c_void_p),
+        ("hStdInput", wintypes.HANDLE),
+        ("hStdOutput", wintypes.HANDLE),
+        ("hStdError", wintypes.HANDLE),
+    ]
+
+
+class _ProcessInfo(ctypes.Structure):
+    _fields_ = [
+        ("hProcess", wintypes.HANDLE),
+        ("hThread", wintypes.HANDLE),
+        ("dwProcessId", wintypes.DWORD),
+        ("dwThreadId", wintypes.DWORD),
+    ]
+
+
+def _spawn_inside_restricted_job(command, *, cwd, env, stdout_path: Path, stderr_path: Path):
+    """Spawn a child suspended inside an outer Windows Job WITHOUT BREAKAWAY_OK.
+
+    Uses sys._base_executable when running inside a Windows Python venv so the
+    venv redirector stub (venvlauncher.exe) does not insert an intermediate
+    SILENT_BREAKAWAY_OK (0x3000) Job that masks the restricted outer Job.
+    """
+    import msvcrt
     from app.windows_job import (
         ExtendedLimits,
         JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
@@ -172,33 +210,81 @@ def _spawn_inside_restricted_job(command, *, cwd, env, stdout=None, stderr=None)
         set_job,
     )
 
+    CREATE_SUSPENDED = 0x00000004
+    CREATE_UNICODE_ENVIRONMENT = 0x00000400
+    STARTF_USESTDHANDLES = 0x00000100
+
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateProcessW.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.LPWSTR,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.BOOL,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.LPCWSTR,
+        ctypes.POINTER(_StartupInfoW),
+        ctypes.POINTER(_ProcessInfo),
+    )
+    kernel32.CreateProcessW.restype = wintypes.BOOL
     kernel32.ResumeThread.argtypes = (wintypes.HANDLE,)
     kernel32.ResumeThread.restype = wintypes.DWORD
-    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-    kernel32.OpenProcess.restype = wintypes.HANDLE
+
+    launch_cmd = list(command)
+    launch_env = dict(env)
+    base_exe = getattr(sys, "_base_executable", "")
+    if launch_cmd and launch_cmd[0] == sys.executable and base_exe and Path(base_exe).is_file():
+        if Path(base_exe).resolve() != Path(sys.executable).resolve():
+            launch_cmd[0] = base_exe
+            existing_pp = [p for p in launch_env.get("PYTHONPATH", "").split(os.pathsep) if p]
+            extra_pp = [p for p in sys.path if p and Path(p).exists() and p not in existing_pp]
+            launch_env["PYTHONPATH"] = os.pathsep.join([*existing_pp, *extra_pp])
 
     outer_job = expect(create_job(None, None))
+    process_handle = None
     try:
         # Explicitly NO JOB_OBJECT_LIMIT_BREAKAWAY_OK (0x0800) and NO SILENT_BREAKAWAY_OK (0x1000).
         limits = ExtendedLimits()
         limits.basic.flags = 0
         expect(set_job(outer_job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
                        ctypes.byref(limits), ctypes.sizeof(limits)))
-        proc = subprocess.Popen(
-            command,
-            cwd=cwd,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=stdout,
-            stderr=stderr,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        # Assign immediately before the child initializes Qt or spawns anything.
-        handle_value = int(proc._handle)
-        expect(assign_job(outer_job, handle_value))
-        return outer_job, proc
+
+        with open(os.devnull, "rb") as stdin_f, stdout_path.open("wb") as out_f, stderr_path.open("wb") as err_f:
+            for fd in (stdin_f.fileno(), out_f.fileno(), err_f.fileno()):
+                os.set_inheritable(fd, True)
+            startup = _StartupInfoW()
+            startup.cb = ctypes.sizeof(startup)
+            startup.dwFlags = STARTF_USESTDHANDLES
+            startup.hStdInput = msvcrt.get_osfhandle(stdin_f.fileno())
+            startup.hStdOutput = msvcrt.get_osfhandle(out_f.fileno())
+            startup.hStdError = msvcrt.get_osfhandle(err_f.fileno())
+            proc_info = _ProcessInfo()
+            cmdline = ctypes.create_unicode_buffer(subprocess.list2cmdline(launch_cmd))
+            env_block = ctypes.create_unicode_buffer(
+                "\0".join(f"{k}={v}" for k, v in launch_env.items()) + "\0\0"
+            )
+            flags = subprocess.CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT
+            expect(kernel32.CreateProcessW(
+                None, cmdline, None, None, True, flags, env_block, str(cwd),
+                ctypes.byref(startup), ctypes.byref(proc_info),
+            ))
+            process_handle = proc_info.hProcess
+            try:
+                expect(assign_job(outer_job, process_handle))
+                if kernel32.ResumeThread(proc_info.hThread) == 0xFFFFFFFF:
+                    raise ctypes.WinError(ctypes.get_last_error())
+            finally:
+                close_handle(proc_info.hThread)
+        return outer_job, process_handle, proc_info.dwProcessId
     except BaseException:
+        if process_handle:
+            try:
+                import _winapi
+                _winapi.TerminateProcess(process_handle, 1)
+            except OSError:
+                pass
+            close_handle(process_handle)
         close_handle(outer_job)
         raise
 
@@ -222,12 +308,24 @@ workspace = work / "workspace"
 workspace.mkdir(parents=True, exist_ok=True)
 ready_file = work / "host-ready.json"
 plugin_marker = work / "plugin-marker.json"
-outer_gate = work / "outer-assigned.flag"
+negative_control_winerror = None
 
 if mode == "restricted":
-    deadline = time.monotonic() + 10
-    while not outer_gate.is_file() and time.monotonic() < deadline:
-        time.sleep(0.02)
+    # Negative control: prove this process is directly constrained by an outer
+    # Job that rejects CREATE_BREAKAWAY_FROM_JOB with ERROR_ACCESS_DENIED (5).
+    try:
+        bad_proc = subprocess.Popen(
+            [sys.executable, "-c", "pass"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_BREAKAWAY_FROM_JOB,
+        )
+        bad_proc.wait(timeout=5)
+        raise AssertionError("CREATE_BREAKAWAY_FROM_JOB unexpectedly succeeded inside restricted outer Job")
+    except PermissionError as exc:
+        assert getattr(exc, "winerror", None) == 5, f"Unexpected breakaway error: {exc!r}"
+        negative_control_winerror = exc.winerror
 
 assert ensure_managed_job(), "ensure_managed_job() unexpectedly returned False"
 
@@ -280,6 +378,8 @@ for _ in range(10):
 
 info = json.loads(plugin_marker.read_text(encoding="utf-8"))
 info["host_pid"] = os.getpid()
+if negative_control_winerror is not None:
+    info["negative_control_winerror"] = negative_control_winerror
 
 if mode == "external":
     from app.pi_terminal import launch_terminal
@@ -339,32 +439,27 @@ elif mode in ("handoff", "restricted"):
     channel_pid_file = work / "channel.pid"
     channel_cmd = Path(sys.argv[4])
     state = {"channel": "release", "releaseExecutable": str(channel_cmd)}
-    if mode == "handoff":
-        # Exercise PreviewChannel.restart() path directly under -W error::ResourceWarning.
-        class _ChannelHost(QObject):
-            jobDone = Signal(str, object)
-            def __init__(self):
-                super().__init__()
-                self.store = SimpleNamespace(directory=profile, data={"agent": {}}, save=lambda: None)
-                self._closing = False
-            def close(self):
-                pass
-        ch_host = _ChannelHost()
-        ch = PreviewChannel(ch_host)
-        ch._state = state
-        ch._status = {"state": "restart-required"}
-        # Prevent quit from ending before we flush ready_file; quit runs only after restart() succeeds.
-        orig_quit = QCoreApplication.instance().quit
-        QCoreApplication.instance().quit = lambda: None
-        try:
-            ch.restart()
-        finally:
-            QCoreApplication.instance().quit = orig_quit
-        assert ch.status.get("state") != "error", f"PreviewChannel.restart failed: {ch.status}"
-    else:
-        proc = preview_launch.start_channel(profile, state)
-        from app.windows_job import detach_subprocess
-        detach_subprocess(proc)
+    # Exercise PreviewChannel.restart() path directly in both handoff and restricted modes.
+    class _ChannelHost(QObject):
+        jobDone = Signal(str, object)
+        def __init__(self):
+            super().__init__()
+            self.store = SimpleNamespace(directory=profile, data={"agent": {}}, save=lambda: None)
+            self._closing = False
+        def close(self):
+            pass
+    ch_host = _ChannelHost()
+    ch = PreviewChannel(ch_host)
+    ch._state = state
+    ch._status = {"state": "restart-required"}
+    # Prevent quit from ending before we flush ready_file; quit runs only after restart() succeeds.
+    orig_quit = QCoreApplication.instance().quit
+    QCoreApplication.instance().quit = lambda: None
+    try:
+        ch.restart()
+    finally:
+        QCoreApplication.instance().quit = orig_quit
+    assert ch.status.get("state") != "error", f"PreviewChannel.restart failed: {ch.status}"
 
     end = time.monotonic() + 15
     while not channel_pid_file.is_file() and time.monotonic() < end:
@@ -529,9 +624,183 @@ time.sleep(60)
 """
 
 
+HOST_SUPERVISE_SESSION = r"""
+import json, os, sys, time
+from pathlib import Path
+from PySide6.QtCore import QCoreApplication
+from app.pi_runtime import node_executable
+from app.pi_sessions import PiSessionPool, SessionState
+from app.windows_job import ensure_managed_job
+
+work = Path(sys.argv[1])
+stdin_open = sys.argv[2].lower() == "true"
+ready_file = work / "session-ready.json"
+assert ensure_managed_job(), "ensure_managed_job() failed"
+
+app = QCoreApplication([])
+
+node_script = work / "pi_supervise_session_fixture.mjs"
+node_script.write_text(r'''
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import fs from "node:fs";
+import path from "node:path";
+
+const work = process.env.UMEKO_TEST_WORK;
+const py = process.env.UMEKO_TEST_PY;
+const mainPy = process.env.UMEKO_TEST_MAIN;
+const stdinOpen = process.env.UMEKO_TEST_STDIN_OPEN === "true";
+
+function startSession(name, childCode) {
+  const stdoutPath = path.join(work, `${name}.out`);
+  const stderrPath = path.join(work, `${name}.err`);
+  const child = spawn(py, [mainPy, "--umeko-bash-job"], {
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  const lines = createInterface({ input: child.stdout });
+  const req = {
+    args: [py, "-c", childCode],
+    cwd: work,
+    stdoutPath,
+    stderrPath,
+    stdinOpen,
+  };
+  const writeReplies = new Map();
+  let resolveReady, resolveDone;
+  const ready = new Promise((res, rej) => {
+    const timer = setTimeout(() => rej(new Error(`supervise_session ${name} timeout`)), 15000);
+    resolveReady = (v) => { clearTimeout(timer); res(v); };
+  });
+  const done = new Promise((res) => { resolveDone = res; });
+  lines.on("line", (line) => {
+    const msg = JSON.parse(line);
+    if (msg.pid) resolveReady({ cmdPid: msg.pid, helperPid: child.pid });
+    if (msg.writeId !== undefined && writeReplies.has(msg.writeId)) {
+      const fn = writeReplies.get(msg.writeId);
+      writeReplies.delete(msg.writeId);
+      fn(msg);
+    }
+    if (msg.cleanup) resolveDone(msg);
+  });
+  child.stdin.write(JSON.stringify(req) + "\n");
+  function writeInput(writeId, text) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`write ${writeId} timeout`)), 10000);
+      writeReplies.set(writeId, (msg) => { clearTimeout(timer); resolve(msg); });
+      child.stdin.write(JSON.stringify({ writeId, input: text }) + "\n");
+    });
+  }
+  return { child, ready, done, writeInput, stdoutPath, stderrPath };
+}
+
+async function waitFile(filePath, pred, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (fs.existsSync(filePath)) {
+      const text = fs.readFileSync(filePath, "utf8");
+      if (pred(text)) return text;
+    }
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  throw new Error(`Timed out waiting for ${filePath}`);
+}
+
+(async () => {
+  const gc1File = path.join(work, "gc1.pid");
+  const gc2File = path.join(work, "gc2.pid");
+
+  // 1. First command: verify stdinOpen=false uses os.devnull (EOF) / stdinOpen=true reads pipe,
+  //    and single-command stop cleans up both command and grandchild.
+  const firstCode = stdinOpen
+    ? `import os, subprocess, sys, time
+from pathlib import Path
+gc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+Path(${JSON.stringify(gc1File)}).write_text(str(gc.pid), encoding="ascii")
+line = sys.stdin.readline().strip()
+print("GOT:" + line, flush=True)
+time.sleep(60)`
+    : `import os, subprocess, sys, time
+from pathlib import Path
+gc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+Path(${JSON.stringify(gc1File)}).write_text(str(gc.pid), encoding="ascii")
+data = sys.stdin.read()
+assert data == "", f"expected empty EOF from os.devnull, got {data!r}"
+print("STDIN_EOF_OK", flush=True)
+time.sleep(60)`;
+
+  const first = startSession("first", firstCode);
+  const firstIds = await first.ready;
+  const gc1Pid = parseInt((await waitFile(gc1File, (t) => t.trim().length > 0)).trim(), 10);
+  let stdinCheckOk = false;
+  if (stdinOpen) {
+    const reply = await first.writeInput(1, "hello-pipe\n");
+    if (reply.error) throw new Error("Unexpected write error for stdinOpen=true: " + reply.error);
+    const out1 = await waitFile(first.stdoutPath, (t) => t.includes("GOT:hello-pipe"));
+    stdinCheckOk = out1.includes("GOT:hello-pipe");
+  } else {
+    const out1 = await waitFile(first.stdoutPath, (t) => t.includes("STDIN_EOF_OK"));
+    const reply = await first.writeInput(1, "should-fail\n");
+    stdinCheckOk = out1.includes("STDIN_EOF_OK") && reply.error === "Standard input is closed for this command.";
+  }
+  first.child.stdin.write("stop\n");
+  const firstCleanup = await first.done;
+
+  // 2. Second command: stays active with a grandchild until desktop host is TerminateProcess'd.
+  const secondCode = `import os, subprocess, sys, time
+from pathlib import Path
+gc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+Path(${JSON.stringify(gc2File)}).write_text(str(gc.pid), encoding="ascii")
+print("SECOND_LIVE", flush=True)
+time.sleep(60)`;
+  const second = startSession("second", secondCode);
+  const secondIds = await second.ready;
+  const gc2Pid = parseInt((await waitFile(gc2File, (t) => t.trim().length > 0)).trim(), 10);
+  await waitFile(second.stdoutPath, (t) => t.includes("SECOND_LIVE"));
+
+  const info = {
+    stdin_open: stdinOpen,
+    stdin_check_ok: stdinCheckOk,
+    node_pid: process.pid,
+    first_cmd_pid: firstIds.cmdPid,
+    first_grandchild_pid: gc1Pid,
+    first_cleanup: firstCleanup.cleanup,
+    bash_helper_pid: secondIds.helperPid,
+    cmd_pid: secondIds.cmdPid,
+    grandchild_pid: gc2Pid,
+  };
+  const tmp = path.join(work, "session-ready.tmp");
+  fs.writeFileSync(tmp, JSON.stringify(info));
+  fs.renameSync(tmp, path.join(work, "session-ready.json"));
+  setInterval(() => {}, 1000);
+})().catch((err) => {
+  fs.writeFileSync(path.join(work, "session-error.txt"), String(err && err.stack || err));
+  process.exit(1);
+});
+''', encoding="utf-8")
+
+os.environ["UMEKO_TEST_WORK"] = str(work)
+os.environ["UMEKO_TEST_PY"] = sys.executable
+os.environ["UMEKO_TEST_MAIN"] = str(Path.cwd() / "main.py")
+os.environ["UMEKO_TEST_STDIN_OPEN"] = "true" if stdin_open else "false"
+
+pool = PiSessionPool()
+record = SessionState(id=f"supervise-session-{stdin_open}", workspace=str(work))
+pool.touch(record, current=True)
+pool.start(record, node_executable(), node_script, {"type": "init"})
+
+deadline = time.monotonic() + 25
+while not ready_file.is_file() and time.monotonic() < deadline:
+    app.processEvents()
+    time.sleep(0.05)
+assert ready_file.is_file(), f"supervise_session fixture failed: {(work / 'session-error.txt').read_text(encoding='utf-8', errors='replace') if (work / 'session-error.txt').exists() else 'timeout'}"
+time.sleep(60)
+"""
+
+
 @unittest.skipUnless(sys.platform == "win32", "Windows Job Object")
 class WindowsDesktopJobTests(unittest.TestCase):
-    def _run_host_scenario(self, mode: str, *, restricted: bool = False, extra_args=(), warning_error: bool = False):
+    def _run_host_scenario(self, mode: str, *, extra_args=(), warning_error: bool = False):
         with tempfile.TemporaryDirectory(prefix=f"umeko-job-{mode}-") as temp:
             work = Path(temp)
             profile = work / "profile"
@@ -547,21 +816,14 @@ class WindowsDesktopJobTests(unittest.TestCase):
                 "QT_QUICK_BACKEND": "software",
                 "UMEKO_DATA_DIR": str(profile),
             }
-            outer_job = None
             handles = {}
             proc = None
             try:
-                if restricted:
-                    outer_job, proc = _spawn_inside_restricted_job(
-                        cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                    )
-                    (work / "outer-assigned.flag").write_text("ok", encoding="ascii")
-                else:
-                    proc = subprocess.Popen(
-                        cmd, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                    )
+                proc = subprocess.Popen(
+                    cmd, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
                 ready = _wait_json(work / "host-ready.json", timeout=25.0, process=proc)
                 if ready is None:
                     stderr_text = proc.stderr.read().decode("utf-8", "replace") if proc.poll() is not None else "still running"
@@ -577,9 +839,6 @@ class WindowsDesktopJobTests(unittest.TestCase):
                     if proc.stderr:
                         proc.stderr.close()
                 _cleanup_handles(handles)
-                if outer_job is not None:
-                    from app.windows_job import close_handle
-                    close_handle(outer_job)
 
     def test_desktop_plugins_qprocess_reaps_blocked_worker_and_grandchild_on_terminate(self):
         import _winapi
@@ -858,43 +1117,127 @@ class WindowsDesktopJobTests(unittest.TestCase):
                 "UMEKO_DATA_DIR": str(profile),
             }
             outer_job = None
-            proc = None
+            proc_handle = None
             handles = {}
+            stdout_path = work / "restricted-stdout.log"
+            stderr_path = work / "restricted-stderr.log"
             try:
-                outer_job, proc = _spawn_inside_restricted_job(
+                outer_job, proc_handle, _ = _spawn_inside_restricted_job(
                     [sys.executable, "-c", HOST_PLUGINS_AND_APPS, "restricted", str(work),
                      str(installer_cmd), str(channel_cmd)],
-                    cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    cwd=ROOT, env=env, stdout_path=stdout_path, stderr_path=stderr_path,
                 )
-                (work / "outer-assigned.flag").write_text("ok", encoding="ascii")
-                ready = _wait_json(work / "host-ready.json", timeout=25.0, process=proc)
+                deadline = time.monotonic() + 25.0
+                ready = None
+                while time.monotonic() < deadline:
+                    if (work / "host-ready.json").is_file():
+                        try:
+                            ready = json.loads((work / "host-ready.json").read_text(encoding="utf-8"))
+                            break
+                        except (OSError, ValueError):
+                            pass
+                    if _winapi.WaitForSingleObject(proc_handle, 0) == _winapi.WAIT_OBJECT_0:
+                        break
+                    time.sleep(0.05)
                 if ready is None:
-                    err = proc.stderr.read().decode("utf-8", "replace") if proc.poll() is not None else "still running"
-                    self.fail(f"Restricted outer-Job desktop failed (rc={proc.poll()}): {err}")
+                    err = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.is_file() else ""
+                    out = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.is_file() else ""
+                    self.fail(f"Restricted outer-Job desktop failed:\nSTDOUT:\n{out}\nSTDERR:\n{err}")
+                self.assertEqual(ready.get("negative_control_winerror"), 5)
                 handles.update(_open_handles({
                     "worker": ready["worker_pid"],
                     "grandchild": ready["grandchild_pid"],
                     "installer": ready["installer_pid"],
                     "channel": ready["channel_pid"],
                 }))
-                proc.kill()
-                proc.wait(timeout=5)
+                _winapi.TerminateProcess(proc_handle, 1)
+                self.assertEqual(_winapi.WaitForSingleObject(proc_handle, 5000), _winapi.WAIT_OBJECT_0)
                 self.assertEqual(_winapi.WaitForSingleObject(handles["worker"], 5000), _winapi.WAIT_OBJECT_0)
                 self.assertEqual(_winapi.WaitForSingleObject(handles["grandchild"], 5000), _winapi.WAIT_OBJECT_0)
                 time.sleep(0.5)
                 self.assertEqual(_winapi.WaitForSingleObject(handles["installer"], 0), _winapi.WAIT_TIMEOUT)
                 self.assertEqual(_winapi.WaitForSingleObject(handles["channel"], 0), _winapi.WAIT_TIMEOUT)
             finally:
-                if proc is not None and proc.poll() is None:
-                    proc.kill()
-                    proc.wait(timeout=5)
-                if proc is not None:
-                    proc.stdout.close()
-                    proc.stderr.close()
+                if proc_handle:
+                    try:
+                        if _winapi.WaitForSingleObject(proc_handle, 0) == _winapi.WAIT_TIMEOUT:
+                            _winapi.TerminateProcess(proc_handle, 1)
+                            _winapi.WaitForSingleObject(proc_handle, 5000)
+                    except OSError:
+                        pass
+                    from app.windows_job import close_handle
+                    close_handle(proc_handle)
                 _cleanup_handles(handles)
                 if outer_job is not None:
                     from app.windows_job import close_handle
                     close_handle(outer_job)
+
+    def _assert_supervise_session(self, *, stdin_open: bool):
+        import _winapi
+
+        with tempfile.TemporaryDirectory(prefix=f"umeko-job-session-{int(stdin_open)}-") as temp:
+            work = Path(temp)
+            env = {
+                **os.environ,
+                "QT_QPA_PLATFORM": "offscreen",
+                "QT_QUICK_BACKEND": "software",
+            }
+            handles = {}
+            proc = subprocess.Popen(
+                [sys.executable, "-c", HOST_SUPERVISE_SESSION, str(work), "true" if stdin_open else "false"],
+                cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            try:
+                ready = _wait_json(work / "session-ready.json", timeout=30.0, process=proc)
+                if ready is None:
+                    err = proc.stderr.read().decode("utf-8", "replace") if proc.poll() is not None else "still running"
+                    self.fail(f"supervise_session(stdinOpen={stdin_open}) host failed (rc={proc.poll()}): {err}")
+                self.assertTrue(ready["stdin_check_ok"], ready)
+                self.assertEqual(ready["first_cleanup"], "done", ready)
+                # Confirm the first command and its grandchild exited after single-command stop.
+                for stopped_key in ("first_cmd_pid", "first_grandchild_pid"):
+                    try:
+                        h = _winapi.OpenProcess(SYNCHRONIZE_AND_TERMINATE, False, int(ready[stopped_key]))
+                    except OSError:
+                        continue
+                    try:
+                        self.assertEqual(
+                            _winapi.WaitForSingleObject(h, 2000), _winapi.WAIT_OBJECT_0,
+                            f"{stopped_key} survived single-command stop (stdinOpen={stdin_open})",
+                        )
+                    finally:
+                        _winapi.CloseHandle(h)
+
+                handles.update(_open_handles({
+                    "node": ready["node_pid"],
+                    "bash_helper": ready["bash_helper_pid"],
+                    "cmd": ready["cmd_pid"],
+                    "grandchild": ready["grandchild_pid"],
+                }))
+                for name, handle in handles.items():
+                    self.assertEqual(_winapi.WaitForSingleObject(handle, 0), _winapi.WAIT_TIMEOUT, name)
+                proc.kill()
+                proc.wait(timeout=5)
+                for name, handle in handles.items():
+                    self.assertEqual(
+                        _winapi.WaitForSingleObject(handle, 5000), _winapi.WAIT_OBJECT_0,
+                        f"{name} survived desktop TerminateProcess (stdinOpen={stdin_open})",
+                    )
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                proc.stdout.close()
+                proc.stderr.close()
+                _cleanup_handles(handles)
+
+    def test_supervise_session_stdin_closed_cleanup_and_reap_on_terminate(self):
+        self._assert_supervise_session(stdin_open=False)
+
+    def test_supervise_session_stdin_open_cleanup_and_reap_on_terminate(self):
+        self._assert_supervise_session(stdin_open=True)
 
     def test_job_creation_failure_degrades_gracefully_and_main_starts(self):
         from app import windows_job

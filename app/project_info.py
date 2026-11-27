@@ -19,11 +19,18 @@ RELEASE_API = "https://api.github.com/repos/umeiko/umeko-desktop/releases/latest
 
 
 def git_output(root, *args):
+    from .windows_job import run_managed
+
     try:
-        return subprocess.check_output(
-            ["git", "-C", str(root), *args], text=True, stderr=subprocess.DEVNULL,
-            timeout=3, creationflags=0x08000000 if sys.platform == "win32" else 0,
-        ).strip()
+        return run_managed(
+            ["git", "-C", str(root), *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=3,
+            check=True,
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
+        ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
 
