@@ -252,10 +252,10 @@ def patch_windows_shell_selection(release: Path):
 
 
 def patch_command_previews(release: Path, bridge_source: Path):
-    copy_runtime_file(bridge_source.parent / "command-output.mjs", release / "command-output.mjs")
     path = release / "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/bash.js"
     if not path.is_file():
         return
+    copy_runtime_file(bridge_source.parent / "command-output.mjs", release / "command-output.mjs")
     text = path.read_text(encoding="utf-8")
     if 'Process running with session ID' in text:
         return
