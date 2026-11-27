@@ -23,6 +23,15 @@ STOP_RECEIPT_DEADLINE_MS = 2750
 STOP_TERMINAL = {'done': 'stopped', 'failed': 'stop_failed', 'timed_out': 'stop_timed_out'}
 
 
+def _clear_network_activity(record):
+    start = record.network_activity_start
+    if start is not None:
+        record.messages[start:] = [row for row in record.messages[start:]
+                                   if not row.get('networkActivityTemporary')]
+        record.network_activity_start = None
+    return start
+
+
 class PiControllerMixin:
     def _turn_status(self, record):
         """Execution is live only in this process; terminal UI metadata survives reopening."""
@@ -643,6 +652,8 @@ class PiControllerMixin:
             record.tail_characters += len(event['text'])
             transcript = True
         elif kind == "user_start":
+            if (start := _clear_network_activity(record)) is not None:
+                dirty, transcript = min(dirty, start), True
             text = event["text"]
             if record.optimistic_user:
                 record.optimistic_user = False
@@ -693,6 +704,8 @@ class PiControllerMixin:
                 record.tool_status = "正在压缩上下文" if record.compaction_running else ""
                 transcript = True
         elif kind == "message" and event.get("role") == "assistant":
+            if (start := _clear_network_activity(record)) is not None:
+                dirty, transcript = min(dirty, start), True
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
             # Steering aborts one assistant response before continuing the turn.
             # Only an explicit desktop stop marks the whole turn cancelled.
@@ -747,10 +760,43 @@ class PiControllerMixin:
                 tool["result"] = event["result"]
             transcript = True
         elif kind == "network_retry":
-            record.network_retry = event if event.get("active") else {}
+            record.network_retry = event if event.get("active") and not record.cancelled else {}
             if visible:
                 self.retryChanged.emit()
-            return
+            start = record.network_activity_start
+            retry_row = start is not None and start < len(record.messages) and record.messages[start].get('customType') == 'umeko-network-retry'
+            if record.network_retry:
+                if not retry_row:
+                    if (cleared := _clear_network_activity(record)) is not None:
+                        dirty = min(dirty, cleared)
+                    start = record.network_activity_start = len(record.messages)
+                    record.messages.append({'role': 'notice', 'text': '', 'error': False,
+                                            'customType': 'umeko-network-retry', 'networkActivityTemporary': True})
+                record.messages[start]['networkRetry'] = record.network_retry
+                dirty, transcript = min(dirty, start), True
+            elif retry_row:
+                _clear_network_activity(record)
+                dirty, transcript = min(dirty, start), True
+            else:
+                return
+        elif kind == "gateway_continuation":
+            if record.cancelled:
+                return
+            if (start := _clear_network_activity(record)) is not None:
+                dirty = min(dirty, start)
+            start = len(record.messages)
+            if record.messages:
+                last = record.messages[-1]
+                if last.get('role') == 'assistant' and not last.get('tools') and (
+                        (last.get('entryId') and last['entryId'] == event.get('targetId')) or
+                        (last.get('timestamp') and last['timestamp'] == event.get('timestamp'))):
+                    last['partialIncomplete'] = bool(last.get('text'))
+                    last['networkActivityTemporary'] = True
+                    start -= 1
+            record.network_activity_start = start
+            record.messages.append({'role': 'notice', 'text': '', 'error': False,
+                                    'customType': 'umeko-gateway-continuation', 'networkActivityTemporary': True})
+            dirty, transcript = min(dirty, start), True
         elif kind == "status":
             record.tool_status = event["text"]
         elif kind == "notice":
@@ -827,6 +873,8 @@ class PiControllerMixin:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
+            if (start := _clear_network_activity(record)) is not None:
+                dirty, transcript = min(dirty, start), True
             # Pi alone writes JSONL. Resolve an unfinished live transition here;
             # cold readers derive the same failure from its missing terminal entry.
             for index, row in enumerate(record.messages):
@@ -915,6 +963,12 @@ class PiControllerMixin:
             record.stop_token, record.stop_state = token, 'stop_requested'
             record.network_retry = {}
             self.retryChanged.emit()
+            if (start := _clear_network_activity(record)) is not None:
+                record.body_dirty = True
+                previous = record.projection_dirty_from
+                record.projection_dirty_from = min(start, previous) if previous is not None else start
+                if record is self._view:
+                    self.transcriptChanged.emit()
             self._pool.write(record, {"type": "abort"})
             record.approval = {}
             self.approvalChanged.emit()

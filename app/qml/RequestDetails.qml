@@ -70,10 +70,15 @@ Popup {
         if (!timing || typeof timing !== "object") return ""
         const lines = [I18n.t("流式诊断")]
         lines.push(I18n.t("当前阶段：") + formatPhase(timing.phase, timing.phaseLabel))
+        const headers = timing.headersMs === undefined || timing.headersMs === null
+            ? I18n.t("未收到")
+            : formatDuration(timing.headersMs) + (timing.headersReceivedAt ? " (" + timing.headersReceivedAt + ")" : "")
+        lines.push(I18n.t("响应头时间：") + headers)
         const firstEvent = timing.firstEventMs !== undefined && timing.firstEventMs !== null
             ? formatDuration(timing.firstEventMs) + (timing.firstEventAt ? " (" + timing.firstEventAt + ")" : "")
             : I18n.t("未收到")
         lines.push(I18n.t("第一条事件时间：") + firstEvent)
+        lines.push(I18n.t("最后收到数据的时间：") + (timing.lastDataAt || I18n.t("未收到")))
         lines.push(I18n.t("最后一次收到数据到报错间隔：") + formatDuration(timing.lastDataToErrorMs))
         lines.push(I18n.t("总耗时：") + formatDuration(timing.totalMs))
         lines.push(I18n.t("是否正常结束：") + I18n.t(timing.completedNormally ? "是" : "否"))

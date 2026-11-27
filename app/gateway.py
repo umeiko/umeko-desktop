@@ -441,6 +441,7 @@ class Gateway:
             user_parameters.pop('reasoning_effort', None)
         parameters = dict(parameters or {})
         private_intent = "_umeko_reasoning_effort" in parameters
+        continuation = parameters.get("_umeko_gateway_continuation") is True
         probe_override = "_umeko_reasoning_format" in parameters
         format_override = parameters.pop("_umeko_reasoning_format", None)
         already_formatted = any(key in parameters for key in
@@ -546,7 +547,7 @@ class Gateway:
             NoRedirect(),
             OmitHeaders(omitted),
         )
-        http_retries = 0 if group or probe_override else provider_request_max_retries(p)
+        http_retries = 0 if group or probe_override or continuation else provider_request_max_retries(p)
         records = trace.get()
         try:
             with compatible_open(opener, request, timeout=header_timeout, memory=self.compatibility,
@@ -558,7 +559,7 @@ class Gateway:
                         for event in response_events(response):
                             if event is None:
                                 continue
-                            if hasattr(response, 'mark_event'):
+                            if hasattr(response, 'mark_event') and 'event-stream' not in response.headers.get('Content-Type', '').lower():
                                 response.mark_event()
                             if not switched_timeout and header_timeout != idle_timeout:
                                 set_response_timeout(response, idle_timeout)
@@ -642,6 +643,8 @@ class LocalServer:
                 result = upstream_failure(error)
                 if owner.private and getattr(error, "quota_exhausted", False):
                     result.update(code="umeko_model_quota", message="[Umeko:model_quota] " + result["message"])
+                elif owner.private and getattr(error, "gateway_timeout", False):
+                    result.update(code="umeko_gateway_timeout", message="[Umeko:gateway_timeout] " + result["message"])
                 return result
             protocol_version = "HTTP/1.1"
 
@@ -765,6 +768,8 @@ class LocalServer:
                         if not isinstance(session, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', session):
                             raise ValueError('Invalid private image session identity')
                         parameters['_umeko_image_session'] = session
+                    if owner.private and body.get('_umeko_gateway_continuation') is True:
+                        parameters['_umeko_gateway_continuation'] = True
                     if anth and "effort" in body.get("output_config", {}):
                         parameters["reasoning_effort"] = body["output_config"]["effort"]
                     if anth and "stop_sequences" in body:

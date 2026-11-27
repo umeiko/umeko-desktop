@@ -171,9 +171,27 @@ try:
     click('requestDetailsResponseTab')
     zh_detail = text.property('text')
     assert '流式诊断' in zh_detail and '流式输出中途长时间无数据' in zh_detail and '10.00 s' in zh_detail and '12.00 s' in zh_detail and '是否正常结束：否' in zh_detail
+    assert '响应头时间：1.00 s' in zh_detail and '最后收到数据的时间：2026-01-01T00:00:02+00:00' in zh_detail
     backend.setLanguage('en'); QTest.qWait(80)
     en_detail = text.property('text')
     assert 'Stream diagnostics' in en_detail and 'No data received mid-stream' in en_detail and 'Completed normally: No' in en_detail
+    dialog.close()
+    backend.setLanguage('zh')
+    record.messages = [{'role': 'user', 'text': '继续验证', 'error': False},
+                       {'role': 'assistant', 'text': '半截内容', 'error': False, 'entryId': 'interrupted'}]
+    backend.chatChanged.emit()
+    backend._handle_pi_event(record, {'type': 'gateway_continuation', 'targetId': 'interrupted'})
+    wait(lambda: (tag := find('gatewayContinuationText', required=False)) is not None and tag.isVisible()
+         and tag.property('text') == '网关超时，已自动接续', 'Grey continuation tag missing below the reply')
+    click('gatewayContinuationTag')
+    assert not dialog.property('opened')
+    backend._handle_pi_event(record, {'type': 'assistant_start'})
+    backend._handle_pi_event(record, {'type': 'delta', 'text': '已经接续'})
+    assert [row['role'] for row in record.messages] == ['user', 'assistant', 'notice', 'assistant']
+    backend._handle_pi_event(record, {'type': 'message', 'role': 'assistant', 'text': '已经接续', 'stopReason': 'stop'})
+    wait(lambda: find('gatewayContinuationTag', required=False) is None
+         or not find('gatewayContinuationTag').isVisible(), 'Successful continuation left a tag behind')
+    assert [row['text'] for row in record.messages] == ['继续验证', '已经接续']
     assert not warnings, '\n'.join(warnings)
     print('REQUEST_DETAILS_UI_OK: partial failure chat/child entry points, request/response tabs, full raw body/status/headers, HTTP selection, redaction, legacy, no-response, 4-phase timing and staged continue')
 finally:

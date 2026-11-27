@@ -13,6 +13,7 @@ from .provider_errors import format_http_error, safe_text
 _STREAM_PHASE_LABELS = {
     'waiting_headers': '发出请求后等待响应头',
     'waiting_first_sse': '收到响应头后等待首条 SSE 事件',
+    'waiting_body': '收到响应头后等待响应正文',
     'stream_idle': '流式输出中途长时间无数据',
     'incomplete_stream': '未收到正常结束标记即断流',
     'http_error': '供应商返回 HTTP 错误',
@@ -173,6 +174,12 @@ class RequestDiagnostics(QObject):
                                  transient_failure(error, http_calls) and not managed)
         failure.http_retry_managed = managed
         failure.tls_code = code
+        failure.gateway_timeout = failure.retryable and (
+            status == 504 or (
+                phase in ('waiting_first_sse', 'stream_idle')
+                and (isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError))
+            )
+        )
         return failure
 
     def read(self, identifier):

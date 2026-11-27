@@ -85,7 +85,7 @@ async function fixture(t, { compaction = false, streamMaxRetries = 5 } = {}) {
   let stderr = "";
   child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-1500); });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
-  const command = async (payload, responses = []) => {
+  const command = async (payload, responses = [], onEvent) => {
     replies.push(...responses);
     child.stdin.write(JSON.stringify(payload) + "\n");
     const events = [];
@@ -93,6 +93,7 @@ async function fixture(t, { compaction = false, streamMaxRetries = 5 } = {}) {
       const next = await lines.next();
       assert.ok(!next.done, "Bridge exited: " + stderr);
       const event = JSON.parse(next.value); events.push(event);
+      onEvent?.(event, input => child.stdin.write(JSON.stringify(input) + "\n"));
       if (event.type === "done") break;
     }
     assert.deepEqual(events.filter(e => e.type === "error"), []);
@@ -114,6 +115,10 @@ async function fixture(t, { compaction = false, streamMaxRetries = 5 } = {}) {
 }
 
 const failure = { error: "Network error: stream interrupted" };
+const timeout = { error: "[Umeko:gateway_timeout] Network error: the read operation timed out [Umeko:12345678-1234-1234-1234-123456789123]",
+  partialText: "Interrupted draft" };
+const continuationWaits = events => events.filter(e => e.type === "network_retry" && e.continuation).map(e => e.delayMs);
+const assistantErrors = events => events.filter(e => e.type === "message" && e.role === "assistant" && e.error);
 const attempts = events => events.filter(e => e.type === "pi_event" && e.event === "auto_retry_start").map(e => e.attempt);
 
 function recovered(events) {
@@ -220,4 +225,50 @@ test("provider streamMaxRetries caps retries and staged-continue preserves parti
   const finalState = continued.findLast(e => e.type === "state");
   assert.ok(finalState.messages.some(m => m.role === "assistant" && m.error && m.text.includes("Partial stage draft...")));
   assert.ok(finalState.messages.some(m => m.role === "assistant" && !m.error && m.text.includes("Stage 2 completed cleanly.")));
+});
+
+test("gateway timeout sends continue at 5s, 10s and 30s without replaying completed tools", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "finish this task" }, [
+    { tool: "completed-tool" }, timeout, failure, timeout, { content: "Completed after resume" },
+  ]);
+  assert.deepEqual(continuationWaits(events), [5000, 10000, 30000]);
+  assert.deepEqual(attempts(events), []);
+  assert.deepEqual(assistantErrors(events), []);
+  const tags = events.filter(e => e.type === "gateway_continuation");
+  assert.equal(tags.length, 3);
+  assert.ok(tags.every(e => e.targetId && !Object.hasOwn(e, "diagnosticId")));
+  assert.equal(events.filter(e => e.type === "pi_event" && e.event === "tool_execution_end").length, 1);
+  for (const { body } of f.calls.slice(-3)) {
+    assert.equal(body._umeko_gateway_continuation, true);
+    const last = body.messages.at(-1);
+    assert.equal(last.role, "user");
+    assert.match(JSON.stringify(last.content), /continue/);
+    assert.ok(body.messages.some(message => message.role === "tool"));
+  }
+  assert.ok(events.findLast(e => e.type === "state").messages.some(m => m.text === "Completed after resume"));
+});
+
+test("gateway timeout reports only the third failed continuation and gives the next prompt a fresh budget", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "initial task" }, [timeout, timeout, timeout, timeout]);
+  assert.deepEqual(continuationWaits(events), [5000, 10000, 30000]);
+  assert.deepEqual(attempts(events), []);
+  const errors = assistantErrors(events);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].error, /The read operation timed out/i);
+  assert.doesNotMatch(errors[0].error, /gateway_timeout/);
+  const next = await f.command({ type: "prompt", text: "next task" }, [timeout, { content: "Resumed" }]);
+  assert.deepEqual(continuationWaits(next), [5000]);
+  assert.deepEqual(assistantErrors(next), []);
+});
+
+test("stopping during a gateway continuation delay prevents the next request", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "cancel this" }, [timeout], (event, send) => {
+    if (event.type === "network_retry" && event.continuation) send({ type: "abort" });
+  });
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(assistantErrors(events), []);
+  assert.ok(!events.some(event => event.type === "gateway_continuation"));
 });

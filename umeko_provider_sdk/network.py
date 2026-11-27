@@ -221,8 +221,10 @@ class TracedResponse:
         timing['totalMs'] = max(0, round((now_mono - self._started_mono) * 1000))
 
     def mark_failed(self, error):
-        now_mono = time.monotonic()
         timing = self.record['timing']
+        if timing['lastDataToErrorMs'] is not None:
+            return
+        now_mono = time.monotonic()
         timing['completedNormally'] = False
         timing['totalMs'] = max(0, round((now_mono - self._started_mono) * 1000))
         anchor = self._last_data_mono if self._last_data_mono is not None else self._headers_mono
@@ -231,12 +233,19 @@ class TracedResponse:
                 'Upstream stream ended before completion' in str(error):
             timing['phase'] = 'incomplete_stream'
         elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError):
-            timing['phase'] = 'waiting_first_sse' if self._first_event_mono is None else 'stream_idle'
+            if self._is_sse:
+                timing['phase'] = 'waiting_first_sse' if self._first_event_mono is None else 'stream_idle'
+            else:
+                timing['phase'] = 'waiting_body'
         elif timing.get('phase') not in ('waiting_headers', 'waiting_first_sse', 'stream_idle', 'incomplete_stream'):
             timing['phase'] = 'stream_error'
 
     def _read(self, method, *args):
-        data = getattr(self.response, method)(*args)
+        try:
+            data = getattr(self.response, method)(*args)
+        except (OSError, http.client.HTTPException) as error:
+            self.mark_failed(error)
+            raise
         self._observe_chunk(data)
         return data
 

@@ -322,11 +322,11 @@ class StreamTimeoutGatewayTests(unittest.TestCase):
         self.server = LocalServer(self.gateway, 0, "test-token", private=True)
         self.addCleanup(self.server.close)
 
-    def _post(self, model, stream=True):
+    def _post(self, model, stream=True, **metadata):
         req = Request(
             f"http://127.0.0.1:{self.server.port}/v1/chat/completions",
             headers={"Authorization": "Bearer test-token", "Content-Type": "application/json"},
-            data=json.dumps({"model": model, "stream": stream, "messages": [{"role": "user", "content": "hi"}]}).encode(),
+            data=json.dumps({"model": model, "stream": stream, "messages": [{"role": "user", "content": "hi"}], **metadata}).encode(),
         )
         return urlopen(req, timeout=10)
 
@@ -336,7 +336,7 @@ class StreamTimeoutGatewayTests(unittest.TestCase):
         with patch.object(gateway_module, "MIN_STREAM_IDLE_TIMEOUT_MS", 100):
             with self._post("primary", stream=True) as resp:
                 body = resp.read().decode("utf-8")
-            self.assertIn("umeko_stream_interrupted", body)
+            self.assertIn("umeko_gateway_timeout", body)
             self.assertIn(STREAM_IDLE_TIMEOUT_ERROR, body)
             self.assertIn('"retryable": true', body)
 
@@ -345,7 +345,7 @@ class StreamTimeoutGatewayTests(unittest.TestCase):
             with self._post("primary", stream=True) as resp:
                 body = resp.read().decode("utf-8")
             self.assertIn("done", body)
-            self.assertNotIn("umeko_stream_interrupted", body)
+            self.assertNotIn("umeko_gateway_timeout", body)
 
     def test_four_diagnostic_phases_and_sse_heartbeat_handling(self):
         def read_latest_report():
@@ -358,7 +358,9 @@ class StreamTimeoutGatewayTests(unittest.TestCase):
             self.delay = 1.1
             with self.assertRaises(HTTPError) as caught:
                 self._post("primary", stream=True)
+            payload = json.loads(caught.exception.read().decode("utf-8"))
             caught.exception.close()
+            self.assertEqual(payload["error"]["code"], "umeko_stream_interrupted")
             rep = read_latest_report()
             diag = rep["streamDiagnostics"]
             self.assertEqual(diag["phase"], "waiting_headers")
@@ -375,6 +377,7 @@ class StreamTimeoutGatewayTests(unittest.TestCase):
             payload = json.loads(caught.exception.read().decode("utf-8"))
             caught.exception.close()
             self.assertIn(STREAM_FIRST_EVENT_TIMEOUT_ERROR, payload["error"]["message"])
+            self.assertEqual(payload["error"]["code"], "umeko_gateway_timeout")
             rep = read_latest_report()
             diag = rep["streamDiagnostics"]
             self.assertEqual(diag["phase"], "waiting_first_sse")
@@ -434,6 +437,11 @@ class StreamTimeoutGatewayTests(unittest.TestCase):
             self._post("primary", stream=True)
         caught.exception.close()
         self.assertEqual(len(self.calls), 4)
+        self.calls.clear()
+        with self.assertRaises(HTTPError) as caught:
+            self._post("primary", stream=True, _umeko_gateway_continuation=True)
+        caught.exception.close()
+        self.assertEqual(len(self.calls), 1)
 
     def test_non_stream_timeout_and_504_and_mid_stream_drop_are_retryable(self):
         with patch.object(gateway_module, "MIN_STREAM_IDLE_TIMEOUT_MS", 100):

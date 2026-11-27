@@ -1,6 +1,8 @@
 // One visible retry budget; the provider SDK must not add hidden attempts.
 // Align retry count (5) with Codex CLI / DSH and backoff with Pi's exponential schedule.
 export const NETWORK_RETRY = Object.freeze({ enabled: true, maxRetries: 5, baseDelayMs: 2000, maxAgentDelayMs: 30000 });
+export const GATEWAY_CONTINUATION_DELAYS = Object.freeze([5000, 10000, 30000]);
+export const GATEWAY_TIMEOUT_MARKER = '[Umeko:gateway_timeout]';
 export const MAX_STREAM_MAX_RETRIES = 100;
 // Disable Pi's own loopback HTTP idle timeout so the local gateway's per-provider
 // streamIdleTimeoutMs (default 300s) is the single source of truth.
@@ -135,7 +137,7 @@ export function buildStagedContinuation(branch = []) {
     }
   }
   const lines = [
-    'The previous model response timed out or was interrupted after automatic retries were exhausted. Continue the same task in small, incremental stages from the last confirmed milestone.',
+    'The previous model response timed out or was interrupted. Continue the same task in small, incremental stages from the last confirmed milestone.',
   ];
   if (partialOutput) {
     const excerpt = partialOutput.length > 400 ? partialOutput.slice(0, 397) + '...' : partialOutput;

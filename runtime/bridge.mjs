@@ -6,7 +6,7 @@ import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-pol
 import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, manageResources, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
-import { GATEWAY_HTTP_IDLE_TIMEOUT_MS, NETWORK_RETRY, buildStagedContinuation, normalizeStreamMaxRetries, retryOmissions } from "./network-retry.mjs";
+import { GATEWAY_CONTINUATION_DELAYS, GATEWAY_HTTP_IDLE_TIMEOUT_MS, GATEWAY_TIMEOUT_MARKER, NETWORK_RETRY, buildStagedContinuation, normalizeStreamMaxRetries, retryOmissions } from "./network-retry.mjs";
 import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { DESKTOP_PI_PROMPT, addMcpFromInput, createPiCommandController, piCommandsEnabled } from "./pi-commands.mjs";
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, REPLY_TO_GROUPCHAT, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
@@ -244,6 +244,7 @@ function taskDelivery(source, id, items, failed = 0) {
   if (trackingTask) emit({ type: "task_delivery", source, id, items, failed });
 }
 const compactionFailures = new WeakMap();
+const gatewayContinuations = new WeakMap();
 const promptControllers = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit,prepareGroupChat: enableGroupChatTool});
@@ -390,6 +391,16 @@ async function bindSession(session) {
   let publishedFile = existsSync(session.sessionManager.getSessionFile() || "");
   let retryState = {}, retryTimer, retryAssistant = false;
   const retry = state => { retryState = state; emit({ type: "network_retry", ...state }); };
+  const publishMessage = message => {
+    const error = message.stopReason === "aborted" ? "" : message.errorMessage || "";
+    emit({ type: "message", role: message.role, text: textOf(message.content),
+      thinking: thinkingOf(message.content), stopReason: message.stopReason || "",
+      quotaExhausted: error.includes(QUOTA_MARKER),
+      error: error.replace(QUOTA_MARKER, "").replace(GATEWAY_TIMEOUT_MARKER, "").trim(),
+      model: message.model, timestamp: message.timestamp });
+  };
+  const continuation = { attempts: 0, inFlight: false, pending: null, drafts: null, retry, publishMessage };
+  gatewayContinuations.set(session.sessionManager, continuation);
   let lastContext = "";
   const publishContext = () => {
     const usage = contextUsage(session), serialized = JSON.stringify(usage);
@@ -407,6 +418,7 @@ async function bindSession(session) {
       .filter(([name, value]) => JSON.stringify(result[name]) === value).map(([name]) => name);
     configured._umeko_reasoning_effort = reasoningEffort;
     configured._umeko_image_session = session.sessionManager.getSessionId();
+    if (continuation.inFlight) configured._umeko_gateway_continuation = true;
     delete configured.reasoning_effort;
     if (reasoningEffort !== "off") configured.reasoning_effort = reasoningEffort;
     return configured;
@@ -414,7 +426,20 @@ async function bindSession(session) {
   session.agent.onPayload = configurePayload;
   const httpRetryBoundary = bindHttpRetryBoundary(session);
   const unbind = session.subscribe(event => {
-    httpRetryBoundary.observe(event);
+    const endedAssistant = event.type === "message_end" && event.message.role === "assistant";
+    const message = endedAssistant ? event.message : null;
+    const recoverable = message?.stopReason === "error" &&
+      (continuation.inFlight || message.errorMessage?.includes(GATEWAY_TIMEOUT_MARKER));
+    if (endedAssistant) continuation.inFlight = false;
+    httpRetryBoundary.observe(event, recoverable);
+    if (recoverable && continuation.attempts < GATEWAY_CONTINUATION_DELAYS.length &&
+        !closing && !blockedSessions.has(session)) continuation.pending = message;
+    if (event.type === "agent_settled") {
+      continuation.attempts = 0;
+      continuation.inFlight = false;
+      continuation.pending = null;
+      continuation.drafts = null;
+    }
     if (event.type === "message_end" && ["user", "assistant"].includes(event.message.role)) {
       // Pi persists after notifying listeners. Read the new leaf in the next
       // microtask, after that append, without rebuilding its complete branch.
@@ -472,13 +497,7 @@ async function bindSession(session) {
     const activeMaxRetries = session.settingsManager?.getRetrySettings?.()?.maxRetries ?? streamMaxRetriesFor(session.model?.id);
     const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < activeMaxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
-    if (event.type === "message_end" && !willRetry) {
-      const error = event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "";
-      emit({type: "message", role: event.message.role, text: textOf(event.message.content),
-        thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "",
-        quotaExhausted: error.includes(QUOTA_MARKER), error: error.replace(QUOTA_MARKER, "").trim(),
-        model: event.message.model, timestamp: event.message.timestamp});
-    }
+    if (event.type === "message_end" && !willRetry && continuation.pending !== event.message) publishMessage(event.message);
     if (event.type === "compaction_start") startCompaction(event.reason);
     if (event.type === "compaction_end") finishCompaction(event);
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
@@ -489,7 +508,8 @@ async function bindSession(session) {
     }
     if (["auto_retry_end", "summarization_retry_finished"].includes(event.type)) {
       if (event.type === "auto_retry_end") retryAssistant = false;
-      clearTimeout(retryTimer); retry({ active: false });
+      clearTimeout(retryTimer);
+      if (retryState.active) retry({ active: false });
     }
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
@@ -498,6 +518,7 @@ async function bindSession(session) {
     session.agent.beforeToolCall = originalBeforeToolCall;
     session.agent.prepareRequest = originalPrepareRequest;
     compactionFailures.delete(session);
+    gatewayContinuations.delete(session.sessionManager);
     groupChatSessions.delete(session);
     clearTimeout(retryTimer);
     httpRetryBoundary.close();
@@ -627,6 +648,60 @@ function outputContinuationExtension(pi) {
       customType: "umeko-output-continuation", display: false,
       content: "The previous assistant response reached its output token limit (stopReason=length); the original task is not finished. Continue the original task from exactly where it stopped. Do not repeat existing output, reopen an existing code fence, or add an introduction. If a tool call was truncated, submit a fresh complete tool call; truncated arguments were not executed. Keep completed tool results. Stop when the original task is complete.",
       details: { version: 1, attempt: attempts, maxAttempts: 5 } }] };
+  });
+}
+
+function gatewayContinuationExtension(pi) {
+  pi.on("turn_end", async (event, ctx) => {
+    const state = gatewayContinuations.get(ctx.sessionManager);
+    if (!state?.pending || state.pending !== event.message) return;
+    state.pending = null;
+    if (ctx.signal?.aborted || closing) return;
+    // A user message queued at the Pi boundary takes precedence over recovery.
+    if (ctx.hasPendingMessages()) {
+      state.publishMessage(event.message);
+      return;
+    }
+    const delayMs = GATEWAY_CONTINUATION_DELAYS[state.attempts];
+    state.retry({ active: true, waiting: true, continuation: true, attempt: state.attempts + 1,
+      maxAttempts: GATEWAY_CONTINUATION_DELAYS.length, delayMs, startedAt: Date.now() });
+    const signal = ctx.signal;
+    await new Promise(resolve => {
+      const timer = setTimeout(finish, delayMs);
+      function finish() {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", finish);
+        resolve();
+      }
+      signal?.addEventListener("abort", finish, { once: true });
+    });
+    state.retry({ active: false });
+    if (signal?.aborted || closing) return;
+    if (ctx.hasPendingMessages()) {
+      state.publishMessage(event.message);
+      return;
+    }
+    const staged = buildStagedContinuation(ctx.sessionManager.getBranch());
+    state.drafts = {
+      targetId: event.messageEntryId,
+      timestamp: event.message.timestamp,
+      entries: [
+        { type: "context_edit", targetId: event.messageEntryId, replacement: null },
+        { type: "custom_message", customType: "umeko-gateway-continue-context", display: false, content: staged.content },
+        { type: "custom_message", customType: "umeko-gateway-continue", display: false, content: "continue" },
+      ],
+    };
+  });
+  pi.on("agent_before_settle", (event, ctx) => {
+    const state = gatewayContinuations.get(ctx.sessionManager);
+    if (event.outcome !== "error" || !state?.drafts) return;
+    const { targetId, timestamp, entries } = state.drafts;
+    state.drafts = null;
+    if (closing || ctx.signal?.aborted) return;
+    state.attempts++;
+    state.inFlight = true;
+    emit({ type: "gateway_continuation", targetId, timestamp });
+    return { continue: true, entries };
   });
 }
 
@@ -829,6 +904,7 @@ async function init(input) {
           { name: "subagents", builtin: true, replaceable: true, factory: pi =>
             subagents.extension(pi, { worktrees: input.agent?.automaticWorktrees === true && !input.globalCoordinator && !input.cowork }) },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
+          { name: "gateway-continuation", hidden: true, replaceable: false, factory: gatewayContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
           ...(!input.terminalOwned ? [{ name: "mcp", builtin: true, replaceable: true, factory: input.cowork
