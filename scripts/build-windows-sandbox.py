@@ -108,7 +108,8 @@ def main():
         subprocess.run(["git", "-c", "core.autocrlf=false", "-C", str(checkout), "apply", "--whitespace=error",
                         str(ROOT / "scripts/windows-sandbox-loopback.patch"),
                         str(ROOT / "scripts/windows-sandbox-cwd.patch"),
-                        str(ROOT / "scripts/windows-sandbox-stdin.patch")], check=True)
+                        str(ROOT / "scripts/windows-sandbox-stdin.patch"),
+                        str(ROOT / "scripts/windows-sandbox-git-cache.patch")], check=True)
         rust = (checkout / "codex-rs").resolve()
         restrict_workspace(rust)
         adopt_sandbox(rust / "windows-sandbox-rs")

@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const helper = fileURLToPath(new URL('./bin/windows-sandbox/umeko-sandbox.exe', import.meta.url));
-const gitFiles = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe'];
+const gitFiles = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe', 'usr/bin/rg.exe'];
 
 function hasGitBash(policy) {
   if (!policy.gitReady || !policy.gitRoot || !policy.archive || !existsSync(policy.archive)) return false;

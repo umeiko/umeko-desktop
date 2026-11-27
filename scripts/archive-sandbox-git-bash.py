@@ -36,9 +36,14 @@ def included(name):
 
 def main():
     bundle = ROOT / "build/sandbox-git"
-    if not all((bundle / name).is_file() for name in REQUIRED_FILES):
+    runtime_bin = ROOT / "runtime/releases/coding-1.5.2/bin"
+    rg_name = "usr/bin/rg.exe"
+    if not all((bundle / name).is_file() for name in REQUIRED_FILES if name != rg_name):
         raise RuntimeError("Build the patched PortableGit bundle before archiving it")
-    output = ROOT / "runtime/releases/coding-1.5.2/bin/windows-sandbox"
+    rg = runtime_bin / "rg.exe"
+    if not rg.is_file():
+        raise RuntimeError("Prepare the pinned ripgrep executable before archiving Git Bash")
+    output = runtime_bin / "windows-sandbox"
     output.mkdir(parents=True, exist_ok=True)
     legacy = output / "git"
     if legacy.is_symlink() or legacy.is_junction():
@@ -59,12 +64,13 @@ def main():
             with tarfile.open(fileobj=compressed, mode="w|", dereference=True) as tar:
                 for path in entries:
                     relative = path.relative_to(bundle).as_posix()
-                    if not included(relative):
+                    if relative == rg_name or not included(relative):
                         continue
                     attributes = path.lstat()
                     if attributes.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
                         raise RuntimeError(f"Unexpected reparse point in PortableGit: {relative}")
                     tar.add(path, arcname=relative, recursive=False)
+                tar.add(rg, arcname=rg_name, recursive=False)
         temporary.replace(archive)
     finally:
         temporary.unlink(missing_ok=True)

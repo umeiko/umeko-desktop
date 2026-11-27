@@ -89,7 +89,7 @@ function preparationFixture(t) {
     request: () => requests++, language: () => 'zh' });
   const update = values => { state = { ...state, ...values }; preparation.changed(); };
   function ready(attempt) {
-    const paths = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe'];
+    const paths = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe', 'usr/bin/rg.exe'];
     for (const path of paths) {
       mkdirSync(join(gitRoot, path, '..'), { recursive: true });
       writeFileSync(join(gitRoot, path), 'MZfixture');

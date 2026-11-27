@@ -1,0 +1,52 @@
+--- a/codex-rs/windows-sandbox-rs/src/setup_provisioning.rs
++++ b/codex-rs/windows-sandbox-rs/src/setup_provisioning.rs
+@@ -1098,6 +1098,11 @@
+         )?;
+     }
+ 
++    setup_runtime_bin::ensure_umeko_git_cache_readable(
++        &payload.codex_home,
++        sandbox_group_psid,
++    )?;
++
+     let mut grant_tasks: Vec<(PathBuf, String)> = Vec::new();
+ 
+     let mut seen_deny_paths: HashSet<PathBuf> = HashSet::new();
+--- a/codex-rs/windows-sandbox-rs/src/setup_provisioning/setup_runtime_bin.rs
++++ b/codex-rs/windows-sandbox-rs/src/setup_provisioning/setup_runtime_bin.rs
+@@ -107,6 +107,35 @@
+     Ok(())
+ }
+ 
++// Umeko extracts its packaged Git tools under the sandbox home, including
++// profiles outside USERPROFILE. Prepare the runtime before spawning a command.
++pub(super) fn ensure_umeko_git_cache_readable(
++    codex_home: &Path,
++    sandbox_group_psid: *mut c_void,
++) -> Result<()> {
++    let git_cache = codex_home.join("git");
++    for ancestor in git_cache.ancestors() {
++        let metadata = match std::fs::symlink_metadata(ancestor) {
++            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
++            result => result
++                .with_context(|| format!("inspect Git Bash cache ancestor {}", ancestor.display()))?,
++        };
++        if !metadata.is_dir() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
++            return Ok(());
++        }
++    }
++    if path_mask_allows(
++        &git_cache,
++        &[sandbox_group_psid],
++        FILE_GENERIC_READ | FILE_GENERIC_EXECUTE,
++        /*require_all_bits*/ true,
++    )? {
++        // Later extractions inherit the runtime-only ACE from this directory.
++        return Ok(());
++    }
++    ensure_runtime_tree_readable(&git_cache, sandbox_group_psid)
++}
++
+ fn ensure_runtime_tree_readable(
+     runtime_root: &Path,
+     sandbox_group_psid: *mut c_void,
