@@ -15,7 +15,7 @@
 | `shell.refreshEnvironment` | 无 | 无 | 否 |
 | `pi.run` | `command: string`, `scope: string=""` | 无 | 否 |
 | `vision.configure` | `config: json` | 无 | 否 |
-| `generation.configure` | `config: json` | 无 | 否 |
+| `generation.configure` | `config: json` | models | 否 |
 | `providers.save` | `id: string=""`, `name: string`, `api: string`, `baseUrl: string`, `key: string=""`, `models: json` | provider | 否 |
 | `providers.addCommon` | `preset: string`, `key: string`, `alias: string=""`, `region: string="cn"` | 无 | 否 |
 | `providers.remove` | `id: string` | provider | 否 |

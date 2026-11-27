@@ -11,6 +11,7 @@ Agent 入口只有一个：`umeko_desktop`。第一次使用先调用 `{"operati
 - [添加供应商、模型和网络](providers.md)
 - [辅助视觉模型、自动识图和 analyze_image](auxiliary-vision.md)
 - [Provider 插件：供应商接入、认证与模型](provider-plugins.md)
+- [用 Provider ZIP 配置生图和语音](generation-providers.md)（`help` 的 `generation` 主题）
 - [Widget 插件：桌面面板与 Agent 交互](widget-plugins.md)
 - [制作、导入和切换主题](themes.md)
 - [动画形象、角色资源和第三方形象包](characters.md)
