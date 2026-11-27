@@ -12,7 +12,8 @@ def execute(request):
         env = dict(os.environ, PI_OFFLINE='1')
         env.pop('NODE_OPTIONS', None)
         env.pop('NODE_PATH', None)
-        result = subprocess.run([context['node'], str(Path(context['release']) / 'coordinator-skills.mjs')],
+        from .windows_job import run_managed
+        result = run_managed([context['node'], str(Path(context['release']) / 'coordinator-skills.mjs')],
             input=json.dumps({**context, **action}), capture_output=True, text=True, encoding='utf-8',
             timeout=45, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         payload = json.loads(result.stdout)

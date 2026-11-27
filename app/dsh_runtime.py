@@ -118,6 +118,8 @@ def _run(command, *, env, cwd, cancelled=None, timeout=60):
         process = subprocess.Popen(command, cwd=str(ordinary_path(cwd)), env=env,
             stdin=subprocess.DEVNULL, stdout=output, stderr=errors,
             creationflags=CREATE_NO_WINDOW, start_new_session=os.name != "nt")
+        from .windows_job import assign_subprocess
+        assign_subprocess(process)
         started = time.monotonic()
         try:
             while process.poll() is None:

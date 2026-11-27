@@ -336,9 +336,10 @@ def verify_runtime(release: Path, bridge_source: Path):
     environment = node_environment(dict(os.environ, PI_OFFLINE="1"))
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
-    result = subprocess.run([node_executable(), str(node_release / "bridge.mjs"), "--self-test"],
-                            capture_output=True, text=True, encoding="utf-8", timeout=60,
-                            env=environment, creationflags=CREATE_NO_WINDOW)
+    from .windows_job import run_managed
+    result = run_managed([node_executable(), str(node_release / "bridge.mjs"), "--self-test"],
+                         capture_output=True, text=True, encoding="utf-8", timeout=60,
+                         env=environment, creationflags=CREATE_NO_WINDOW)
     if result.returncode or '"ok":true' not in result.stdout:
         raise RuntimeError("新版本未通过完整 Pi 兼容性验证；已保留原有内核。" + result.stderr[-350:])
 

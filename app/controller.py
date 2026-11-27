@@ -1241,7 +1241,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._management_jobs.add(session_id)
         self.chatChanged.emit()
         def execute():
-            result = subprocess.run([node_executable(), str(self._release / "bridge.mjs"), "--session-action"],
+            from .windows_job import run_managed
+            result = run_managed([node_executable(), str(self._release / "bridge.mjs"), "--session-action"],
                 input=json.dumps(payload), capture_output=True, text=True, encoding="utf-8", timeout=30, creationflags=CREATE_NO_WINDOW)
             output = json.loads(result.stdout)
             if result.returncode or not output.get("ok"):
@@ -1932,7 +1933,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         global_raw = raw if scope == "global" else self.readMcp("global")
         project_raw = raw if scope == "project" else self.readMcp("project") if record.workspace else '{"mcpServers":{}}'
         def save():
-            result = subprocess.run([node_executable(), str(self._release / "bridge.mjs"), "--check-mcp"],
+            from .windows_job import run_managed
+            result = run_managed([node_executable(), str(self._release / "bridge.mjs"), "--check-mcp"],
                 input=json.dumps({"global": global_raw, "project": project_raw}), capture_output=True,
                 text=True, encoding="utf-8", timeout=25, creationflags=CREATE_NO_WINDOW)
             checked = json.loads(result.stdout)
@@ -2886,7 +2888,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         if not directory.is_dir():
             return
         def load():
-            result = subprocess.run([node_executable(), str(self._release / "bridge.mjs"), "--list-sessions", str(directory)],
+            from .windows_job import run_managed
+            result = run_managed([node_executable(), str(self._release / "bridge.mjs"), "--list-sessions", str(directory)],
                 capture_output=True, text=True, encoding="utf-8", timeout=25, creationflags=CREATE_NO_WINDOW)
             if result.returncode:
                 raise RuntimeError("原生会话索引暂时无法读取")
@@ -3056,7 +3059,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._kernel_busy, self._kernel_status = True, "正在检查 Pi 内核版本…"
         self.changed.emit()
         def check():
-            result = subprocess.run([*npm_command(), "view", PACKAGE, "version", "--json"],
+            from .windows_job import run_managed
+            result = run_managed([*npm_command(), "view", PACKAGE, "version", "--json"],
                 env=npm_environment(self.store.data["agent"]), cwd=self._view.workspace or self.store.directory,
                 capture_output=True, text=True, encoding="utf-8", timeout=45, creationflags=CREATE_NO_WINDOW)
             if result.returncode: raise RuntimeError("无法访问 npm 软件源，请检查 Pi 的 npm 配置")
@@ -3086,9 +3090,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             stage = kernels / ("staging-" + uuid.uuid4().hex)
             stage.mkdir()
             (stage / "package.json").write_text(json.dumps({"private": True, "dependencies": {PACKAGE: version}}))
-            result = subprocess.run([*npm, "install", "--prefix", str(stage), "--ignore-scripts", "--no-audit", "--no-fund"],
-                                    env=npm_environment(self.store.data["agent"]), cwd=self._view.workspace or self.store.directory,
-                                    capture_output=True, timeout=180, creationflags=CREATE_NO_WINDOW)
+            from .windows_job import run_managed
+            result = run_managed([*npm, "install", "--prefix", str(stage), "--ignore-scripts", "--no-audit", "--no-fund"],
+                                 env=npm_environment(self.store.data["agent"]), cwd=self._view.workspace or self.store.directory,
+                                 capture_output=True, timeout=180, creationflags=CREATE_NO_WINDOW)
             if result.returncode:
                 raise RuntimeError("内核下载失败；原有版本未改变")
             release = kernels / ("candidate-" + uuid.uuid4().hex)

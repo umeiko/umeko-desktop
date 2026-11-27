@@ -94,6 +94,8 @@ class PreviewSource:
                 process = subprocess.Popen(args, cwd=cwd, env=env, stdout=output,
                                            stderr=subprocess.STDOUT, creationflags=flags,
                                            start_new_session=os.name != "nt")
+                from .windows_job import assign_subprocess
+                assign_subprocess(process)
             except OSError as exc:
                 if network:
                     raise self._network_error(str(exc)) from exc

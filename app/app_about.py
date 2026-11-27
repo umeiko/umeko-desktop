@@ -40,8 +40,9 @@ def _release_metadata(proxy):
     })
     if proxy.startswith(('socks5:', 'socks5h:', 'https:')):
         from .pi_runtime import node_executable, node_environment, CREATE_NO_WINDOW
+        from .windows_job import run_managed
         environment = node_environment(); environment['UMEKO_UPDATE_PROXY'] = proxy
-        response = subprocess.run([node_executable(), str(Path(__file__).resolve().parents[1]/'runtime/update-engine.mjs'), 'metadata', RELEASE_API],
+        response = run_managed([node_executable(), str(Path(__file__).resolve().parents[1]/'runtime/update-engine.mjs'), 'metadata', RELEASE_API],
             env=environment, capture_output=True, text=True, timeout=70, creationflags=CREATE_NO_WINDOW)
         value = json.loads(response.stdout)
         if value.get('state') == 'error': raise UpdateNetworkError(value.get('message') or '更新网络连接失败')

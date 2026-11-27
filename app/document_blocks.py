@@ -35,6 +35,8 @@ def parse_markdown(text, cancelled=lambda: False):
     process = subprocess.Popen([node_executable(), str(script)], stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=CREATE_NO_WINDOW,
         env=node_environment())
+    from .windows_job import assign_subprocess
+    assign_subprocess(process)
     payload = text.encode('utf-8')
     # Retrying communicate() cannot finish a partial input on POSIX. Let the
     # writer own and close stdin while communicate() only drains the output.

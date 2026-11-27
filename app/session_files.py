@@ -58,7 +58,8 @@ class SessionFiles(QObject):
         return {'count': len(self._sessions(project)), 'busy': running or self.busy}
 
     def _execute(self, payload):
-        result = subprocess.run([node_executable(), str(self.b.root/'runtime/session-files.mjs')],
+        from .windows_job import run_managed
+        result = run_managed([node_executable(), str(self.b.root/'runtime/session-files.mjs')],
             input=json.dumps(payload), capture_output=True, text=True, encoding='utf-8',
             timeout=180, creationflags=CREATE_NO_WINDOW)
         value = json.loads(result.stdout)

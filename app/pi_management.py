@@ -25,7 +25,8 @@ def resource_command(release, cwd, agent_dir, agent, **action):
     environment["PI_OFFLINE"] = "1"
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
-    result = subprocess.run([node_executable(), str(release / "resources.mjs")],
+    from .windows_job import run_managed
+    result = run_managed([node_executable(), str(release / "resources.mjs")],
         input=json.dumps({"cwd": str(cwd), "agentDir": str(agent_dir), "agent": agent, **action}),
         capture_output=True, text=True, encoding="utf-8", timeout=45, env=environment, creationflags=CREATE_NO_WINDOW)
     try:
@@ -410,7 +411,8 @@ class PiManagement(QObject):
         release, cwd, agent_dir, agent = context
         extensions = copy.deepcopy(self._extensions)
         def add():
-            result = subprocess.run([node_executable(), str(release/'pi-commands.mjs'), '--add-mcp'],
+            from .windows_job import run_managed
+            result = run_managed([node_executable(), str(release/'pi-commands.mjs'), '--add-mcp'],
                 input=json.dumps({'text':text, 'local':local, 'cwd':str(cwd), 'agentDir':str(agent_dir)}),
                 capture_output=True, text=True, encoding='utf-8', timeout=25,
                 env=npm_environment(agent), creationflags=CREATE_NO_WINDOW)

@@ -193,7 +193,8 @@ class PiSessionPool(QObject):
             record.process.write((json.dumps(payload, ensure_ascii=False) + "\n").encode())
 
     def start(self, record, program, bridge, payload):
-        process = QProcess(self)
+        from .windows_job import manage_qprocess
+        process = manage_qprocess(QProcess(self))
         record.process, record.buffer, record.ready = process, b"", False
         record.crashed = False
         environment = QProcessEnvironment.systemEnvironment()

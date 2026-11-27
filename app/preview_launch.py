@@ -53,13 +53,9 @@ def start_channel(directory, state, arguments=()):
             environment['LD_LIBRARY_PATH'] = original
     environment['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
     environment['UMEKO_DATA_DIR'] = str(directory)
-    creation_flags = 0
-    if os.name == 'nt':
-        from .windows_job import handoff_creation_flag
-        creation_flags = subprocess.CREATE_NO_WINDOW | handoff_creation_flag()
     return subprocess.Popen(command + list(arguments), cwd=working, env=environment,
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            creationflags=creation_flags,
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
                             start_new_session=os.name != 'nt')
 
 
@@ -117,7 +113,8 @@ def route_start(root):
     if not ((getattr(sys, 'frozen', False) and preview) or (managed and not preview)):
         return False
     try:
-        start_channel(directory, state, sys.argv[1:])
+        from .windows_job import detach_subprocess
+        detach_subprocess(start_channel(directory, state, sys.argv[1:]))
         return True
     except OSError as error:
         # A damaged preview must never prevent opening the retained release.

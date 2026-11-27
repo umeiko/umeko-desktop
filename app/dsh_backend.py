@@ -95,6 +95,8 @@ class DshProcess(QObject):
         self._process = subprocess.Popen([node_executable(), str(bridge)], stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment,
             creationflags=CREATE_NO_WINDOW)
+        from .windows_job import assign_subprocess
+        assign_subprocess(self._process)
         record.process = self
         self.write((json.dumps(payload, ensure_ascii=False) + '\n').encode())
         threading.Thread(target=self._read, daemon=True).start()

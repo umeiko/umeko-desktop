@@ -183,8 +183,8 @@ if __name__ == "__main__":
             sys.exit(0)
     try:
         if sys.platform == 'win32' and '--install-update' not in sys.argv:
-            from app.windows_job import contain_desktop_processes
-            contain_desktop_processes()
+            from app.windows_job import ensure_managed_job
+            ensure_managed_job()
         app, engine, controller = create_application()
     except Exception as exc:
         diagnostic(str(exc))

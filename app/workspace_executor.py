@@ -224,7 +224,8 @@ class WorkspaceExecutor:
             else:
                 return {'ok': False, 'error': 'argv or command is required'}
             try:
-                proc = subprocess.run(cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout_s, creationflags=CREATE_NO_WINDOW)
+                from .windows_job import run_managed
+                proc = run_managed(cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout_s, creationflags=CREATE_NO_WINDOW)
             except subprocess.TimeoutExpired:
                 return {'ok': True, 'stdout': '', 'stderr': '', 'exitCode': None, 'timedOut': True, 'truncated': False}
             except OSError as error:

@@ -220,7 +220,8 @@ class CoworkWeb(QObject):
         token = self.b.private_token
 
         def work():
-            result = subprocess.run([node_executable(), str(executable), '--cowork-web-test'],
+            from .windows_job import run_managed
+            result = run_managed([node_executable(), str(executable), '--cowork-web-test'],
                 input=json.dumps(dict(url=url, gateway=address, token=token, scope=scope)),
                 capture_output=True, text=True, encoding='utf-8', env=node_environment(),
                 timeout=20, creationflags=CREATE_NO_WINDOW)

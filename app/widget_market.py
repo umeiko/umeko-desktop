@@ -85,7 +85,8 @@ class MarketCatalog:
         environment = {key: env.value(key) for key in env.keys()}
         # Empty explicit proxy preserves the host resolver's NO_PROXY decision.
         environment['UMEKO_UPDATE_PROXY'] = system_proxy(url)
-        result = subprocess.run([node_executable(), str(self.root / 'runtime/widget-market.mjs')],
+        from .windows_job import run_managed
+        result = run_managed([node_executable(), str(self.root / 'runtime/widget-market.mjs')],
             input=json.dumps({'url': url, 'headers': headers or {}, 'destination': str(destination) if destination else None}),
             env=environment, capture_output=True, text=True, encoding='utf-8', timeout=180,
             creationflags=CREATE_NO_WINDOW)
