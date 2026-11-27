@@ -152,7 +152,7 @@ def patch_command_sessions(release: Path, bridge_source: Path):
         return
     copy_runtime_file(bridge_source.parent / 'command-process.mjs', release / 'command-process.mjs')
     text = path.read_text(encoding="utf-8")
-    if "Command session: " in text:
+    if "command_session: Type.Optional" in text:
         return
     replacements = {
         'if (shellName === "bash" && host) {\n                return host({ shellConfig, command, cwd, onData, signal, timeout, timeoutMs, env: env ?? getShellEnv(), toolCallId });':
