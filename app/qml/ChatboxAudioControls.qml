@@ -115,6 +115,10 @@ ColumnLayout {
                     interactionOwner: root.selectionController
                     highlighted: volumePanel.visible
                     onClicked: { if (volumePanel.visible) volumePanel.close(); else volumePanel.open() }
+                    HoverTip {
+                        active: volumeButton.hovered && !volumeButton.pressed && !volumeButton.highlighted
+                        text: volumeButton.label
+                    }
                     Popup {
                         id: volumePanel
                         objectName: "chatboxAudioVolumePanel_" + root.itemId
@@ -239,7 +243,6 @@ ColumnLayout {
             }
         }
         HoverHandler { cursorShape: control.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
-        HoverTip { active: control.hovered && !control.pressed && !control.highlighted; text: control.label }
     }
     component AudioSlider: Slider {
         id: control

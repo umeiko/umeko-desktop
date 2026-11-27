@@ -244,8 +244,9 @@ def run():
             screenshot_dir = ROOT / 'docs/images'
             screenshot_dir.mkdir(exist_ok=True)
             capture = '--screenshots' in sys.argv
-            for language in ('zh', 'en'):
+            for language, permission in (('zh', 'auto'), ('en', 'ask')):
                 backend.setLanguage(language)
+                backend.setToolPermissionMode(permission)
                 window.setProperty('page', 'settings')
                 if not find(window, 'multimodalSettings').isVisible():
                     assert QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
@@ -295,11 +296,15 @@ def run():
                     FakeProvider.releases[kind].set()
                     until(lambda: not card_visible(card), lambda: str(warnings))
                 until(lambda: not backend.busy, lambda: backend.toolStatus + '; ' + str(warnings))
-                assert len(approvals) == 2, approvals
+                assert len(approvals) == (2 if permission == 'ask' else 0), approvals
                 assert all(a['method'] == 'confirm' and 'Test provider' in a['detail'] for a in approvals)
                 assert [kind for kind, _ in FakeProvider.generated] == ['image', 'speech'], FakeProvider.generated
                 assert FakeProvider.generated[0][1]['model'] == 'test-image-model'
                 assert FakeProvider.generated[1][1]['model'] == 'test-voice-model'
+                first_request = FakeProvider.model_requests[0]
+                assert 'voice_gen' in {tool['function']['name'] for tool in first_request['tools']}
+                assert any('Use voice_gen when the user asks to synthesize speech' in message['content']
+                           for message in first_request['messages'] if message['role'] == 'system')
                 media = [item for row in backend.displayMessages for activity in row.get('activity', [])
                          if activity['kind'] == 'media' for item in activity['items']]
                 assert {item['kind'] for item in media} == {'image', 'audio'}, media

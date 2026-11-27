@@ -56,18 +56,19 @@ test('image provider capabilities reach the model tool schema without credential
     assert.equal(schema.includes('jpeg'),formats.includes('jpeg'));
     assert.equal(schema.includes('webp'),formats.includes('webp'));
     const result=await f.run('image_gen',{prompt:'A small plum',output_filename:'plum.png'});
-    assert.equal(f.confirmations.length,1);
     assert.equal(chatboxItems('image_gen',result)[0].kind,'image');
     assert.ok(!JSON.stringify(result).includes('fixture-private-token'));
   }
 });
 
-for(const mode of ['auto','ask'])test(`${mode}: the registered permission gate confirms once before generation`,async t=>{
+for(const mode of ['auto','ask'])test(`${mode}: image generation follows the selected permission mode`,async t=>{
   const f=await fixture(t,{mode});
   const result=await f.run('image_gen',{prompt:'Draw a small plum',size:'1024x1024',count:1,output_filename:'plum.png'},{id:'parent/nested-call'});
-  assert.equal(f.confirmations.length,1);
-  assert.match(f.confirmations[0][1],/Image account \/ image-model/);
-  assert.match(f.confirmations[0][1],/Draw a small plum/);
+  assert.equal(f.confirmations.length,mode==='ask'?1:0);
+  if(mode==='ask'){
+    assert.match(f.confirmations[0][1],/Image account \/ image-model/);
+    assert.match(f.confirmations[0][1],/Draw a small plum/);
+  }
   assert.equal(f.requests.length,1);
   assert.equal(f.requests[0].url,'http://127.0.0.1:12345/umeko/generate');
   assert.equal(f.requests[0].options.headers.Authorization,'Bearer fixture-private-token');
@@ -91,8 +92,8 @@ test('denial prevents both the provider call and filesystem output',async t=>{
   assert.deepEqual(await readdir(f.cwd),[]);
 });
 
-test('speech produces an inline audio reference, forwards options, and never overwrites',async t=>{
-  const f=await fixture(t);
+for(const mode of ['auto','ask'])test(`${mode}: speech produces an inline audio reference and never overwrites`,async t=>{
+  const f=await fixture(t,{mode});
   await writeFile(join(f.cwd,'hello.mp3'),'user file');
   const result=await f.run('voice_gen',{text:'Hello there',voice:'test-voice',format:'mp3',speed:1.2,output_filename:'hello.mp3'});
   const path=JSON.parse(result.content[0].text).paths[0];
@@ -101,7 +102,8 @@ test('speech produces an inline audio reference, forwards options, and never ove
   assert.equal(await readFile(path,'utf8'),'fixture speech');
   assert.equal(chatboxItems('voice_gen',result)[0].kind,'audio');
   assert.deepEqual(f.requests[0].body,{kind:'speech',text:'Hello there',voice:'test-voice',format:'mp3',speed:1.2});
-  assert.match(f.confirmations[0][1],/Voice account \/ voice-model/);
+  assert.equal(f.confirmations.length,mode==='ask'?1:0);
+  if(mode==='ask')assert.match(f.confirmations[0][1],/Voice account \/ voice-model/);
 });
 
 test('unsafe filenames and conflicting extensions fail before the gateway request',async t=>{

@@ -489,7 +489,7 @@ export function createToolPermissionExtension({getPolicy,classify=classifyComman
        const generation=name==='image_gen'||name==='voice_gen'||name==='video_gen';
        const original=patch?[...patch.targets].map(([name,{absolute,canonical}])=>absolute===canonical?name:`${name} → ${canonical}`).join('\n'):
          shell?String(command??''):file?String(transfer?input.localPath??'':input.path??input.file_path??''):JSON.stringify(input);
-       let hit=generation?decision('ask'):null;
+       let hit=generation&&(name==='video_gen'||policy.mode==='ask'||policy.pluginApprovalRequired)?decision('ask'):null;
        if(shell)hit=await classify(original,context);
        else if(patch)hit=[...patch.targets.values()].flatMap(({absolute,canonical})=>[absolute,canonical])
          .map(target=>classifyPath(target,context)).find(Boolean)||null;

@@ -162,7 +162,7 @@ try:
         assert b.send('Generate a small image with image_gen.')
         wait(lambda: not b.busy, 'Pi did not complete image generation')
         b.approvalChanged.disconnect(approve)
-        assert len(approvals) == 1, approvals
+        assert not approvals, approvals
         native = [call for call in calls if call[2] is not None][-1]
         assert native[0] == path, calls
         assert native[1]['Authorization'] == 'Bearer fixture-image-key'
@@ -217,7 +217,7 @@ try:
     assert not b.imageProviders and not b.store.data['multimodal']['image']['providerId']
     assert b.store.data['sessionMeta']['history-999']['draft'] == 'Preserved draft 999'
     assert not warnings, '\n'.join(warnings)
-    print('IMAGE_PROVIDERS_UI_OK: platform logos, separate model catalog, native and custom accounts, hidden keys, draft preservation, bilingual scaling, real Pi confirmation and all three image transports into chat')
+    print('IMAGE_PROVIDERS_UI_OK: platform logos, separate model catalog, native and custom accounts, hidden keys, draft preservation, bilingual scaling, automatic generation and all three image transports into chat')
 finally:
     if b: b.close()
     if engine:

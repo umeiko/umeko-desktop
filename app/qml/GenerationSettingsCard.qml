@@ -163,7 +163,9 @@ SectionCard {
         }
         Text {
             visible: !!root.account
-            text: root.kind === "image" ? I18n.t("图片提示词会发送给所选供应商，生成前逐次确认。") : root.kind === "video" ? I18n.t("视频提示词会发送给所选供应商，生成前逐次确认。") : I18n.t("朗读文本会发送给所选供应商，生成前逐次确认。")
+            text: root.kind === "image" ? I18n.t("图片提示词会发送给所选供应商。「询问」模式下，生成前会确认。")
+                : root.kind === "video" ? I18n.t("视频提示词会发送给所选供应商，生成前逐次确认。")
+                : I18n.t("朗读文本会发送给所选供应商。「询问」模式下，生成前会确认。")
             font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible); color: Theme.muted; Layout.fillWidth: true; wrapMode: Text.Wrap
         }
     }

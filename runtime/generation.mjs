@@ -122,7 +122,14 @@ export function createGenerationExtension({getConfig, fetchImpl = globalThis.fet
         format: formats(selection.formats),
       }) : parameters;
       pi.registerTool({name, label: kind === "image" ? "生成图片" : kind === "video" ? "生成视频" : "生成语音", exposure: "direct",
-        description: `Generate ${kind === "image" ? "images" : kind === "video" ? "video" : "speech"} with the configured ${selection.provider} / ${selection.model}. Sends the prompt or text to that provider after user confirmation. Saves new files in the current workspace without overwriting existing files, and displays them in chat. Optional output_filename must be a plain filename.${kind === "video" ? " Video output is MP4; seconds is a positive integer string and size is WIDTHxHEIGHT. Progress is reported while generation runs." : ""} Omitted options use Umeko's generation settings. Returns paths, never media bytes to the chat model.`,
+        description: `Generate ${kind === "image" ? "images" : kind === "video" ? "video" : "speech"} with the configured ${selection.provider} / ${selection.model}. Sends the prompt or text to that provider under the active tool permission policy. Saves new files in the current workspace without overwriting existing files, and displays them in chat. Optional output_filename must be a plain filename.${kind === "video" ? " Video output is MP4; seconds is a positive integer string and size is WIDTHxHEIGHT. Progress is reported while generation runs." : ""} Omitted options use Umeko's generation settings. Returns paths, never media bytes to the chat model.`,
+        ...(kind === "speech" ? {
+          promptSnippet: "Synthesize speech or read text aloud with the configured voice provider and deliver playable audio in chat.",
+          promptGuidelines: [
+            "Use voice_gen when the user asks to synthesize speech or read text aloud, including follow-up requests to synthesize another clip after an earlier command-line generation. Use the configured defaults unless the user requests overrides.",
+            "For speech synthesis in chat, call voice_gen directly so Umeko can apply the user's permission mode, show progress and deliver the audio. If generation fails, report the tool error instead of silently calling the provider engine with a shell command.",
+          ],
+        } : {}),
         annotations: {readOnlyHint: false, destructiveHint: false}, parameters: toolParameters,
         async execute(id, params, signal, onUpdate, ctx) {
           signal?.throwIfAborted();
