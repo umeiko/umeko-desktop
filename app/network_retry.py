@@ -49,7 +49,10 @@ def transient_failure(error, http=()):
     if certificate_failure(error):
         return False
     responses = [item.get('response', {}) for item in http]
-    detail = json.dumps(describe_failure(error), ensure_ascii=False) + ' ' + json.dumps([r.get('body') for r in responses if str(r.get('status', '')).isdigit() and int(r['status']) >= 400], ensure_ascii=False)
+    exceptions = [item.get('exception') for item in http if item.get('exception')]
+    detail = (json.dumps(describe_failure(error), ensure_ascii=False) + ' '
+              + json.dumps([r.get('body') for r in responses if str(r.get('status', '')).isdigit() and int(r['status']) >= 400], ensure_ascii=False)
+              + (' ' + json.dumps(exceptions, ensure_ascii=False) if exceptions else ''))
     if re.search(r'insufficient_quota|quota exceeded|out of budget|billing|usage limit reached|invalid.?api.?key|unauthorized|authentication|额度不足|余额不足', detail, re.I):
         return False
     status = next((r.get('status') for r in reversed(responses) if r.get('status')), 0)
@@ -61,11 +64,15 @@ def transient_failure(error, http=()):
         return False
     if status in (408, 425, 429) or status >= 500:
         return True
-    return bool(re.search(r'ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network.?error|fetch failed|connection(?:reset|aborted|refused)error|connection (?:reset|lost|closed|refused)|socket (?:hang up|closed)|timed? out|timeout|terminated|incomplete.?read|remote.?disconnected|premature|stream (?:interrupted|ended|failed)|overloaded|rate.?limit|server_busy|temporarily unavailable|供应商流已中断|连接.*(?:中断|重置|超时)|网络.*(?:中断|超时)', detail, re.I))
+    if isinstance(error, (TimeoutError, ConnectionError)) or isinstance(getattr(error, 'reason', None), (TimeoutError, ConnectionError)):
+        return True
+    return bool(re.search(r'ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network.?error|fetch failed|connection(?:reset|aborted|refused)error|connection (?:reset|lost|closed|refused)|socket (?:hang up|closed)|timed? out|timeout|terminated|incomplete.?read|remote.?disconnected|premature|stream (?:interrupted|ended|failed)|overloaded|rate.?limit|server_busy|temporarily unavailable|供应商流已中断|供应商请求超时|等待模型输出超时|接收模型输出时连接中断|请求超时|连接.*(?:中断|重置|超时)|网络.*(?:中断|超时)', detail, re.I))
 
 
 def upstream_failure(error):
     retryable = bool(getattr(error, 'retryable', False))
+    text = str(error)
+    needs_prefix = retryable and not re.search(r'(?<![a-z0-9])(?:429|500|502|503|504|520|524)(?![a-z0-9])', text)
     return {'type': 'upstream_error', 'code': 'umeko_tls_certificate' if getattr(error, 'tls_code', '') else 'umeko_http_retry_finished' if getattr(error, 'http_retry_managed', False) else 'umeko_stream_interrupted' if retryable else 'umeko_request_failed',
             **({'tlsCode': error.tls_code} if getattr(error, 'tls_code', '') else {}),
-            'retryable': retryable, 'message': ('Network error: stream interrupted. ' if retryable and '供应商返回 HTTP ' not in str(error) else '') + str(error)}
+            'retryable': retryable, 'message': ('Network error: stream interrupted. ' if needs_prefix else '') + text}

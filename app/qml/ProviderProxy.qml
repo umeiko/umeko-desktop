@@ -13,6 +13,7 @@ ActionButton {
         mode.currentIndex = Math.max(0, ["system","direct","custom"].indexOf(network.mode))
         address.text = network.url || ""
         caFile.text = network.caFile || ""
+        streamTimeout.text = record.streamIdleTimeoutMs ? String(Math.round(record.streamIdleTimeoutMs / 1000)) : "300"
         dialog.open()
     }
     Popup {
@@ -29,6 +30,12 @@ ActionButton {
             InputField { id: address; objectName: "providerProxyAddress"; Layout.fillWidth: true; visible: mode.currentIndex === 2; placeholderText: "http://127.0.0.1:7890" }
             RowLayout {
                 Layout.fillWidth: true
+                Text { font.family: Theme.fontFamily; text: I18n.t("流式空闲超时（秒）"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
+                HelpButton { help: I18n.t("两次收到模型数据之间的最长等待时间，默认 300 秒（范围 10–1800 秒）。长输出、长思考或大型工具参数生成时若容易超时，可调大此项；留空使用默认值。") }
+            }
+            InputField { id: streamTimeout; objectName: "providerStreamIdleTimeout"; Layout.fillWidth: true; placeholderText: "300" }
+            RowLayout {
+                Layout.fillWidth: true
                 Text { font.family: Theme.fontFamily; text: I18n.t("CA 证书文件（可选）"); color: Theme.ink; font.pixelSize: Theme.font(12, visible) }
                 HelpButton { help: I18n.t("证书信任失败时，自动补用系统信任库再连接一次。也可指定可信的 PEM 根证书或中间证书文件；留空使用默认信任链。始终校验证书和域名，不会自动关闭 TLS 验证。") }
             }
@@ -38,7 +45,7 @@ ActionButton {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 ActionButton { text: I18n.t("取消"); quiet: true; onClicked: dialog.close() }
-                ActionButton { objectName: "saveProviderProxy"; text: I18n.t("保存"); primary: true; onClicked: if (backend.setProviderNetwork(root.providerId, ["system","direct","custom"][mode.currentIndex], address.text, caFile.text)) dialog.close() }
+                ActionButton { objectName: "saveProviderProxy"; text: I18n.t("保存"); primary: true; onClicked: if (backend.setProviderNetworkWithTimeout(root.providerId, ["system","direct","custom"][mode.currentIndex], address.text, caFile.text, streamTimeout.text)) dialog.close() }
             }
         }
     }

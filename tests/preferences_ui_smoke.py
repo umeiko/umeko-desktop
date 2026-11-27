@@ -49,8 +49,11 @@ try:
     window.grabWindow().save(str(out/'network-settings-v033.png'))
     mode=find('providerProxyMode');mode.setProperty('currentIndex',2)
     find('providerProxyAddress').setProperty('text','http://127.0.0.1:7890')
+    assert find('providerStreamIdleTimeout').property('text')=='300'
+    find('providerStreamIdleTimeout').setProperty('text','600')
     click('saveProviderProxy')
     assert backend.store.data['providers'][0]['proxy']['mode']=='custom'
+    assert backend.store.data['providers'][0]['streamIdleTimeoutMs']==600000
     window.setProperty('page','chat')
     click('modelSelector');QTest.qWait(700)
     slider=find('reasoningEffortSlider');slider.forceActiveFocus();QTest.keyClick(window,Qt.Key_End);QTest.qWait(100)

@@ -13,9 +13,10 @@ Text { font.family: Theme.fontFamily;
     elide: Text.ElideRight
     text: {
         const attempt = retryState.attempt || 1
+        const maxAttempts = retryState.maxAttempts || 5
         const ordinal = ["一", "二", "三", "四", "五"][attempt - 1] || attempt
         if (I18n.language === "en")
-            return retryState.waiting ? "Network stream interrupted, retrying (" + attempt + "/5) " + elapsed + "s/" + seconds + "s" : "Reconnecting (" + attempt + "/5)…"
+            return retryState.waiting ? "Network stream interrupted, retrying (" + attempt + "/" + maxAttempts + ") " + elapsed + "s/" + seconds + "s" : "Reconnecting (" + attempt + "/" + maxAttempts + ")…"
         return retryState.waiting ? "网络流已中断，等待重试中（第" + ordinal + "次）" + elapsed + "s/" + seconds + "s" : "正在重新连接（第" + ordinal + "次）…"
     }
     onRetryStateChanged: clock = Date.now()

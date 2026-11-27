@@ -1,4 +1,5 @@
 """Private local request reports. Credentials are redacted before persistence."""
+import http.client
 import json
 import re
 import threading
@@ -111,8 +112,15 @@ class RequestDiagnostics(QObject):
             message = f'TLS certificate validation failed ({code}); check the provider\'s Network settings and CA file, then open request details'
         elif str(error).startswith('供应商返回 HTTP 200：'):
             message = str(error)
-        elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError) or str(error) == '供应商请求超时，请检查网络或超时设置':
-            message = '供应商请求超时，请检查网络或超时设置'
+        elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError) or str(error) in (
+                '等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时',
+                '供应商请求超时，请检查网络或超时设置'):
+            message = '等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时'
+        elif isinstance(error, (ConnectionError, http.client.IncompleteRead, http.client.RemoteDisconnected)) or \
+                'Upstream stream ended before completion' in str(error) or str(error) == '接收模型输出时连接中断，请稍后重试':
+            message = '接收模型输出时连接中断，请稍后重试'
+        elif str(error).startswith('无法连接供应商：'):
+            message = str(error)
         else:
             message = '供应商请求失败：' + safe_text(str(error), [provider.get('key', '')])
         record['summary'] = safe_text(message, secrets)

@@ -6,7 +6,7 @@ import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-pol
 import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, manageResources, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
-import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
+import { GATEWAY_HTTP_IDLE_TIMEOUT_MS, NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
 import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { DESKTOP_PI_PROMPT, addMcpFromInput, createPiCommandController, piCommandsEnabled } from "./pi-commands.mjs";
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, REPLY_TO_GROUPCHAT, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
@@ -50,6 +50,25 @@ process.env.NO_PROXY = [process.env.NO_PROXY || process.env.no_proxy || "", "127
 process.env.no_proxy = process.env.NO_PROXY;
 installProviderPolicy();
 const Pi = await import("@earendil-works/pi-coding-agent");
+const undici = await import("undici");
+const originalFetch = globalThis.fetch;
+let gatewayOrigin = "";
+let gatewayDispatcher = null;
+function configureGatewayFetch(gatewayUrl) {
+  gatewayOrigin = new URL(gatewayUrl).origin;
+  if (gatewayDispatcher) return;
+  // Keep undici's loopback hop open while the local gateway enforces each provider's streamIdleTimeoutMs.
+  gatewayDispatcher = new undici.Agent({ headersTimeout: 0, bodyTimeout: 0 });
+  gatewayDispatcher.on?.("error", () => {});
+  globalThis.fetch = function(input, init) {
+    try {
+      if ((typeof input === "string" || input instanceof URL) && new URL(input).origin === gatewayOrigin && !init?.dispatcher) {
+        return undici.fetch(input, { ...init, dispatcher: gatewayDispatcher });
+      }
+    } catch {}
+    return originalFetch(input, init);
+  };
+}
 const { isRetryableAssistantError, isContextOverflow } = await import("@earendil-works/pi-ai/compat");
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
@@ -423,13 +442,18 @@ async function bindSession(session) {
       inputQueue.sync(event.steering, event.followUp);
     }
     if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content), timestamp: event.message.timestamp });
-    // Like Pi's interactive UI, replace the retry indicator when the next
-    // attempt starts; auto_retry_end arrives only after the assistant finishes.
-    // Keep draft replacement separate from the indicator's visibility.
-    if (["turn_start", "summarization_retry_attempt_start"].includes(event.type) && retryState.active) {
+    // Keep the retry indicator visible as "Reconnecting..." while the retry
+    // request is in flight, then clear it right before the assistant stream starts.
+    if (event.type === "summarization_retry_attempt_start" && retryState.active) {
       clearTimeout(retryTimer); retry({ active: false });
     }
+    if (event.type === "turn_start" && retryState.active && retryState.waiting) {
+      clearTimeout(retryTimer); retry({ ...retryState, waiting: false });
+    }
     if (event.type === "message_start" && event.message.role === "assistant") {
+      if (retryState.active) {
+        clearTimeout(retryTimer); retry({ active: false });
+      }
       emit({ type: "assistant_start", retry: retryAssistant, timestamp: event.message.timestamp });
       retryAssistant = false;
     }
@@ -620,7 +644,7 @@ async function restoreSubagentSession(child, context, customTools) {
     "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。", SUBAGENT_COMPLETION_HINT);
   const native = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
   const settings = await sessionResourceSettings(Pi, {...config,cwd:manager.getCwd()}, native);
-  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
+  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),httpIdleTimeoutMs:GATEWAY_HTTP_IDLE_TIMEOUT_MS,retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
   // New children persist their exact resolved prompt and allowlist. Older
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
@@ -687,6 +711,7 @@ async function init(input) {
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = validEffort(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
+  configureGatewayFetch(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
   for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
   const cwd = resolve(input.workspace || input.defaultCwd);
@@ -732,6 +757,7 @@ async function init(input) {
       ];
     }
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
+      httpIdleTimeoutMs: GATEWAY_HTTP_IDLE_TIMEOUT_MS,
       retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(remoteWorkspaceEnabled ? remoteTools : []), ...(settingsManager.getDefaultTools() || [])])],
       codemode: { ...nativeSettings.codemode, mode: "on" },
@@ -1298,6 +1324,7 @@ async function shutdown() {
   clearDialogs();
   await backgroundJobs.disposeAll();
   await runtime?.dispose();
+  await gatewayDispatcher?.close?.();
   unsubscribe?.();
   rl?.close();
   process.stdin.pause(); process.stdin.unref?.();

@@ -6,7 +6,7 @@ import urllib.parse
 from pathlib import Path
 from PySide6.QtCore import Slot, QUrl
 from PySide6.QtGui import QDesktopServices
-from .gateway import validate_base_url
+from .gateway import validate_base_url, validate_stream_idle_timeout_seconds
 from umeko_provider_sdk.network import validate_ca_file
 
 
@@ -247,6 +247,14 @@ class PreferencesMixin:
 
     @Slot(str, str, str, str, result=bool)
     def setProviderNetwork(self, identifier, mode, address, ca_file):
+        return self._save_provider_network(identifier, mode, address, ca_file, update_timeout=False)
+
+    @Slot(str, str, str, str, str, result=bool)
+    def setProviderNetworkWithTimeout(self, identifier, mode, address, ca_file, stream_idle_timeout_sec):
+        return self._save_provider_network(identifier, mode, address, ca_file,
+                                           stream_idle_timeout_sec=stream_idle_timeout_sec, update_timeout=True)
+
+    def _save_provider_network(self, identifier, mode, address, ca_file, stream_idle_timeout_sec='', *, update_timeout=False):
         try:
             provider = self.gateway.provider(identifier)
             if not provider or mode not in ('system', 'direct', 'custom'):
@@ -263,7 +271,13 @@ class PreferencesMixin:
                 if port is not None and not 1 <= port <= 65535:
                     raise ValueError('请输入有效的 HTTP / HTTPS 代理地址')
             ca_file = validate_ca_file(ca_file)
+            timeout_ms = validate_stream_idle_timeout_seconds(stream_idle_timeout_sec) if update_timeout else None
             provider['proxy'] = {'mode': mode, 'url': url, **({'caFile': ca_file} if ca_file else {})}
+            if update_timeout:
+                if timeout_ms is None:
+                    provider.pop('streamIdleTimeoutMs', None)
+                else:
+                    provider['streamIdleTimeoutMs'] = timeout_ms
             if provider['api'] == 'plugin':
                 self._provider_plugins._invalidate(identifier)
             self.store.save()

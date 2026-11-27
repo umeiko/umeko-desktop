@@ -54,6 +54,7 @@ async function fixture(t, { compaction = false } = {}) {
     let raw = ""; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); calls.push({ summary: !body.tools?.length });
     const next = replies.shift();
+    if (next?.delayMs) await new Promise(resolve => setTimeout(resolve, next.delayMs));
     if (!next || next.error) {
       res.writeHead(next?.status || 503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: { message: next?.error || "Unexpected fixture request" } }));
@@ -134,6 +135,18 @@ test("N transient failures then success hides retry before streaming; exhausted 
   assert.equal(final.filter(e => e.type === "message" && e.role === "assistant" && e.error).length, 1);
   assert.equal(final.find(e => e.type === "pi_event" && e.event === "auto_retry_end").success, false);
   assert.equal(final.findLast(e => e.type === "network_retry").active, false);
+});
+
+test("reconnecting status stays visible while retry HTTP request is in flight", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "slow reconnect" }, [failure, { delayMs: 80 }]);
+  assert.deepEqual(attempts(events), [1]);
+  const reconnecting = events.findIndex(e => e.type === "network_retry" && e.active === true && e.waiting === false);
+  const cleared = events.findLastIndex(e => e.type === "network_retry" && e.active === false);
+  const started = events.findLastIndex(e => e.type === "assistant_start");
+  assert.ok(reconnecting >= 0, "Expected in-flight reconnecting state");
+  assert.ok(reconnecting < cleared && cleared < started, "Reconnecting should clear right before assistant_start");
+  recovered(events);
 });
 
 test("one session, three turns: each interruption starts at one and each stream hides retry", { timeout: 60000 }, async t => {

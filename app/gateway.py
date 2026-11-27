@@ -6,8 +6,10 @@ Only explicit user-created provider URLs are contacted.
 from __future__ import annotations
 
 import hmac
+import http.client
 import ipaddress
 import json
+import math
 import re
 import select
 import socket
@@ -56,6 +58,42 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("供应商返回重定向；请直接填写最终 API 地址")
 
 
+# Align default idle timeout between stream chunks with Codex CLI / DSH / Pi (5 min).
+DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+MIN_STREAM_IDLE_TIMEOUT_MS = 10_000
+MAX_STREAM_IDLE_TIMEOUT_MS = 1_800_000
+STREAM_TIMEOUT_ERROR = "等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时"
+STREAM_INTERRUPTED_ERROR = "接收模型输出时连接中断，请稍后重试"
+
+
+def normalize_stream_idle_timeout_ms(value):
+    if value is None or value == "":
+        return DEFAULT_STREAM_IDLE_TIMEOUT_MS
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return DEFAULT_STREAM_IDLE_TIMEOUT_MS
+    ms = int(round(value))
+    if not MIN_STREAM_IDLE_TIMEOUT_MS <= ms <= MAX_STREAM_IDLE_TIMEOUT_MS:
+        return DEFAULT_STREAM_IDLE_TIMEOUT_MS
+    return ms
+
+
+def validate_stream_idle_timeout_seconds(raw):
+    text = str("" if raw is None else raw).strip()
+    if not text:
+        return None
+    if not re.fullmatch(r"\d+", text):
+        raise ValueError("流式空闲超时须为 10 到 1800 之间的整数（秒），留空则使用默认值 300 秒")
+    seconds = int(text)
+    min_s, max_s = MIN_STREAM_IDLE_TIMEOUT_MS // 1000, MAX_STREAM_IDLE_TIMEOUT_MS // 1000
+    if not min_s <= seconds <= max_s:
+        raise ValueError("流式空闲超时须为 10 到 1800 之间的整数（秒），留空则使用默认值 300 秒")
+    return seconds * 1000
+
+
+def provider_stream_idle_timeout_seconds(provider):
+    return normalize_stream_idle_timeout_ms((provider or {}).get("streamIdleTimeoutMs")) / 1000.0
+
+
 def _quota_exhausted(error, response):
     status = str(response.get("status", ""))
     if status == "402":
@@ -74,7 +112,8 @@ def _member_unavailable(error, records):
     return status in (401, 402, 403, 404, 408, 425, 429) or status >= 500 or bool(re.search(
         r"insufficient[ _-]?(?:quota|balance)|quota.{0,20}(?:exceed|exhaust)|rate[ _-]?limit|out of budget|"
         r"billing|usage limit reached|model_not_found|限流|额度不足|余额不足|配额.{0,8}(?:不足|用尽)|"
-        r"供应商正在登录或刷新|无法连接供应商|供应商请求超时", detail, re.I))
+        r"供应商正在登录或刷新|无法连接供应商|供应商请求超时|等待模型输出超时|接收模型输出时连接中断|"
+        r"Upstream stream ended before completion", detail, re.I))
 
 
 class Gateway:
@@ -141,6 +180,8 @@ class Gateway:
                   if key not in ("reasoning_effort", "enable_thinking", "enable_reasoning", "chat_template_kwargs", "thinking", "reasoning",
                                  "_umeko_reasoning_effort", "_umeko_reasoning_format")}
         last_report = ""
+        last_summary = ""
+        any_retryable = False
         for member, provider, model in candidates:
             if cancelled.is_set():
                 raise InterruptedError("供应商请求已取消")
@@ -167,6 +208,8 @@ class Gateway:
             except RequestFailure as failure:
                 if cancelled.is_set() or not (failure.retryable or getattr(failure, "failover_eligible", False)):
                     raise
+                if failure.retryable:
+                    any_retryable = True
                 with self._group_lock:
                     if key not in self._group_cooldown and len(self._group_cooldown) >= MAX_MEMBERS:
                         del self._group_cooldown[next(iter(self._group_cooldown))]
@@ -176,9 +219,12 @@ class Gateway:
                     if len(candidates) > 1:
                         failure.retryable = True
                     raise
-                report = re.search(r" \[Umeko:[a-f0-9-]{36}\]$", str(failure))
+                text = str(failure)
+                report = re.search(r" \[Umeko:[a-f0-9-]{36}\]$", text)
                 last_report = report[0] if report else ""
-        raise RequestFailure("模型组中的可用模型均请求失败" + last_report)
+                last_summary = text[:report.start()].strip() if report else text.strip()
+        detail = f"（最后一次失败：{last_summary}）" if last_summary else ""
+        raise RequestFailure("模型组中的可用模型均请求失败" + detail + last_report, retryable=any_retryable)
 
     def detect_reasoning(self, alias, provider_id=None, advertised_levels=None):
         """Use the normal mapper/transport, with ephemeral probe observations only."""
@@ -395,8 +441,10 @@ class Gateway:
         secrets = [p['key'], *headers.values()]
         request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
         opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect(), OmitHeaders(omitted))
+        idle_timeout = provider_stream_idle_timeout_seconds(p)
+        request_timeout = min(90.0, idle_timeout) if probe_override else idle_timeout
         try:
-            with compatible_open(opener, request, timeout=45 if group else 90, memory=self.compatibility,
+            with compatible_open(opener, request, timeout=request_timeout, memory=self.compatibility,
                                  scope=(p['id'], base, model), automatic=automatic,
                                  records=trace.get(), http_retries=0 if group or probe_override else 2) as response:
                 def checked_events():
@@ -424,8 +472,10 @@ class Gateway:
                 exc.close()
         except (urllib.error.URLError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError):
-                raise ValueError('供应商请求超时，请检查网络或超时设置') from None
+                raise TimeoutError(STREAM_TIMEOUT_ERROR) from None
             raise ValueError('无法连接供应商：' + safe_text(str(exc), secrets)) from None
+        except (http.client.IncompleteRead, http.client.RemoteDisconnected, ConnectionError) as exc:
+            raise ConnectionError(STREAM_INTERRUPTED_ERROR) from exc
 
     @staticmethod
     def to_anthropic_message(m):
@@ -538,7 +588,11 @@ class LocalServer:
                     if not 0 < size <= (16384 if cowork_route else 32_000_000):
                         return self.respond(413, {"error": {"message": "Invalid request size"}})
                     self.connection.settimeout(100)
-                    body = json.loads(self.rfile.read(size))
+                    try:
+                        body = json.loads(self.rfile.read(size))
+                    finally:
+                        # Only bound reading the local request body; active streams follow the provider's idle timeout.
+                        self.connection.settimeout(None)
                     if cowork_route:
                         return self.respond(200, owner.cowork_web_route(body))
                     if self.path == '/umeko/generate' and owner.private:
