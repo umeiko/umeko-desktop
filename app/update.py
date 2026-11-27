@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -171,11 +172,25 @@ class AppUpdater(QObject):
     def launch_installer(self):
         try:
             job = json.loads(self.job_file.read_text(encoding='utf-8'))
-            p = QProcess(self)
-            p.setProgram(job['helperExe']); p.setArguments(['--install-update', str(self.job_file)])
-            p.setWorkingDirectory(str(Path(job['helperExe']).parent)); p.setProcessEnvironment(update_environment())
-            ok = p.startDetached(); p.deleteLater()
-            if not ok: raise OSError('独立安装器启动失败，当前程序保持运行。')
+            program = job['helperExe']
+            args = ['--install-update', str(self.job_file)]
+            working = str(Path(program).parent)
+            environment = update_environment()
+            if sys.platform == 'win32':
+                from .windows_job import handoff_creation_flag
+                try:
+                    subprocess.Popen([program, *args], cwd=working,
+                                     env={key: environment.value(key) for key in environment.keys()},
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     creationflags=subprocess.DETACHED_PROCESS | handoff_creation_flag())
+                except OSError as error:
+                    raise OSError('独立安装器启动失败，当前程序保持运行。') from error
+            else:
+                p = QProcess(self)
+                p.setProgram(program); p.setArguments(args)
+                p.setWorkingDirectory(working); p.setProcessEnvironment(environment)
+                ok = p.startDetached(); p.deleteLater()
+                if not ok: raise OSError('独立安装器启动失败，当前程序保持运行。')
             self.deadline = time.monotonic() + 30
             self.timer = QTimer(self); self.timer.timeout.connect(self.wait_ready); self.timer.start(150)
         except (OSError, ValueError, KeyError) as error:

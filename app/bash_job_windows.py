@@ -14,18 +14,7 @@ import time
 from contextlib import ExitStack
 
 from .update_windows import _open_inherited_stream
-
-
-class BasicLimits(ctypes.Structure):
-    _fields_ = [("process_time", ctypes.c_longlong), ("job_time", ctypes.c_longlong),
-                ("flags", w.DWORD), ("min_working_set", ctypes.c_size_t),
-                ("max_working_set", ctypes.c_size_t), ("active_limit", w.DWORD),
-                ("affinity", ctypes.c_size_t), ("priority", w.DWORD), ("scheduling", w.DWORD)]
-
-
-class ExtendedLimits(ctypes.Structure):
-    _fields_ = [("basic", BasicLimits), ("io_counters", ctypes.c_ulonglong * 6),
-                ("memory", ctypes.c_size_t * 4)]
+from .windows_job import api, boolean, close_handle, create_kill_on_close_job, dword, expect, handle, pointer
 
 
 class ProcessInfo(ctypes.Structure):
@@ -40,18 +29,8 @@ class StartupInfoEx(ctypes.Structure):
                 ("attributes", ctypes.c_void_p)]
 
 
-def api(name, result, *arguments):
-    function = getattr(ctypes.WinDLL("kernel32", use_last_error=True), name)
-    function.restype, function.argtypes = result, arguments
-    return function
-
-
-handle, pointer, dword, boolean = w.HANDLE, ctypes.c_void_p, w.DWORD, w.BOOL
-create_job = api("CreateJobObjectW", handle, pointer, w.LPCWSTR)
-set_job = api("SetInformationJobObject", boolean, handle, ctypes.c_int, pointer, dword)
 query_job = api("QueryInformationJobObject", boolean, handle, ctypes.c_int, pointer, dword, pointer)
 terminate_job = api("TerminateJobObject", boolean, handle, ctypes.c_uint)
-close_handle = api("CloseHandle", boolean, handle)
 init_attributes = api("InitializeProcThreadAttributeList", boolean, pointer, dword, dword, pointer)
 update_attribute = api("UpdateProcThreadAttribute", boolean, pointer, dword, ctypes.c_size_t,
                        pointer, ctypes.c_size_t, pointer, pointer)
@@ -60,12 +39,6 @@ create_process = api("CreateProcessW", boolean, w.LPCWSTR, w.LPWSTR, pointer, po
                      dword, pointer, w.LPCWSTR, pointer, pointer)
 wait_process = api("WaitForSingleObject", dword, handle, dword)
 exit_code = api("GetExitCodeProcess", boolean, handle, pointer)
-
-
-def expect(result):
-    if not result:
-        raise ctypes.WinError(ctypes.get_last_error())
-    return result
 
 
 def launch(request, job, stdin, stdout, stderr=None):
@@ -259,11 +232,8 @@ def main():
 
         threading.Thread(target=listen, daemon=True).start()
         with ExitStack() as stack:
-            job = expect(create_job(None, None))
+            job = create_kill_on_close_job()
             stack.callback(close_handle, job)
-            limits = ExtendedLimits()
-            limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            expect(set_job(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)))
             try:
                 if "stdoutPath" in request:
                     result = supervise_session(request, job, cancelled, incoming, emit, stack)

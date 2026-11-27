@@ -26,6 +26,7 @@ WINDOWS = [
     'tests.test_login_startup.WindowsCIRegistryTests',
     # Linux discovery cannot verify Windows QProcess cached/retiring cleanup.
     'tests.test_session_cache.SessionCacheTests.test_windows_cached_and_retiring_kernels_exit_on_app_close',
+    'tests.test_windows_desktop_job',
     'tests.test_runtime_paths',
     'tests.test_pi_management.NativeExtensionTests',
     'tests.test_windows_python_note',
