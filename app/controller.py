@@ -105,6 +105,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def multimodalProviders(self):
         return self._multimodal_provider_rows()
 
+    @Property('QVariantMap', notify=changed)
+    def multimodalPreferences(self):
+        return copy.deepcopy(self.store.data['multimodal'])
+
     @Property('QVariantMap', notify=desktopSettingsChanged)
     def desktopSettings(self):
         return dict(self.store.data['desktop'])
@@ -2931,6 +2935,15 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Slot()
     def stop(self):
         self._stop()
+
+    @Slot(result=bool)
+    def continueInStages(self):
+        record = self._view
+        if is_dsh(record) or record.busy or record.approval or self._kernel_busy:
+            return False
+        if not record.messages and not record.file:
+            return False
+        return self._command_pi("staged-continue", record=record)
 
     def _job(self, name, fn):
         self.jobStarted.emit(name)

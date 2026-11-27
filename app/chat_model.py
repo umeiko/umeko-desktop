@@ -805,9 +805,10 @@ class ChatModel(QAbstractListModel):
                 if marker:
                     current['diagnosticId'] = marker[1]
                 if marker:
-                    from .provider_errors import diagnostic_notice
+                    from .provider_errors import diagnostic_notice, is_staged_continue_failure
                     notice = diagnostic_notice(failure)
                 else:
+                    from .provider_errors import is_staged_continue_failure
                     notice = failure
                 body = current.get('text', '')
                 if body == failure:
@@ -815,6 +816,10 @@ class ChatModel(QAbstractListModel):
                 if notice:
                     current['text'] = body or notice
                     current['error'] = True
+                    if is_staged_continue_failure(failure) or is_staged_continue_failure(notice):
+                        current['stagedContinueAvailable'] = True
+                        if body:
+                            current['partialIncomplete'] = True
                 steps = []
                 if current.get("thinking"):
                     steps.append({"kind": "thinking", "text": current["thinking"]})
@@ -833,6 +838,13 @@ class ChatModel(QAbstractListModel):
                             else:
                                 steps.append({"kind": "subagents", "agents": [dict(tool["subagent"])]})
                             continue
+                        if (tool.get("name") in ("image_gen", "voice_gen") and tool.get("state") == "running"
+                                and tool.get("generationPending") is True and not tool.get("media")):
+                            if batch:
+                                steps.append({"kind": "tools", "tools": batch})
+                                batch = []
+                            steps.append({"kind": "generation", "toolName": tool["name"], "toolId": tool["id"]})
+                            continue
                         batch.append(tool)
                         if tool.get("name") in ("submit_to_chatbox", "image_gen", "voice_gen", "video_gen") and tool.get("media"):
                             steps.append({"kind": "tools", "tools": batch})
@@ -845,11 +857,14 @@ class ChatModel(QAbstractListModel):
             continuing = bool(rows and rows[-1].get('stopReason') == 'length' and not current.get('error'))
             merging = bool(rows and current.get("role") == rows[-1].get("role") == "assistant"
                     and current.get("customType") != "umeko-compaction" and rows[-1].get("customType") != "umeko-compaction"
+                    and not rows[-1].get("error")
                     and (continuing or rows[-1].get("tools") or rows[-1].get('_chain_tools') or current.get("tools")))
             if merging and (max_group is None or source_index - starts[-1] < max_group):
                 group = rows[-1]
                 group['_entries'] = group.get('_entries', []) + current['_entries']
                 if current.get('diagnosticId'): group['diagnosticId'] = current['diagnosticId']
+                if current.get('stagedContinueAvailable'): group['stagedContinueAvailable'] = True
+                if current.get('partialIncomplete'): group['partialIncomplete'] = True
                 steps = current["activity"]
                 if continuing:
                     # Keep a code fence/table/word continuous across output limits.

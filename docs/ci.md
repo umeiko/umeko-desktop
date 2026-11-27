@@ -91,8 +91,9 @@ exact rules live in `scripts/ci-package-changes.py`. Packaging PRs run the
 Windows native list inside the Windows package job.
 
 Main pushes and ordinary manual dispatches build Windows x64. A manual
-`all_platforms=true` dispatch also builds Linux x64, macOS Intel and
-Apple Silicon for a stable release. Linux IME caret checks run in the shared
+`all_platforms=true` dispatch also builds Linux x64 and macOS Apple Silicon
+for a stable release, and includes macOS Intel for versions ending in `.0`.
+Linux IME caret checks run in the shared
 UI pool. Windows window and embedded-browser checks, macOS DMG tests, and
 frozen application/Pi smokes run on their own platforms.
 
@@ -100,5 +101,6 @@ A newer PR run cancels the previous one. After a successful main CI, a final job
 publishes its verified Windows package to the rolling `preview` prerelease. It
 stages and verifies uploads before replacing the old Release/tag, skips stale
 main builds, and keeps Preview as a prerelease (never Latest). Only main runs
-publish Preview. A stable release needs a successful main desktop run with all
-four native artifacts; use the full-platform dispatch for that run.
+publish Preview. For a stable release, use the full-platform dispatch on
+`main`. The release workflow verifies the shared tests and the artifact from
+each native platform required for the version.

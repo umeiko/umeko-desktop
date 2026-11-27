@@ -7,6 +7,19 @@ def release(tag, identifier=1, **changes):
 
 
 class ReleaseRetentionTests(unittest.TestCase):
+    def test_three_platform_patch_preserves_latest_stable_intel_download(self):
+        older = release("v0.7.9", 9)
+        intel = release("v0.7.10", 10)
+        for row in (older, intel):
+            row["assets"] = [{"name": f"Umeko-{row['tag_name'][1:]}-macos-x64-abcdef0.dmg"}]
+        patch = {**release("v0.7.11", 11), "assets": [{}] * 14}
+        current = {**release("v0.7.12", 12), "assets": [{}] * 14}
+        rows = [older, intel, patch, current]
+        calls = []
+        self.assertEqual(prune_releases("umeiko/umeko-desktop", "v0.7.12",
+                                       lambda _: rows, lambda *args: calls.append(args)), ["v0.7.9", "v0.7.11"])
+        self.assertEqual([call[-1].rsplit("/", 1)[1] for call in calls], ["9", "11"])
+
     def test_retains_071_milestone_during_later_full_releases(self):
         rows = [release("v0.7.0", 1), release("v0.7.1", 2),
                 release("v0.7.2", 3), release("v0.7.3", 4), release("v0.7.1-minimal", 5),

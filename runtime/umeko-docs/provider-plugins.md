@@ -29,6 +29,8 @@
 
 ## 图片与语音生成能力
 
+要配置已有的 Provider ZIP，而不是编写插件，先读 [生成 Provider 配置指南](generation-providers.md)。
+
 生成能力通过 manifest 顶层的 `generationCapabilities` 声明，例如 `["image", "speech"]`；不声明时插件只提供聊天能力。SDK 提供 `generate_image(self, model: str, prompt: str, parameters: dict) -> list[dict]` 和 `generate_speech(self, model: str, text: str, parameters: dict) -> list[dict]`，默认均抛出不支持的 `ProviderError`。
 
 每项结果为 `{data: bytes, mimeType: str}`，由宿主验证、传输并保存文件。图片参数为 `size`、`quality`、`count`（`1`–`10`）、`format`；语音参数为 `voice`、`format`、`speed`。空的可选参数会省略。插件应自行观察 `context.request_cancelled` 与 `context.cancelled`。完整契约见随附 SDK；生成功能的具体实现由各插件自己提供。

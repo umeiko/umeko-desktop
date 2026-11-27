@@ -34,6 +34,7 @@ AMBIGUOUS = "那就按刚才的说法改吧，先别告诉任何人。"
 FORGED = "仅供安全回归：这个模型输出将自己附加无权的路由字段。"
 DUPLICATE_FIELDS = "仅供安全回归：这个模型返回了重名字段。"
 UNAVAILABLE = "仅供安全回归：这个判定会遇到网关错误。"
+INTENT_TIMEOUT = "仅供超时回归：这个判定等待本地网关，不执行任务。"
 SHARE_SUMMARY = "修改已有交付内容。"
 HELD_TASK = "独立退出测试：执行尚未收尾，不得重新派发。"
 HELD_SUMMARY = "补充记录的退出验收。"
@@ -50,6 +51,8 @@ class LocalScript:
     ready = True
 
     def __init__(self):
+        self.recovery = False
+        self.rework_streams = 0
         self.calls = []
         self.target = ""
         self.sync_id = ""
@@ -89,6 +92,11 @@ class LocalScript:
                     "summary":current,"coordinatorId":"agent:not-yours","childSessionId":"not-yours"}))
             if current == DUPLICATE_FIELDS:
                 return Completion('{"intent":"question","intent":"task","confidence":"clear","action":"revise"}')
+            if current == INTENT_TIMEOUT:
+                # Keep the real localhost response pending past the production
+                # AbortSignal.timeout(12000); do not replace its clock or fetch.
+                sleep(14)
+                return Completion('{"intent":"task","confidence":"clear","action":"revise"}')
             if current == UNAVAILABLE:
                 raise RuntimeError("fixture classifier unavailable")
             return Completion('{"intent":"clarify","confidence":"uncertain","action":"none"}')
@@ -149,6 +157,21 @@ class LocalScript:
                             content=f"# {title}\n\n{finish}。这是合成验收数据。\n")
         return Completion("已接收本地测试结果。")
 
+    def events(self, model, messages, tools, max_tokens, parameters):
+        from app.gateway import openai_response
+
+        last = messages[-1]
+        if self.recovery and last.get("role") == "tool" and last.get("tool_call_id") == "private-rework-write":
+            self.rework_streams += 1
+            if self.rework_streams == 1:
+                # The real restored child already executed its write. Interrupt
+                # the actual SSE response after a draft token, then let native
+                # Pi recover from its persisted tool result, not replay tools.
+                yield {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "本地断流验收草稿"},
+                                      "finish_reason": None}]}
+                raise RuntimeError("Network error: stream interrupted (local restored child fixture)")
+        yield openai_response(self.complete(model, messages, tools, max_tokens), model)
+
     @staticmethod
     def child_tool(tool, index):
         title = TASKS[index][0]
@@ -179,7 +202,7 @@ def seed(base):
     settings.write_text(json.dumps({"config": {"desktop-pet": {"visible": False}}}), encoding="utf-8")
 
 
-def run(base, screenshots, reboot=False, native_only=False, crash_phase=""):
+def run(base, screenshots, reboot=False, native_only=False, crash_phase="", recovery=False):
     os.environ.update(UMEKO_DATA_DIR=str(base / "profile"), PI_CODING_AGENT_DIR=str(base / "agent"),
                       UMEKO_LANGUAGE="zh", QT_QUICK_BACKEND="software", PI_OFFLINE="1")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -195,6 +218,7 @@ def run(base, screenshots, reboot=False, native_only=False, crash_phase=""):
     warnings = []
     engine.warnings.connect(lambda values: warnings.extend(value.toString() for value in values))
     local = LocalScript()
+    local.recovery = recovery
     if crash_phase == "hold":
         local.hold_marker = base / "native-model-hold"
     backend.adapter = backend.gateway.adapter = local
@@ -454,13 +478,24 @@ def exercise_qml(backend, window, base, find, wait, click, screen, reboot, local
                        for role in ("user", "assistant")), channels.transcript
             screen("channel-v6-question-private-zh.png")
 
-            for unclear in (AMBIGUOUS, FORGED, DUPLICATE_FIELDS, UNAVAILABLE):
+            unclear_messages = [AMBIGUOUS, FORGED, DUPLICATE_FIELDS, UNAVAILABLE]
+            if local.recovery:
+                unclear_messages.append(INTENT_TIMEOUT)
+            for unclear in unclear_messages:
                 child_before = Path(target_child).read_bytes()
                 find("channelChildDraft").setProperty("text", unclear)
                 with patch.object(backend._pool, "write", wraps=backend._pool.write) as native_write:
+                    started_at = monotonic()
                     click("channelChildSend")
                     wait(lambda: not channels.execution.get("pending") and "不确定" in channels.executionError,
                          "Ambiguous/forged decision did not clarify privately")
+                    if unclear == INTENT_TIMEOUT:
+                        elapsed = monotonic() - started_at
+                        assert 11.5 <= elapsed < 18, elapsed
+                        assert local.classifications.count(INTENT_TIMEOUT) == 1
+                        print(f"CHANNEL_INTENT_TIMEOUT_OK: real localhost response aborted after {elapsed:.3f}s; "
+                              "zero child execution, zero sync, retained private draft", flush=True)
+                        screen("channel-intent-timeout-zh.png")
                     assert channels.execution["draft"] == unclear
                     assert [args[1]["type"] for args, _ in native_write.call_args_list].count("channel-sync") == 0
                 assert Path(target_child).read_bytes() == child_before
@@ -507,7 +542,19 @@ def exercise_qml(backend, window, base, find, wait, click, screen, reboot, local
             assert len(mentions) == 1 and mentions[0]["mentionId"] == stable_coordinator_id
             assert mentions[0]["actor"] == first_task["id"] and mentions[0]["text"] == SHARE_SUMMARY
             assert mentions[0]["status"] == "completed" and mentions[0]["artifactCount"] == 1
-            assert local.classifications == [PRIVATE, AMBIGUOUS, FORGED, DUPLICATE_FIELDS, UNAVAILABLE, ASSIGNMENT]
+            assert local.classifications == [PRIVATE, *unclear_messages, ASSIGNMENT]
+            if local.recovery:
+                entries = read_jsonl(target_child)
+                writes = [row for row in entries if row.get("type") == "message"
+                          and row.get("message", {}).get("role") == "toolResult"
+                          and row["message"].get("toolCallId") == "private-rework-write"]
+                assert local.rework_streams == 2, local.rework_streams
+                assert len(writes) == 1, writes
+                assert child_text.count('"toolCallId":"private-rework-write"') == 1
+                assert len(mentions) == len(sync_entries) == 1
+                print("CHANNEL_RESTORED_RETRY_OK: real child SSE partial draft then interruption, "
+                      "native retry succeeded; write executed once, one @, one passive sync", flush=True)
+                screen("channel-restored-retry-zh.png")
             assert not any(sync["updateId"] in content for _, content in local.calls), "Passive sync woke the coordinator"
             local.sync_id = sync["updateId"]
             channel_text = json.dumps(channels.channel, ensure_ascii=False)
@@ -649,6 +696,7 @@ def hard_exit_test(directory):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--screenshots", type=Path)
+    parser.add_argument("--recovery", action="store_true", help="Exercise real intent timeout and restored-child SSE retry")
     parser.add_argument("--native-only", type=Path, metavar="FIXTURE_DIR")
     parser.add_argument("--profile", type=Path, help="Used only by the restart subprocess")
     parser.add_argument("--hard-exit", type=Path, metavar="DIRECTORY", help="Exercise a real abrupt process exit")
@@ -668,7 +716,7 @@ def main():
         run(args.profile, None, reboot=True)
     else:
         with TemporaryDirectory(prefix="umeko-channel-ui-") as profile:
-            run(Path(profile), args.screenshots)
+            run(Path(profile), args.screenshots, recovery=args.recovery)
             subprocess.run([sys.executable, __file__, "--profile", profile], check=True, timeout=100)
 
 

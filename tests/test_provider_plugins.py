@@ -224,6 +224,51 @@ class ProviderPluginTests(unittest.TestCase):
         self.assertEqual(self.manager.rows[0]["models"], [])
         self.assertEqual(self.controller.config["selectedModel"], "")
 
+    def test_generation_zip_accounts_keep_models_separate_and_run_all_three_methods(self):
+        url = QUrl.fromLocalFile(str(self.archive)).toString()
+        self.assertFalse(self.manager.importGenerationZip(url, 'image'))
+        self.assertFalse(self.manager.rows)
+
+        manifest_path = self.folder / 'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        manifest['generationCapabilities'] = ['image', 'speech', 'video']
+        manifest_path.write_text(json.dumps(manifest))
+        source = self.folder / 'scripts/provider.py'
+        methods = r'''
+    def generate_image(self, model, prompt, parameters):
+        return [{"data": b"\x89PNG\r\n\x1a\nfixture", "mimeType": "image/png"}]
+    def generate_speech(self, model, text, parameters):
+        assert "voice" not in parameters
+        return [{"data": b"fixture audio", "mimeType": "audio/mpeg"}]
+    def generate_video(self, model, prompt, parameters, on_progress=None):
+        return [{"data": b"\0\0\0\x18ftypmp42fixture", "mimeType": "video/mp4"}]
+'''
+        source.write_text(source.read_text().replace('def create_provider', methods + '\ndef create_provider'))
+        pack_package(self.folder, self.archive)
+        identifier = self.manager.importGenerationZip(url, 'image')
+        self.assertTrue(identifier, self.notices)
+        self.login(identifier)
+        self.assertEqual(self.controller.gateway.models(), [])
+        self.assertEqual(self.manager.chatRows, [])
+        for kind, mime in [('image', 'image/png'), ('speech', 'audio/mpeg'), ('video', 'video/mp4')]:
+            with self.subTest(kind=kind):
+                model = kind + '-fixture'
+                self.assertTrue(self.manager.saveGenerationModels(identifier, kind, json.dumps([model])), self.notices)
+                self.assertTrue(self.controller.saveMultimodalSettings(json.dumps({
+                    kind: {'providerId': identifier, 'model': model},
+                })), self.notices)
+                prompt = 'text' if kind == 'speech' else 'prompt'
+                result = self.controller.gateway.generate({'kind': kind, prompt: 'Offline fixture'})
+                self.assertEqual((result['model'], result['items'][0]['mimeType']), (model, mime))
+        self.manager.refreshModels(identifier)
+        self.wait(identifier)
+        self.assertEqual(self.controller.multimodalProviders[0]['models']['speech'], ['speech-fixture'])
+        self.assertTrue(self.manager.saveGenerationModels(identifier, 'video', '[]'))
+        self.assertEqual(self.controller.multimodalPreferences['video']['providerId'], '')
+        self.assertEqual(self.controller.multimodalPreferences['image']['providerId'], identifier)
+        self.manager.remove(identifier)
+        self.assertTrue(all(not row['providerId'] for row in self.controller.multimodalPreferences.values()))
+
     def test_gateway_preserves_tool_history_and_supplies_empty_assistant_content(self):
         provider_id = self.install()
         self.login(provider_id)

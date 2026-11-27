@@ -6,7 +6,7 @@ import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-pol
 import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, manageResources, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
-import { NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
+import { GATEWAY_CONTINUATION_DELAYS, GATEWAY_HTTP_IDLE_TIMEOUT_MS, GATEWAY_TIMEOUT_MARKER, NETWORK_RETRY, buildStagedContinuation, normalizeStreamMaxRetries, retryOmissions } from "./network-retry.mjs";
 import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { DESKTOP_PI_PROMPT, addMcpFromInput, createPiCommandController, piCommandsEnabled } from "./pi-commands.mjs";
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, REPLY_TO_GROUPCHAT, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
@@ -16,7 +16,7 @@ import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResou
 import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
-import { createSandboxPreparation, sandboxCommand } from "./windows-sandbox.mjs";
+import { createSandboxPreparation, prepareSandboxSearch, resolveLocalBash, sandboxCommand, windowsShellHints } from "./windows-sandbox.mjs";
 import { createWindowsSandboxMcp } from "./windows-sandbox-mcp.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
@@ -31,7 +31,7 @@ import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { constants, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter, relative, isAbsolute } from "node:path";
@@ -50,6 +50,25 @@ process.env.NO_PROXY = [process.env.NO_PROXY || process.env.no_proxy || "", "127
 process.env.no_proxy = process.env.NO_PROXY;
 installProviderPolicy();
 const Pi = await import("@earendil-works/pi-coding-agent");
+const undici = await import("undici");
+const originalFetch = globalThis.fetch;
+let gatewayOrigin = "";
+let gatewayDispatcher = null;
+function configureGatewayFetch(gatewayUrl) {
+  gatewayOrigin = new URL(gatewayUrl).origin;
+  if (gatewayDispatcher) return;
+  // Keep undici's loopback hop open while the local gateway enforces each provider's streamIdleTimeoutMs.
+  gatewayDispatcher = new undici.Agent({ headersTimeout: 0, bodyTimeout: 0 });
+  gatewayDispatcher.on?.("error", () => {});
+  globalThis.fetch = function(input, init) {
+    try {
+      if ((typeof input === "string" || input instanceof URL) && new URL(input).origin === gatewayOrigin && !init?.dispatcher) {
+        return undici.fetch(input, { ...init, dispatcher: gatewayDispatcher });
+      }
+    } catch {}
+    return originalFetch(input, init);
+  };
+}
 const { isRetryableAssistantError, isContextOverflow } = await import("@earendil-works/pi-ai/compat");
 const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", entry));
@@ -92,6 +111,8 @@ globalThis[Symbol.for("umeko:shell-environment")] = (name, env, config) =>
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, UMEKO_TOOL, "background_job"];
 const remoteTools = ["remote_command", "remote_files", "remote_network"];
 const applyPatchEnabled = model => config?.models?.some(row => row.id === model?.id && row.applyPatch === true) === true;
+const streamMaxRetriesFor = modelId => normalizeStreamMaxRetries(config?.models?.find(row => row.id === modelId)?.streamMaxRetries);
+globalThis[Symbol.for("umeko:stream-retry-policy")] = { getMaxRetries: () => streamMaxRetriesFor(selectedModel?.id || config?.model) };
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const bashHost = process.env.UMEKO_BASH_JOB_HOST;
@@ -107,6 +128,17 @@ const sandboxPreparation = createSandboxPreparation({
   language: () => permissionPolicy.language,
 });
 const waitForWindowsSandbox = sandboxPreparation.wait;
+const bundledBashPreparation = createSandboxPreparation({
+  getPolicy: () => windowsSandbox,
+  required: policy => policy?.bundledGitBash,
+  request: () => emit({ type: "windows_sandbox_prepare", bundledBash: true }),
+});
+const getBashConfig = (shellPath, signal) => resolveLocalBash({ shellPath, getShellConfig, policy: windowsSandbox,
+  prepareBundle: bundledBashPreparation.wait, signal });
+if (process.platform === "win32") {
+  globalThis[Symbol.for("umeko:bash-config")] = getBashConfig;
+  globalThis[Symbol.for("umeko:shell-hints")] = name => " " + windowsShellHints(name);
+}
 function createBridgeSandboxMcp(loadConfig) {
   return createWindowsSandboxMcp({
     createExtension: Pi.createMcpExtension,
@@ -118,7 +150,7 @@ function createBridgeSandboxMcp(loadConfig) {
         const { command, args = [], cwd: directory = '.' } = server.config;
         const cwd = resolve(work, expandHome(directory));
         const invocation = sandboxCommand({ file: expandHome(command), args: args.map(expandHome), cwd,
-          workspace: work, policy });
+          workspace: work, policy, stdinOpen: true });
         server = { ...server, config: { ...server.config, command: invocation.file, args: invocation.args, cwd } };
       }
       return createDefaultTransport(server, work, auth);
@@ -157,26 +189,9 @@ function runCommandSession(request) {
 }
 
 globalThis[Symbol.for("umeko:bash-job")] = runCommandSession;
-globalThis[Symbol.for("umeko:search-command")] = async (file, args, cwd, workspace, signal) => {
-  if (process.platform !== "win32" || !windowsSandbox?.enabled) return { file, args, cwd };
-  const { policy } = await waitForWindowsSandbox(signal);
-  if (!policy?.enabled) return { file, args, cwd };
-  const work = config?.workspace || config?.defaultCwd || workspace;
-  // The restricted account may be unable to traverse the installation path.
-  // Stage the pinned binary in the existing, sandbox-writable temp directory.
-  const executable = join(bundledBin, basename(file).replace(/\.exe$/i, "") + ".exe");
-  if (!existsSync(executable)) throw new Error("The Windows sandbox could not find the packaged search tool. Use a complete Umeko package.");
-  const staged = join(policy.temp, `search-${randomUUID()}-${basename(executable)}`);
-  copyFileSync(executable, staged, constants.COPYFILE_EXCL);
-  const cleanup = () => { try { rmSync(staged, {force: true}); } catch { /* A transient Windows handle may still be open. */ } };
-  try {
-    return { ...sandboxCommand({ file: staged, args, cwd: cwd || work, workspace: work, policy }),
-      cwd: cwd || work, windowsHide: true, cleanup };
-  } catch (error) {
-    cleanup();
-    throw error;
-  }
-};
+globalThis[Symbol.for("umeko:search-command")] = (file, args, cwd, workspace, signal) =>
+  prepareSandboxSearch({ file, args, cwd, workspace: config?.workspace || config?.defaultCwd || workspace,
+    policy: windowsSandbox, bundledBin, signal });
 const umekoControl = createUmekoControl({
   emit,
   getSandbox: () => windowsSandbox,
@@ -223,6 +238,7 @@ function taskDelivery(source, id, items, failed = 0) {
   if (trackingTask) emit({ type: "task_delivery", source, id, items, failed });
 }
 const compactionFailures = new WeakMap();
+const gatewayContinuations = new WeakMap();
 const promptControllers = new WeakMap();
 const loopReview=createLoopReview({emit});
 const widgetMessages=createWidgetMessages({getSession:()=>runtime?.session,emit,prepareGroupChat: enableGroupChatTool});
@@ -231,6 +247,7 @@ const QUOTA_MARKER = "[Umeko:model_quota]";
 let checkpointLocked = false;
 const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked, host: bashHost, hostScript: bashHostScript,
   waitForSandbox: waitForWindowsSandbox,
+  getBashConfig,
   getShellPath: ctx => shellSnapshots.shellPath(ctx?.sessionManager?.getSessionId()),
   getEnvironment: (ctx, shellPath, name) => shellSnapshots.environment(name, ctx?.sessionManager?.getSessionId(), null, shellPath),
   onCleanup(sessionId, job) {
@@ -369,6 +386,16 @@ async function bindSession(session) {
   let publishedFile = existsSync(session.sessionManager.getSessionFile() || "");
   let retryState = {}, retryTimer, retryAssistant = false;
   const retry = state => { retryState = state; emit({ type: "network_retry", ...state }); };
+  const publishMessage = message => {
+    const error = message.stopReason === "aborted" ? "" : message.errorMessage || "";
+    emit({ type: "message", role: message.role, text: textOf(message.content),
+      thinking: thinkingOf(message.content), stopReason: message.stopReason || "",
+      quotaExhausted: error.includes(QUOTA_MARKER),
+      error: error.replace(QUOTA_MARKER, "").replace(GATEWAY_TIMEOUT_MARKER, "").trim(),
+      model: message.model, timestamp: message.timestamp });
+  };
+  const continuation = { attempts: 0, inFlight: false, pending: null, drafts: null, retry, publishMessage };
+  gatewayContinuations.set(session.sessionManager, continuation);
   let lastContext = "";
   const publishContext = () => {
     const usage = contextUsage(session), serialized = JSON.stringify(usage);
@@ -386,6 +413,7 @@ async function bindSession(session) {
       .filter(([name, value]) => JSON.stringify(result[name]) === value).map(([name]) => name);
     configured._umeko_reasoning_effort = reasoningEffort;
     configured._umeko_image_session = session.sessionManager.getSessionId();
+    if (continuation.inFlight) configured._umeko_gateway_continuation = true;
     delete configured.reasoning_effort;
     if (reasoningEffort !== "off") configured.reasoning_effort = reasoningEffort;
     return configured;
@@ -393,7 +421,20 @@ async function bindSession(session) {
   session.agent.onPayload = configurePayload;
   const httpRetryBoundary = bindHttpRetryBoundary(session);
   const unbind = session.subscribe(event => {
-    httpRetryBoundary.observe(event);
+    const endedAssistant = event.type === "message_end" && event.message.role === "assistant";
+    const message = endedAssistant ? event.message : null;
+    const recoverable = message?.stopReason === "error" &&
+      (continuation.inFlight || message.errorMessage?.includes(GATEWAY_TIMEOUT_MARKER));
+    if (endedAssistant) continuation.inFlight = false;
+    httpRetryBoundary.observe(event, recoverable);
+    if (recoverable && continuation.attempts < GATEWAY_CONTINUATION_DELAYS.length &&
+        !closing && !blockedSessions.has(session)) continuation.pending = message;
+    if (event.type === "agent_settled") {
+      continuation.attempts = 0;
+      continuation.inFlight = false;
+      continuation.pending = null;
+      continuation.drafts = null;
+    }
     if (event.type === "message_end" && ["user", "assistant"].includes(event.message.role)) {
       // Pi persists after notifying listeners. Read the new leaf in the next
       // microtask, after that append, without rebuilding its complete branch.
@@ -423,13 +464,18 @@ async function bindSession(session) {
       inputQueue.sync(event.steering, event.followUp);
     }
     if (event.type === "message_start" && event.message.role === "user") emit({ type: "user_start", text: textOf(event.message.content), timestamp: event.message.timestamp });
-    // Like Pi's interactive UI, replace the retry indicator when the next
-    // attempt starts; auto_retry_end arrives only after the assistant finishes.
-    // Keep draft replacement separate from the indicator's visibility.
-    if (["turn_start", "summarization_retry_attempt_start"].includes(event.type) && retryState.active) {
+    // Keep the retry indicator visible as "Reconnecting..." while the retry
+    // request is in flight, then clear it right before the assistant stream starts.
+    if (event.type === "summarization_retry_attempt_start" && retryState.active) {
       clearTimeout(retryTimer); retry({ active: false });
     }
+    if (event.type === "turn_start" && retryState.active && retryState.waiting) {
+      clearTimeout(retryTimer); retry({ ...retryState, waiting: false });
+    }
     if (event.type === "message_start" && event.message.role === "assistant") {
+      if (retryState.active) {
+        clearTimeout(retryTimer); retry({ active: false });
+      }
       emit({ type: "assistant_start", retry: retryAssistant, timestamp: event.message.timestamp });
       retryAssistant = false;
     }
@@ -440,18 +486,16 @@ async function bindSession(session) {
       args: event.toolName === ANALYZE_IMAGE ? {...event.args,model:auxiliaryVision.label(),provider:auxiliaryVision.provider()} : event.args, result: event.type === "tool_execution_end" ? textOf(event.result?.content).slice(0,8192) : undefined,
       media: event.type === "tool_execution_end" ? chatboxItems(event.toolName, {...event.result, isError: event.isError}) : undefined,
       video: event.toolName === "video_gen" ? event.partialResult?.details?.video : undefined,
+      generationPending: event.type === "tool_execution_update" &&
+        (event.toolName === "image_gen" || event.toolName === "voice_gen") &&
+        event.partialResult?.details?.generationPending === true ? true : undefined,
       patchFiles: event.toolName === APPLY_PATCH && event.type === "tool_execution_end" && !event.isError ? event.result?.details?.patchFiles : undefined,
       taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
-    const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < NETWORK_RETRY.maxRetries &&
+    const activeMaxRetries = session.settingsManager?.getRetrySettings?.()?.maxRetries ?? streamMaxRetriesFor(session.model?.id);
+    const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < activeMaxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
-    if (event.type === "message_end" && !willRetry) {
-      const error = event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "";
-      emit({type: "message", role: event.message.role, text: textOf(event.message.content),
-        thinking: thinkingOf(event.message.content), stopReason: event.message.stopReason || "",
-        quotaExhausted: error.includes(QUOTA_MARKER), error: error.replace(QUOTA_MARKER, "").trim(),
-        model: event.message.model, timestamp: event.message.timestamp});
-    }
+    if (event.type === "message_end" && !willRetry && continuation.pending !== event.message) publishMessage(event.message);
     if (event.type === "compaction_start") startCompaction(event.reason);
     if (event.type === "compaction_end") finishCompaction(event);
     if (["auto_retry_start", "summarization_retry_scheduled"].includes(event.type)) {
@@ -462,7 +506,8 @@ async function bindSession(session) {
     }
     if (["auto_retry_end", "summarization_retry_finished"].includes(event.type)) {
       if (event.type === "auto_retry_end") retryAssistant = false;
-      clearTimeout(retryTimer); retry({ active: false });
+      clearTimeout(retryTimer);
+      if (retryState.active) retry({ active: false });
     }
     if (["entry_appended", "message_end", "compaction_end", "agent_end"].includes(event.type)) publishContext();
   });
@@ -471,6 +516,7 @@ async function bindSession(session) {
     session.agent.beforeToolCall = originalBeforeToolCall;
     session.agent.prepareRequest = originalPrepareRequest;
     compactionFailures.delete(session);
+    gatewayContinuations.delete(session.sessionManager);
     groupChatSessions.delete(session);
     clearTimeout(retryTimer);
     httpRetryBoundary.close();
@@ -603,6 +649,60 @@ function outputContinuationExtension(pi) {
   });
 }
 
+function gatewayContinuationExtension(pi) {
+  pi.on("turn_end", async (event, ctx) => {
+    const state = gatewayContinuations.get(ctx.sessionManager);
+    if (!state?.pending || state.pending !== event.message) return;
+    state.pending = null;
+    if (ctx.signal?.aborted || closing) return;
+    // A user message queued at the Pi boundary takes precedence over recovery.
+    if (ctx.hasPendingMessages()) {
+      state.publishMessage(event.message);
+      return;
+    }
+    const delayMs = GATEWAY_CONTINUATION_DELAYS[state.attempts];
+    state.retry({ active: true, waiting: true, continuation: true, attempt: state.attempts + 1,
+      maxAttempts: GATEWAY_CONTINUATION_DELAYS.length, delayMs, startedAt: Date.now() });
+    const signal = ctx.signal;
+    await new Promise(resolve => {
+      const timer = setTimeout(finish, delayMs);
+      function finish() {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", finish);
+        resolve();
+      }
+      signal?.addEventListener("abort", finish, { once: true });
+    });
+    state.retry({ active: false });
+    if (signal?.aborted || closing) return;
+    if (ctx.hasPendingMessages()) {
+      state.publishMessage(event.message);
+      return;
+    }
+    const staged = buildStagedContinuation(ctx.sessionManager.getBranch());
+    state.drafts = {
+      targetId: event.messageEntryId,
+      timestamp: event.message.timestamp,
+      entries: [
+        { type: "context_edit", targetId: event.messageEntryId, replacement: null },
+        { type: "custom_message", customType: "umeko-gateway-continue-context", display: false, content: staged.content },
+        { type: "custom_message", customType: "umeko-gateway-continue", display: false, content: "continue" },
+      ],
+    };
+  });
+  pi.on("agent_before_settle", (event, ctx) => {
+    const state = gatewayContinuations.get(ctx.sessionManager);
+    if (event.outcome !== "error" || !state?.drafts) return;
+    const { targetId, timestamp, entries } = state.drafts;
+    state.drafts = null;
+    if (closing || ctx.signal?.aborted) return;
+    state.attempts++;
+    state.inFlight = true;
+    emit({ type: "gateway_continuation", targetId, timestamp });
+    return { continue: true, entries };
+  });
+}
+
 async function reloadSession(session) {
   await session.reload();
   exposeNativeTools(session);
@@ -699,7 +799,7 @@ async function restoreSubagentSession(child, context, customTools, channel) {
     "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。", SUBAGENT_COMPLETION_HINT);
   const native = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
   const settings = await sessionResourceSettings(Pi, {...config,cwd:manager.getCwd()}, native);
-  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
+  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),httpIdleTimeoutMs:GATEWAY_HTTP_IDLE_TIMEOUT_MS,retry:{...NETWORK_RETRY,maxRetries:streamMaxRetriesFor(model?.id),provider:{maxRetries:0}},cacheWarming:"off"});
   // New children persist their exact resolved prompt and allowlist. Older
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
@@ -773,6 +873,7 @@ async function init(input) {
   configureUmekoDocs({directory: input.docsDir || join(input.agentDir, "cache", "umeko-docs"), models: input.models});
   reasoningEffort = validEffort(input.reasoningEffort) ? input.reasoningEffort : "off";
   setGateway(input.gateway);
+  configureGatewayFetch(input.gateway);
   process.env.PI_CODING_AGENT_DIR = input.agentDir;
   for (const [name, value] of Object.entries(input.mcpEnv || {})) if (!/^NODE_|^(HTTP|HTTPS|ALL)_PROXY$|_(AK|SK|SECRET_KEY|SECURITY_TOKEN)$/i.test(name)) process.env[name] = value;
   const cwd = resolve(input.workspace || input.defaultCwd);
@@ -818,7 +919,8 @@ async function init(input) {
       ];
     }
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
-      retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
+      httpIdleTimeoutMs: GATEWAY_HTTP_IDLE_TIMEOUT_MS,
+      retry: { ...nativeSettings.retry, ...NETWORK_RETRY, maxRetries: streamMaxRetriesFor(selectedModel?.id || input.model), provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(remoteWorkspaceEnabled ? remoteTools : []), ...(settingsManager.getDefaultTools() || [])])],
       codemode: { ...nativeSettings.codemode, mode: "on" },
       cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
@@ -829,12 +931,18 @@ async function init(input) {
       : input.globalCoordinator || toolSelection(input.piCapabilities, { name: UMEKO_TOOL, source: "builtin:umeko-control" });
     const piPrompt = desktopControlPrompt && canRunPiCommand() ? DESKTOP_PI_PROMPT + " " : "";
     const controlPrompt = desktopControlPrompt ? UMEKO_PROMPT + " " : "";
+    const shellPrompt = process.platform === "win32" ? [
+      "The local operating system is Windows.",
+      settings.getShellPath() ? "The bash tool uses the shell selected in settings." : "The bash tool uses Git Bash.",
+      windowsShellHints("bash"), windowsShellHints("powershell"),
+    ].join(" ") : "";
     const promptController = await createSystemPromptController({ cwd, agentDir,
       stateDir: input.systemPromptStateDir || join(input.agentDir, "umeko-system-prompts"),
       enabled: config.systemPromptEnabled === true, widgetPrompts: config.widgetPrompts || [],
       appendSources: [
         { id: "desktop-pi", name: "Pi 操作说明", text: piPrompt },
         { id: "desktop-control", name: "桌面能力说明", text: controlPrompt },
+        ...(shellPrompt ? [{ id: "windows-shell", name: "Windows shell", text: shellPrompt }] : []),
         { id: "language", name: "回复语言", text: "Reply in the user's language." },
         { id: "instructions", name: "自定义指令", text: input.agent?.instructions || "" },
       ] });
@@ -845,7 +953,7 @@ async function init(input) {
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
         ...(coordinatorSkills ? coordinatorSkills.resourceOptions : await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager)),
         ...(selectedExtensions ? {noExtensions:true,additionalExtensionPaths:selectedExtensions} : {}),
-        appendSystemPrompt: [piPrompt + controlPrompt + "Reply in the user's language.", input.agent?.instructions || ""],
+        appendSystemPrompt: [piPrompt + controlPrompt + "Reply in the user's language.", shellPrompt, input.agent?.instructions || ""],
         extensionFactories: [
           ...(input.cowork ? [
             {name:"cowork-tools",hidden:true,replaceable:false,factory:pi => coworkTools(pi, coworkToolNames(input), webNetwork)},
@@ -889,6 +997,7 @@ async function init(input) {
           { name: "subagents", builtin: true, replaceable: true, factory: pi =>
             subagents.extension(pi, { worktrees: input.agent?.automaticWorktrees === true && !input.globalCoordinator && !input.cowork }) },
           { name: "output-continuation", hidden: true, replaceable: false, factory: outputContinuationExtension },
+          { name: "gateway-continuation", hidden: true, replaceable: false, factory: gatewayContinuationExtension },
           { name: "codemode", builtin: true, replaceable: true, factory: Pi.createCodemodeExtension() },
           { name: "tool-search", builtin: true, replaceable: true, factory: Pi.createToolSearchExtension() },
           ...(!input.terminalOwned ? [{ name: "mcp", builtin: true, replaceable: true, factory: input.cowork
@@ -1058,11 +1167,17 @@ async function capabilities() {
 }
 
 async function selectModel(alias) {
-  if (!alias || runtime.session.model?.id === alias) return;
+  if (!alias) return;
+  const maxRetries = streamMaxRetriesFor(alias);
+  if (runtime.session.model?.id === alias) {
+    runtime.session.settingsManager?.applyOverrides?.({ retry: { ...NETWORK_RETRY, maxRetries, provider: { maxRetries: 0 } } });
+    return;
+  }
   const model = modelRuntime.getModel("umeko", alias);
   if (!model) throw new Error("模型未配置");
   await runtime.session.setModel(model);
   selectedModel = model;
+  runtime.session.settingsManager?.applyOverrides?.({ retry: { ...NETWORK_RETRY, maxRetries, provider: { maxRetries: 0 } } });
   exposeNativeTools(runtime.session);
 }
 
@@ -1279,6 +1394,7 @@ async function execute(input) {
   if (input.type === "windows_sandbox") {
     const previous = windowsSandbox;
     windowsSandbox = input.policy;
+    bundledBashPreparation.changed();
     sandboxPreparation.changed();
     if (["enabled", "allowNetwork", "elevated", "gitRoot"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
       shellSnapshots.invalidate();
@@ -1383,6 +1499,17 @@ async function execute(input) {
         content: "Continue the same task after the model change. Use the conversation and existing tool results to pick up where the previous model stopped. Do not repeat completed actions.",
       }, {triggerTurn: true});
     }
+    else if (input.type === "staged-continue") {
+      blockedSessions.delete(runtime.session);
+      const continuation = buildStagedContinuation(runtime.session.sessionManager.getBranch());
+      emit({ type: "status", text: "正在分阶段继续" });
+      await runtime.session.sendCustomMessage({
+        customType: "umeko-staged-continue",
+        display: false,
+        content: continuation.content,
+        details: continuation.details,
+      }, { triggerTurn: true });
+    }
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
     else if (input.type === "subagent-open") {
@@ -1432,6 +1559,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   sandboxPreparation.close();
+  bundledBashPreparation.close();
   loopReview.clear();
   umekoControl.clear();
   remoteEnvironments.dispose();
@@ -1440,6 +1568,7 @@ async function shutdown() {
   clearDialogs();
   await backgroundJobs.disposeAll();
   await runtime?.dispose();
+  await gatewayDispatcher?.close?.();
   unsubscribe?.();
   rl?.close();
   process.stdin.pause(); process.stdin.unref?.();

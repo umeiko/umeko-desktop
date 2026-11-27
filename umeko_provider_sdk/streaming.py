@@ -95,7 +95,11 @@ def response_events(response):
         read = getattr(response, 'read1', response.read)
         while part := read(8192):
             yield part
-    yield from iter_sse(chunks())
+    mark_event = getattr(response, 'mark_event', None)
+    for event in iter_sse(chunks()):
+        if event is not None and mark_event is not None:
+            mark_event()
+        yield event
 
 
 class _Thinking:

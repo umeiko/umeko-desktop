@@ -3,7 +3,7 @@
 import { Type } from "typebox";
 import { open, realpath, unlink } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { deliverChatboxItems } from "./chatbox.mjs";
+import { deliverChatboxItems, isInlineAudio } from "./chatbox.mjs";
 
 const optionalString = maxLength => Type.Optional(Type.String({minLength: 1, maxLength}));
 const formats = values => Type.Optional(Type.Union(values.map(value => Type.Literal(value))));
@@ -148,6 +148,9 @@ export function createGenerationExtension({getConfig, fetchImpl = globalThis.fet
             throw new Error("output_filename extension must match format");
           if (kind !== "video" && suppliedExtension && !overrides.format) overrides.format = filenameFormat;
           signal?.throwIfAborted();
+          if (kind === "image" || kind === "speech") {
+            onUpdate?.({content: [], details: {generationPending: true}});
+          }
           const response = await fetchImpl(new URL("umeko/generate", config.gateway), {
             method: "POST", headers: {"Authorization": `Bearer ${config.token}`, "Content-Type": "application/json"},
             body: JSON.stringify({kind, ...overrides}), signal,
@@ -181,7 +184,7 @@ export function createGenerationExtension({getConfig, fetchImpl = globalThis.fet
               try { await handle.writeFile(item.data, {signal}); }
               finally { await handle.close(); }
               items.push({path, name: basename(path), title: basename(path), caption: "",
-                kind: kind === "image" ? "image" : "file", bytes: item.data.length});
+                kind: kind === "image" ? "image" : kind === "speech" && isInlineAudio(path) ? "audio" : "file", bytes: item.data.length});
             }
             signal?.throwIfAborted();
             const delivery = deliverChatboxItems(pi, id, items, {paths, provider: result.provider, model: result.model});

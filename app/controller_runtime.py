@@ -23,10 +23,19 @@ STOP_RECEIPT_DEADLINE_MS = 2750
 STOP_TERMINAL = {'done': 'stopped', 'failed': 'stop_failed', 'timed_out': 'stop_timed_out'}
 
 
+def _clear_network_activity(record):
+    start = record.network_activity_start
+    if start is not None:
+        record.messages[start:] = [row for row in record.messages[start:]
+                                   if not row.get('networkActivityTemporary')]
+        record.network_activity_start = None
+    return start
+
+
 class PiControllerMixin:
     def _turn_status(self, record):
         """Execution is live only in this process; terminal UI metadata survives reopening."""
-        if record.busy and record.action in ('prompt', 'widget-notify') and record.prompt_started is not None:
+        if record.busy and record.action in ('prompt', 'widget-notify', 'resume-model', 'staged-continue') and record.prompt_started is not None:
             elapsed = max(0, time.monotonic() - record.prompt_started)
             state = getattr(record, 'stop_state', '')
             return {'state': 'stopping' if record.cancelled else 'running', 'stopStage': state, 'elapsed': elapsed,
@@ -42,7 +51,7 @@ class PiControllerMixin:
         return {'state': state}
 
     def _finish_turn(self, record, failed=False):
-        if record.action not in ('prompt', 'widget-notify') or record.prompt_started is None:
+        if record.action not in ('prompt', 'widget-notify', 'resume-model', 'staged-continue') or record.prompt_started is None:
             return
         stop_state = getattr(record, 'stop_state', '')
         state = stop_state if stop_state in STOP_TERMINAL.values() else 'stopped' if record.cancelled else 'failed' if failed or record.failed else 'finished'
@@ -330,11 +339,11 @@ class PiControllerMixin:
         record.action, record.failed, record.cancelled = action, False, False
         record.stop_token = record.stop_state = record.stop_detail = ''
         record.pet_activity = 'thinking'
-        record.prompt_started = time.monotonic() if action in ('prompt','widget-notify','resume-model') else None
-        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
+        record.prompt_started = time.monotonic() if action in ('prompt', 'widget-notify', 'resume-model', 'staged-continue') else None
+        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify", "resume-model", "staged-continue") else "working"
         if getattr(self, '_reasoning_discovery', None):
             self._reasoning_discovery.update_activity()
-        record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
+        record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在分阶段继续" if action == "staged-continue" else "正在生成" if record.phase == "running" else "正在处理"
         payload = self._pi_command_payload(record, action, **values)
         try:
             if record.process:
@@ -516,7 +525,7 @@ class PiControllerMixin:
             return
         kind, visible = event.get("type"), record is self._view
         if kind == 'windows_sandbox_prepare':
-            self.windowsSandbox.prepare_for_command()
+            self.windowsSandbox.prepare_for_command(bundled_bash=event.get('bundledBash') is True)
             return
         if kind == 'remote_environment_state':
             self._remote_environments.observe(record.key, event)
@@ -527,8 +536,8 @@ class PiControllerMixin:
             record.ready, record.prewarming = True, False
             command, record.warm_command = record.warm_command, None
             if command:
-                record.phase = 'running' if record.action in ('prompt', 'compact', 'widget-notify') else 'working'
-                record.tool_status = '正在压缩上下文' if record.action == 'compact' else '正在生成' if record.phase == 'running' else '正在处理'
+                record.phase = 'running' if record.action in ('prompt', 'compact', 'widget-notify', 'resume-model', 'staged-continue') else 'working'
+                record.tool_status = '正在压缩上下文' if record.action == 'compact' else '正在分阶段继续' if record.action == 'staged-continue' else '正在生成' if record.phase == 'running' else '正在处理'
                 self._write_first_warm_command(record, command)
                 if visible:
                     self.chatChanged.emit()
@@ -618,8 +627,8 @@ class PiControllerMixin:
         elif kind == "ready":
             record.ready = True
             self._subagents.process_ready(record)
-            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
-            record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
+            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify", "resume-model", "staged-continue") else "working"
+            record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在分阶段继续" if record.action == "staged-continue" else "正在生成" if record.phase == "running" else "正在处理"
             if event.get("session"):
                 self._record_info(record, event["session"])
         elif kind == "session":
@@ -643,6 +652,8 @@ class PiControllerMixin:
             record.tail_characters += len(event['text'])
             transcript = True
         elif kind == "user_start":
+            if (start := _clear_network_activity(record)) is not None:
+                dirty, transcript = min(dirty, start), True
             text = event["text"]
             if record.optimistic_user:
                 record.optimistic_user = False
@@ -693,6 +704,8 @@ class PiControllerMixin:
                 record.tool_status = "正在压缩上下文" if record.compaction_running else ""
                 transcript = True
         elif kind == "message" and event.get("role") == "assistant":
+            if (start := _clear_network_activity(record)) is not None:
+                dirty, transcript = min(dirty, start), True
             if event.get('error') or event.get('stopReason') == 'error': record.failed = True
             # Steering aborts one assistant response before continuing the turn.
             # Only an explicit desktop stop marks the whole turn cancelled.
@@ -726,6 +739,11 @@ class PiControllerMixin:
                 if isinstance(event.get("args"), dict):
                     tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
+            if event['name'] in ('image_gen', 'voice_gen'):
+                if event['state'] != 'running':
+                    tool.pop('generationPending', None)
+                elif event.get('generationPending') is True and not record.cancelled:
+                    tool['generationPending'] = True
             if event['name'] == 'apply_patch' and event['state'] == 'done':
                 tool['patchFiles'] = patch_files(event.get('patchFiles'))
             if isinstance(event.get('video'), dict):
@@ -747,10 +765,43 @@ class PiControllerMixin:
                 tool["result"] = event["result"]
             transcript = True
         elif kind == "network_retry":
-            record.network_retry = event if event.get("active") else {}
+            record.network_retry = event if event.get("active") and not record.cancelled else {}
             if visible:
                 self.retryChanged.emit()
-            return
+            start = record.network_activity_start
+            retry_row = start is not None and start < len(record.messages) and record.messages[start].get('customType') == 'umeko-network-retry'
+            if record.network_retry:
+                if not retry_row:
+                    if (cleared := _clear_network_activity(record)) is not None:
+                        dirty = min(dirty, cleared)
+                    start = record.network_activity_start = len(record.messages)
+                    record.messages.append({'role': 'notice', 'text': '', 'error': False,
+                                            'customType': 'umeko-network-retry', 'networkActivityTemporary': True})
+                record.messages[start]['networkRetry'] = record.network_retry
+                dirty, transcript = min(dirty, start), True
+            elif retry_row:
+                _clear_network_activity(record)
+                dirty, transcript = min(dirty, start), True
+            else:
+                return
+        elif kind == "gateway_continuation":
+            if record.cancelled:
+                return
+            if (start := _clear_network_activity(record)) is not None:
+                dirty = min(dirty, start)
+            start = len(record.messages)
+            if record.messages:
+                last = record.messages[-1]
+                if last.get('role') == 'assistant' and not last.get('tools') and (
+                        (last.get('entryId') and last['entryId'] == event.get('targetId')) or
+                        (last.get('timestamp') and last['timestamp'] == event.get('timestamp'))):
+                    last['partialIncomplete'] = bool(last.get('text'))
+                    last['networkActivityTemporary'] = True
+                    start -= 1
+            record.network_activity_start = start
+            record.messages.append({'role': 'notice', 'text': '', 'error': False,
+                                    'customType': 'umeko-gateway-continuation', 'networkActivityTemporary': True})
+            dirty, transcript = min(dirty, start), True
         elif kind == "status":
             record.tool_status = event["text"]
         elif kind == "notice":
@@ -827,10 +878,17 @@ class PiControllerMixin:
                 self.changed.emit()
             transcript = True
         elif kind in ("done", "exit"):
+            if (start := _clear_network_activity(record)) is not None:
+                dirty, transcript = min(dirty, start), True
             # Pi alone writes JSONL. Resolve an unfinished live transition here;
             # cold readers derive the same failure from its missing terminal entry.
             for index, row in enumerate(record.messages):
                 resolved = compaction_status(row)
+                if any(tool.get('generationPending') for tool in resolved.get('tools', ())):
+                    resolved = {**resolved, 'tools': [
+                        {**{key: value for key, value in tool.items() if key != 'generationPending'}, 'state': 'error'}
+                        if tool.get('generationPending') else tool for tool in resolved['tools']
+                    ]}
                 if resolved is not row:
                     record.messages[index] = resolved
                     dirty = min(dirty, index)
@@ -880,7 +938,7 @@ class PiControllerMixin:
                         transcript = True
                     if visible:
                         self.toast.emit(message)
-            if was_busy and not record.global_agent and record.action == "prompt" and not record.cancelled and record.id:
+            if was_busy and not record.global_agent and record.action in ("prompt", "staged-continue") and not record.cancelled and record.id:
                 self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = not (visible and self._chat_visible)
                 self.store.save()
                 self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed, long_running)
@@ -915,6 +973,12 @@ class PiControllerMixin:
             record.stop_token, record.stop_state = token, 'stop_requested'
             record.network_retry = {}
             self.retryChanged.emit()
+            if (start := _clear_network_activity(record)) is not None:
+                record.body_dirty = True
+                previous = record.projection_dirty_from
+                record.projection_dirty_from = min(start, previous) if previous is not None else start
+                if record is self._view:
+                    self.transcriptChanged.emit()
             self._pool.write(record, {"type": "abort"})
             record.approval = {}
             self.approvalChanged.emit()

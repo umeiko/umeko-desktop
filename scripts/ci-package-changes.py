@@ -1,9 +1,21 @@
-"""Select Windows CI packages, with explicit full native builds for releases."""
+"""Select Windows CI packages and the native packages needed for stable releases."""
 from fnmatch import fnmatchcase
 import os
 import json
 import subprocess
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.project_info import VERSION
+from scripts.release_platforms import ALL_PLATFORMS, NATIVE_JOBS, select_platforms
+
+RUNNERS = {
+    'windows-x64': 'windows-2022',
+    'linux-x64': 'ubuntu-22.04',
+    'macos-arm64': 'macos-15',
+    'macos-x64': 'macos-15-intel',
+}
 
 PACKAGE_RESOURCES = (
     'app/icons/',
@@ -25,13 +37,13 @@ def needs_packages(paths):
     return any(is_package_input(path) for path in paths)
 
 
-def package_matrix(event, all_platforms, node_changed=False):
-    rows = [dict(name='Windows x64', runner='windows-2022', platform='windows-x64')]
-    if (event == 'workflow_dispatch' and all_platforms == 'true') or node_changed:
-        rows += [dict(name='Linux x64', runner='ubuntu-22.04', platform='linux-x64'),
-                 dict(name='macOS Apple Silicon', runner='macos-15', platform='macos-arm64'),
-                 dict(name='macOS Intel', runner='macos-15-intel', platform='macos-x64')]
-    return {'include': rows}
+def package_matrix(event, all_platforms, node_changed=False, *, version=VERSION):
+    mode = 'all' if event == 'workflow_dispatch' and all_platforms == 'true' else 'windows'
+    platforms = ALL_PLATFORMS if node_changed else select_platforms(mode, version)
+    return {'include': [
+        dict(name=NATIVE_JOBS[platform], runner=runner, platform=platform)
+        for platform, runner in RUNNERS.items() if platform in platforms
+    ]}
 
 
 def is_package_input(path):

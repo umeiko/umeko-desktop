@@ -7,7 +7,7 @@ const windows = process.platform === "win32";
 const cleanupDeadlineMs = 1_500;
 const clean = { cleanup: "done", remaining: [] };
 
-function launchWindowsHost({ host, hostScript, file, fileArgs, cwd, logPath, errPath, env }) {
+function launchWindowsHost({ host, hostScript, file, fileArgs, cwd, logPath, errPath, env, stdinOpen }) {
   const child = spawn(host, [...(hostScript ? [hostScript] : []), "--umeko-bash-job"], {
     cwd, env: { ...env, PYINSTALLER_RESET_ENVIRONMENT: "1" },
     windowsHide: true, stdio: ["pipe", "pipe", "ignore"],
@@ -47,7 +47,7 @@ function launchWindowsHost({ host, hostScript, file, fileArgs, cwd, logPath, err
     if (result.cleanup) finish({ ...result, code: result.exitCode,
       ...(Object.hasOwn(result, "error") ? { error: `Unable to start Windows command (${result.error ?? "unknown error"})` } : {}) });
   });
-  child.stdin.write(JSON.stringify({ args: [file, ...fileArgs], cwd, stdoutPath: logPath, stderrPath: errPath }) + "\n");
+  child.stdin.write(JSON.stringify({ args: [file, ...fileArgs], cwd, stdoutPath: logPath, stderrPath: errPath, stdinOpen }) + "\n");
 
   function terminate() {
     if (settled || stopping) return;
@@ -90,22 +90,22 @@ function terminateGroup(pid) {
 // Adapted from @alexlikevibe/pi-bg 2.3.0 src/spawn.ts (MIT).
 // Windows desktop sessions use the Job Object host above. Node-only callers
 // without the native host retain the standalone PID-tree implementation.
-function launchDirect({ file, fileArgs, cwd, logPath, errPath, env }) {
+function launchDirect({ file, fileArgs, cwd, logPath, errPath, env, stdinOpen }) {
   const outFd = openSync(logPath, "w");
   let errFd, child;
   try {
     errFd = openSync(errPath, "w");
-    child = spawn(file, fileArgs, { cwd, stdio: ["pipe", outFd, errFd], detached: !windows, windowsHide: true, env });
+    child = spawn(file, fileArgs, { cwd, stdio: [stdinOpen ? "pipe" : "ignore", outFd, errFd], detached: !windows, windowsHide: true, env });
   } finally {
     closeSync(outFd);
     if (errFd !== undefined) closeSync(errFd);
   }
-  child.stdin.on("error", () => {});
+  child.stdin?.on("error", () => {});
   let groupKilled = false;
   const exit = new Promise(resolve => {
     child.once("error", error => resolve({ code: 1, error: error.message, ...clean }));
     child.once("exit", (code, signal) => {
-      child.stdin.end();
+      child.stdin?.end();
       // On a natural exit the shell can leave descendants in its group.
       if (!windows && !groupKilled) {
         try { terminateGroup(child.pid); }
@@ -132,7 +132,7 @@ function launchDirect({ file, fileArgs, cwd, logPath, errPath, env }) {
   return {
     ready: child.pid ? Promise.resolve({ pid: child.pid }) : exit.then(() => undefined), exit, terminate,
     write: input => new Promise((resolve, reject) => {
-      if (child.stdin.destroyed) { reject(new Error("Command input closed")); return; }
+      if (!child.stdin || child.stdin.destroyed) { reject(new Error("Standard input is closed for this command.")); return; }
       child.stdin.write(input, error => error ? reject(error) : resolve());
     }),
   };
