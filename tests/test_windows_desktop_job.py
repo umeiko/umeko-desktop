@@ -15,10 +15,13 @@ from pathlib import Path
 from app.windows_job import contain_desktop_processes, handoff_creation_flag
 
 contain_desktop_processes()
-command = [sys.executable, '-B', 'plugin-runtime/worker.py']
-worker = subprocess.Popen(command, stdin=sys.stdin)
-installer = subprocess.Popen(command, stdin=sys.stdin, creationflags=handoff_creation_flag())
-Path(sys.argv[1]).write_text(f'{worker.pid} {installer.pid}', encoding='ascii')
+ready = Path(sys.argv[1])
+with ready.with_suffix('.reply').open('wb') as reply:
+    worker = subprocess.Popen(
+        [sys.executable, '-B', 'plugin-runtime/worker.py'], stdin=sys.stdin, stdout=reply)
+installer = subprocess.Popen(
+    [sys.executable, '-c', 'import time; time.sleep(60)'], creationflags=handoff_creation_flag())
+ready.write_text(f'{worker.pid} {installer.pid}', encoding='ascii')
 time.sleep(60)
 """
 
@@ -51,6 +54,16 @@ class WindowsDesktopJobTests(unittest.TestCase):
                         handles.append(_winapi.OpenProcess(
                             synchronize_and_terminate, False, int(pid)))
                     worker, installer = handles
+                    desktop.stdin.write(b'{"id":"liveness","operation":"unknown"}\n')
+                    desktop.stdin.flush()
+                    reply = ready.with_suffix(".reply")
+                    marker = b'"id": "liveness"'
+                    deadline = time.monotonic() + 5
+                    response = reply.read_bytes()
+                    while marker not in response and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                        response = reply.read_bytes()
+                    self.assertIn(marker, response)
                     self.assertEqual(_winapi.WaitForSingleObject(worker, 0), _winapi.WAIT_TIMEOUT)
                     desktop.kill()
                     desktop.wait(timeout=5)
