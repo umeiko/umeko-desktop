@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createSandboxPreparation, sandboxCommand, sandboxFailure } from '../runtime/windows-sandbox.mjs';
+import { createSandboxPreparation, prepareSandboxSearch, sandboxCommand, sandboxFailure } from '../runtime/windows-sandbox.mjs';
 import { registerCoworkLocalTools } from '../runtime/cowork-local.mjs';
 
 function fixture(t) {
@@ -55,6 +55,30 @@ test('standard-user profile runs with file isolation and reports network fallbac
   assert.match(sandboxFailure('non-elevated', true, 'PermissionError: [Errno 13] Permission denied'), /workspace/);
   assert.match(sandboxFailure('non-elevated', true, "fatal error - couldn't create signal pipe, Win32 error 5"), /set shell to powershell in background_job/);
   assert.equal(sandboxFailure('off', true, 'Permission denied'), undefined);
+});
+
+test('sandbox search retries temporary storage and launches the original arguments without Git Bash', async t => {
+  const input = fixture(t);
+  const bundledBin = join(input.workspace, '..', 'bin');
+  mkdirSync(bundledBin);
+  const binary = 'the packaged ripgrep';
+  writeFileSync(join(bundledBin, 'rg.exe'), binary);
+  writeFileSync(input.policy.temp, 'temporarily occupies the required directory');
+  const args = ['--json', '--', 'prefix test', '.'];
+  const launchPromise = prepareSandboxSearch({
+    ...input, bundledBin, file: 'rg', args, policy: { ...input.policy, elevated: false, preparing: true },
+  }, { platform: 'win32' });
+  const release = setTimeout(() => rmSync(input.policy.temp), 150);
+  t.after(() => clearTimeout(release));
+  const launch = await launchPromise;
+  const staged = launch.args.at(-args.length - 1);
+  assert.equal(launch.file, input.policy.launcher);
+  assert.equal(launch.args[0], 'run-search');
+  assert.equal(launch.level, 'non-elevated');
+  assert.deepEqual(launch.args.slice(-args.length), args);
+  assert.equal(readFileSync(staged, 'utf8'), binary);
+  launch.cleanup();
+  assert.equal(existsSync(staged), false);
 });
 
 test('standard-user Git Bash uses the packaged runtime inside the same native sandbox', t => {

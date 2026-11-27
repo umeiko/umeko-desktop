@@ -16,7 +16,7 @@ import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResou
 import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
-import { createSandboxPreparation, sandboxCommand } from "./windows-sandbox.mjs";
+import { createSandboxPreparation, prepareSandboxSearch, sandboxCommand } from "./windows-sandbox.mjs";
 import { createWindowsSandboxMcp } from "./windows-sandbox-mcp.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
@@ -31,9 +31,9 @@ import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
-import { constants, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir, homedir } from "node:os";
@@ -178,26 +178,9 @@ function runCommandSession(request) {
 }
 
 globalThis[Symbol.for("umeko:bash-job")] = runCommandSession;
-globalThis[Symbol.for("umeko:search-command")] = async (file, args, cwd, workspace, signal) => {
-  if (process.platform !== "win32" || !windowsSandbox?.enabled) return { file, args, cwd };
-  const { policy } = await waitForWindowsSandbox(signal);
-  if (!policy?.enabled) return { file, args, cwd };
-  const work = config?.workspace || config?.defaultCwd || workspace;
-  // The restricted account may be unable to traverse the installation path.
-  // Stage the pinned binary in the existing, sandbox-writable temp directory.
-  const executable = join(bundledBin, basename(file).replace(/\.exe$/i, "") + ".exe");
-  if (!existsSync(executable)) throw new Error("The Windows sandbox could not find the packaged search tool. Use a complete Umeko package.");
-  const staged = join(policy.temp, `search-${randomUUID()}-${basename(executable)}`);
-  copyFileSync(executable, staged, constants.COPYFILE_EXCL);
-  const cleanup = () => { try { rmSync(staged, {force: true}); } catch { /* A transient Windows handle may still be open. */ } };
-  try {
-    return { ...sandboxCommand({ file: staged, args, cwd: cwd || work, workspace: work, policy }),
-      cwd: cwd || work, windowsHide: true, cleanup };
-  } catch (error) {
-    cleanup();
-    throw error;
-  }
-};
+globalThis[Symbol.for("umeko:search-command")] = (file, args, cwd, workspace, signal) =>
+  prepareSandboxSearch({ file, args, cwd, workspace: config?.workspace || config?.defaultCwd || workspace,
+    policy: windowsSandbox, bundledBin, signal });
 const umekoControl = createUmekoControl({
   emit,
   getSandbox: () => windowsSandbox,

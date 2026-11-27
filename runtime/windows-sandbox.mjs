@@ -1,5 +1,8 @@
-import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, win32 } from 'node:path';
+import { closeSync, constants, existsSync, lstatSync, openSync, readFileSync, readSync, realpathSync, rmSync } from 'node:fs';
+import { copyFile, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import { basename, isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const helper = fileURLToPath(new URL('./bin/windows-sandbox/umeko-sandbox.exe', import.meta.url));
@@ -125,6 +128,46 @@ export function sandboxCommand({ file, args, cwd, env = process.env, workspace, 
     allowNetwork,
     notice,
   };
+}
+
+const searchPreparationRetries = [100, 350, 800];
+const transientSearchErrors = new Set(['EACCES', 'EBUSY', 'EEXIST', 'ENOENT', 'ENOTDIR', 'EPERM']);
+
+export async function prepareSandboxSearch({ file, args, cwd, workspace, policy, bundledBin, signal },
+  { platform = process.platform } = {}) {
+  if (platform !== 'win32' || !policy?.enabled) return { file, args, cwd };
+  // Search launches the packaged executable directly, so it can run while
+  // Git Bash is being prepared. The sandbox account may not see the app's
+  // install directory, so retain the existing staging into sandbox temp.
+  const name = basename(file).replace(/\.exe$/i, '') + '.exe';
+  const executable = join(bundledBin, name);
+  if (!existsSync(executable)) {
+    throw new Error('This Umeko installation is missing its search program. Install a complete Windows package.');
+  }
+  for (const retryDelay of [...searchPreparationRetries, undefined]) {
+    signal?.throwIfAborted();
+    const staged = join(policy.temp, 'search-' + randomUUID() + '-' + name);
+    const cleanup = () => { try { rmSync(staged, { force: true }); } catch { /* Windows may still have a file handle open. */ } };
+    try {
+      await mkdir(policy.temp, { recursive: true });
+      await copyFile(executable, staged, constants.COPYFILE_EXCL);
+    } catch (error) {
+      cleanup();
+      if (retryDelay !== undefined && transientSearchErrors.has(error.code)) {
+        await delay(retryDelay, undefined, { signal });
+        continue;
+      }
+      throw new Error('Umeko could not prepare the Windows search program in its temporary directory.', { cause: error });
+    }
+    try {
+      signal?.throwIfAborted();
+      const launch = sandboxCommand({ file: staged, args, cwd: cwd || workspace, workspace, policy }, { platform });
+      return { ...launch, args: ['run-search', ...launch.args.slice(1)], cwd: cwd || workspace, windowsHide: true, cleanup };
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
+  }
 }
 
 export function sandboxFailure(level, allowNetwork, output = '') {
