@@ -516,7 +516,7 @@ class PiControllerMixin:
             return
         kind, visible = event.get("type"), record is self._view
         if kind == 'windows_sandbox_prepare':
-            self.windowsSandbox.prepare_for_command()
+            self.windowsSandbox.prepare_for_command(bundled_bash=event.get('bundledBash') is True)
             return
         if kind == 'remote_environment_state':
             self._remote_environments.observe(record.key, event)

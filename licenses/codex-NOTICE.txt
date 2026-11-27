@@ -11,3 +11,19 @@ adds Windows PowerShell capture, fresh Windows environment values and executable
 ordering. The Apache 2.0 license text is provided in tzdata-APACHE.txt.
 The unified execution adaptation uses Umeko's job registry and pipes with its
 Windows job host, bounded reads, and separate full-output files.
+
+Local command standard input, session labels, shell guidance, output previews
+and UTF-8-first decoding adapt the following sources from rust-v0.172.0:
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/spawn.rs
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/unified_exec/process_manager.rs
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/tools/context.rs
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/context/world_state/environment.rs
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/core/src/tools/handlers/shell_spec.rs
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/protocol/src/prompts/base_instructions/default.md
+https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/shell-command/src
+https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/utils/head-tail-buffer
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/utils/string/src/truncate.rs
+https://github.com/openai/codex/tree/rust-v0.172.0/codex-rs/utils/output-truncation
+https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/protocol/src/exec_output.rs
+Umeko keeps separate stdout/stderr logs, caps its preview by bytes and lines,
+and uses a Windows GBK fallback after validating UTF-8.

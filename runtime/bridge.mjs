@@ -16,7 +16,7 @@ import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResou
 import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
-import { createSandboxPreparation, sandboxCommand } from "./windows-sandbox.mjs";
+import { createSandboxPreparation, resolveLocalBash, sandboxCommand, windowsShellHints } from "./windows-sandbox.mjs";
 import { createWindowsSandboxMcp } from "./windows-sandbox-mcp.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
@@ -31,9 +31,9 @@ import { createGenerationExtension } from "./generation.mjs";
 import { createSystemPromptController } from "./system-prompt.mjs";
 import { createCoordinatorSkills } from "./coordinator-skills.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
-import { constants, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir, homedir } from "node:os";
@@ -107,6 +107,17 @@ const sandboxPreparation = createSandboxPreparation({
   language: () => permissionPolicy.language,
 });
 const waitForWindowsSandbox = sandboxPreparation.wait;
+const bundledBashPreparation = createSandboxPreparation({
+  getPolicy: () => windowsSandbox,
+  required: policy => policy?.bundledGitBash,
+  request: () => emit({ type: "windows_sandbox_prepare", bundledBash: true }),
+});
+const getBashConfig = (shellPath, signal) => resolveLocalBash({ shellPath, getShellConfig, policy: windowsSandbox,
+  prepareBundle: bundledBashPreparation.wait, signal });
+if (process.platform === "win32") {
+  globalThis[Symbol.for("umeko:bash-config")] = getBashConfig;
+  globalThis[Symbol.for("umeko:shell-hints")] = name => " " + windowsShellHints(name);
+}
 function createBridgeSandboxMcp(loadConfig) {
   return createWindowsSandboxMcp({
     createExtension: Pi.createMcpExtension,
@@ -118,7 +129,7 @@ function createBridgeSandboxMcp(loadConfig) {
         const { command, args = [], cwd: directory = '.' } = server.config;
         const cwd = resolve(work, expandHome(directory));
         const invocation = sandboxCommand({ file: expandHome(command), args: args.map(expandHome), cwd,
-          workspace: work, policy });
+          workspace: work, policy, stdinOpen: true });
         server = { ...server, config: { ...server.config, command: invocation.file, args: invocation.args, cwd } };
       }
       return createDefaultTransport(server, work, auth);
@@ -231,6 +242,7 @@ const QUOTA_MARKER = "[Umeko:model_quota]";
 let checkpointLocked = false;
 const backgroundJobs = createBackgroundJobsExtension({ canStart: () => !checkpointLocked, host: bashHost, hostScript: bashHostScript,
   waitForSandbox: waitForWindowsSandbox,
+  getBashConfig,
   getShellPath: ctx => shellSnapshots.shellPath(ctx?.sessionManager?.getSessionId()),
   getEnvironment: (ctx, shellPath, name) => shellSnapshots.environment(name, ctx?.sessionManager?.getSessionId(), null, shellPath),
   onCleanup(sessionId, job) {
@@ -743,12 +755,18 @@ async function init(input) {
       : input.globalCoordinator || toolSelection(input.piCapabilities, { name: UMEKO_TOOL, source: "builtin:umeko-control" });
     const piPrompt = desktopControlPrompt && canRunPiCommand() ? DESKTOP_PI_PROMPT + " " : "";
     const controlPrompt = desktopControlPrompt ? UMEKO_PROMPT + " " : "";
+    const shellPrompt = process.platform === "win32" ? [
+      "The local operating system is Windows.",
+      settings.getShellPath() ? "The bash tool uses the shell selected in settings." : "The bash tool uses Git Bash.",
+      windowsShellHints("bash"), windowsShellHints("powershell"),
+    ].join(" ") : "";
     const promptController = await createSystemPromptController({ cwd, agentDir,
       stateDir: input.systemPromptStateDir || join(input.agentDir, "umeko-system-prompts"),
       enabled: config.systemPromptEnabled === true, widgetPrompts: config.widgetPrompts || [],
       appendSources: [
         { id: "desktop-pi", name: "Pi 操作说明", text: piPrompt },
         { id: "desktop-control", name: "桌面能力说明", text: controlPrompt },
+        ...(shellPrompt ? [{ id: "windows-shell", name: "Windows shell", text: shellPrompt }] : []),
         { id: "language", name: "回复语言", text: "Reply in the user's language." },
         { id: "instructions", name: "自定义指令", text: input.agent?.instructions || "" },
       ] });
@@ -759,7 +777,7 @@ async function init(input) {
           additionalExtensionPaths: builtins.map(name => "builtin:" + name) } : {}),
         ...(coordinatorSkills ? coordinatorSkills.resourceOptions : await sessionSkillOptions(Pi, {...input,cwd,agentDir}, nativeManager)),
         ...(selectedExtensions ? {noExtensions:true,additionalExtensionPaths:selectedExtensions} : {}),
-        appendSystemPrompt: [piPrompt + controlPrompt + "Reply in the user's language.", input.agent?.instructions || ""],
+        appendSystemPrompt: [piPrompt + controlPrompt + "Reply in the user's language.", shellPrompt, input.agent?.instructions || ""],
         extensionFactories: [
           ...(input.cowork ? [
             {name:"cowork-tools",hidden:true,replaceable:false,factory:pi => coworkTools(pi, coworkToolNames(input), webNetwork)},
@@ -1139,6 +1157,7 @@ async function execute(input) {
   if (input.type === "windows_sandbox") {
     const previous = windowsSandbox;
     windowsSandbox = input.policy;
+    bundledBashPreparation.changed();
     sandboxPreparation.changed();
     if (["enabled", "allowNetwork", "elevated", "gitRoot"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
       shellSnapshots.invalidate();
@@ -1290,6 +1309,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   sandboxPreparation.close();
+  bundledBashPreparation.close();
   loopReview.clear();
   umekoControl.clear();
   remoteEnvironments.dispose();

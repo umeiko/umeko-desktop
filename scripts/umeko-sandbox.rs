@@ -54,6 +54,10 @@ fn environment() -> HashMap<String, String> {
 }
 
 async fn run(home: &Path, temp: &Path, workspace: &Path, cwd: &Path, level: &str, network: &str, command: &[String]) -> Result<i32> {
+    // rust-v0.172.0 codex-rs/core/src/unified_exec/process_manager.rs:
+    // keep standard input open only when the caller requests interaction.
+    let stdin_open = command.first().is_some_and(|arg| arg == "--stdin-open");
+    let command = if stdin_open { &command[1..] } else { command };
     ensure!(!command.is_empty(), "no command was supplied");
     let workspace = dunce::canonicalize(workspace).context("open current workspace")?;
     let cwd = dunce::canonicalize(cwd).context("open command working directory")?;
@@ -96,7 +100,7 @@ async fn run(home: &Path, temp: &Path, workspace: &Path, cwd: &Path, level: &str
         deny_read_paths_override: &[],
         deny_write_paths_override: &[],
         tty: false,
-        stdin_open: true,
+        stdin_open,
     }).await?;
     Ok(forward_sandbox_session_stdio(session).await)
 }
