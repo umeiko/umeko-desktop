@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from .chatbox import AUDIO_SUFFIXES
 
@@ -23,6 +22,10 @@ class ChatboxAudio(QObject):
         self._output = None
 
     def _init_player(self):
+        # Headless and minimal Linux installations need not have the native
+        # multimedia dependencies until playback is actually requested.
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+
         self._output = QAudioOutput(self)
         self._output.setVolume(self._volume)
         self._player = QMediaPlayer(self)
@@ -47,7 +50,7 @@ class ChatboxAudio(QObject):
 
     @Property(bool, notify=stateChanged)
     def playing(self):
-        return bool(self._player and self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState)
+        return bool(self._player and self._player.playbackState() == self._player.PlaybackState.PlayingState)
 
     @Property(float, notify=stateChanged)
     def duration(self):
@@ -73,7 +76,7 @@ class ChatboxAudio(QObject):
             if self.playing:
                 self._player.pause()
             else:
-                if self._player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+                if self._player.mediaStatus() == self._player.MediaStatus.EndOfMedia:
                     self._player.setPosition(0)
                 self._player.play()
             return
@@ -93,7 +96,11 @@ class ChatboxAudio(QObject):
             self._on_error()
             return
         if not self._player:
-            self._init_player()
+            try:
+                self._init_player()
+            except (ImportError, OSError):
+                self._on_error()
+                return
         self._player.setSource(QUrl.fromLocalFile(str(path)))
         self._player.play()
 

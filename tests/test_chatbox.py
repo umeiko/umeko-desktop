@@ -1,5 +1,6 @@
 import copy
 import struct
+import sys
 import tempfile
 import unittest
 import zlib
@@ -15,6 +16,21 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class ChatboxTests(unittest.TestCase):
+    def test_audio_backend_is_optional_until_explicit_play(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(sys.modules, {'PySide6.QtMultimedia': None}):
+            from app.chatbox_audio import ChatboxAudio
+
+            path = Path(temp) / 'fixture.wav'
+            path.touch()
+            player = ChatboxAudio()
+            self.assertFalse(player.failed)
+            player.toggle('fixture', str(path))
+            self.assertTrue(player.failed)
+            self.assertFalse(player.playing)
+            player.deactivate('fixture')
+            self.assertEqual(player.activeKey, '')
+            self.assertFalse(player.failed)
+
     def test_generation_waiting_active_terminal_and_restored(self):
         for name in ('image_gen', 'voice_gen'):
             for state, pending, active in (('running', False, False), ('running', True, True),
