@@ -867,7 +867,8 @@ class Cowork(QObject):
             variables = set(re.findall(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', text))
             environment = {**self.b._mcp_environment(extra=(path,), ordinary=False),
                            **{name: os.environ[name] for name in variables if name in os.environ}}
-            result = subprocess.run([node_executable(), str(release / 'bridge.mjs'), '--cowork-mcp-tools'],
+            from .windows_job import run_managed
+            result = run_managed([node_executable(), str(release / 'bridge.mjs'), '--cowork-mcp-tools'],
                 input=json.dumps({'text': text, 'scopeDir': str(directory), 'cwd': str(cwd),
                                   'agentDir': str(agent_dir), 'env': environment}),
                 capture_output=True, text=True, encoding='utf-8', timeout=20,

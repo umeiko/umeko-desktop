@@ -60,7 +60,8 @@ class GitWorktrees:
         }}
         env.update(LC_ALL="C", GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
         try:
-            result = subprocess.run(
+            from .windows_job import run_managed
+            result = run_managed(
                 ["git", "-c", "core.quotepath=false", "-C", str(cwd), *args],
                 env=env, capture_output=True, encoding="utf-8", errors="replace",
                 timeout=120, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),

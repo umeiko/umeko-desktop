@@ -49,14 +49,15 @@ def npm_environment(agent):
 def probe_npm(agent, cwd):
     environment = npm_environment(agent)
     command = npm_command()
-    result = subprocess.run([*command, "config", "get", "registry"], env=environment, cwd=cwd,
-                            capture_output=True, text=True, encoding="utf-8", timeout=15, creationflags=CREATE_NO_WINDOW)
+    from .windows_job import run_managed
+    result = run_managed([*command, "config", "get", "registry"], env=environment, cwd=cwd,
+                         capture_output=True, text=True, encoding="utf-8", timeout=15, creationflags=CREATE_NO_WINDOW)
     if result.returncode:
         raise RuntimeError("无法读取 npm 配置，请检查 .npmrc")
     url = urlsplit(result.stdout.strip())
     host = url.netloc.rsplit("@", 1)[-1]
     registry = urlunsplit((url.scheme, host, url.path, "", ""))
-    result = subprocess.run([*command, "ping", "--fetch-retries=0", "--fetch-timeout=10000"], env=environment, cwd=cwd,
-                            capture_output=True, timeout=15, creationflags=CREATE_NO_WINDOW)
+    result = run_managed([*command, "ping", "--fetch-retries=0", "--fetch-timeout=10000"], env=environment, cwd=cwd,
+                         capture_output=True, timeout=15, creationflags=CREATE_NO_WINDOW)
     origin = "Umeko 自定义源" if agent.get("npmRegistry") else "npm 原生配置"
     return f"{origin} · {registry} · " + ("连接正常" if not result.returncode else "连接失败，请检查网络、登录信息和 CA 证书")

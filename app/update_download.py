@@ -70,6 +70,8 @@ def download_asset(asset, directory, progress, cancelled):
         process = subprocess.Popen([node_executable(), str(root/'runtime/update-engine.mjs'), 'download', str(job_file)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
             encoding='utf-8', env=environment, creationflags=CREATE_NO_WINDOW)
+        from .windows_job import assign_subprocess
+        assign_subprocess(process)
         stopped = threading.Event()
         def watch_cancel():
             while not stopped.wait(.1):

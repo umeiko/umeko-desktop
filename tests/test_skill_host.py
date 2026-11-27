@@ -145,7 +145,7 @@ class SkillHostTests(unittest.TestCase):
         self.cli_calls = []
         self.rows = [self.row('disabled', enabled=False), self.row('registered', removable=True),
                      self.row('project', scope='project', defaultMutable=False)]
-        self.native = patch('app.skill_management.subprocess.run', side_effect=self.native_cli).start()
+        self.native = patch('app.windows_job.run_managed', side_effect=self.native_cli).start()
         self.addCleanup(patch.stopall)
         patch('app.skill_management.node_executable', return_value=str(self.root / 'node.exe')).start()
         patch('app.skill_management.npm_environment', return_value={'NODE_OPTIONS': 'untrusted', 'NODE_PATH': 'untrusted'}).start()

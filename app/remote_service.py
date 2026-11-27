@@ -72,6 +72,8 @@ class RemoteServiceClient:
                 env=env,
                 creationflags=CREATE_NO_WINDOW,
             )
+            from .windows_job import assign_subprocess
+            assign_subprocess(process)
             self._process = process
             reader = threading.Thread(target=self._read_loop, args=(process,), daemon=True, name='umeko-remote-service')
             self._reader = reader

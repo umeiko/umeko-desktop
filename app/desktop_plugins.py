@@ -339,7 +339,8 @@ class DesktopPlugins(QObject):
         if getattr(sys,'frozen',False):return sys.executable,['--umeko-plugin-worker']
         return sys.executable,['-B',str(self.b.root/'plugin-runtime/worker.py')]
     def process(self):
-        process=QProcess(self);env=QProcessEnvironment.systemEnvironment()
+        from .windows_job import manage_qprocess
+        process=manage_qprocess(QProcess(self));env=QProcessEnvironment.systemEnvironment()
         for key in env.keys():
             if re.search(r'(API_KEY|ACCESS_TOKEN|SECRET_KEY|PASSWORD|_AK|_SK)$',key,re.I):env.remove(key)
         env.insert('PYTHONDONTWRITEBYTECODE','1');process.setProcessEnvironment(env);return process

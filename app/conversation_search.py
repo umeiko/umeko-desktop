@@ -119,7 +119,8 @@ class ConversationSearch(QAbstractListModel):
             self._error, self._busy = str(error), False
             self.changed.emit()
             return False
-        process = self._worker = QProcess(self)
+        from .windows_job import manage_qprocess
+        process = self._worker = manage_qprocess(QProcess(self))
         self._buffer = b''
         env = QProcessEnvironment.systemEnvironment()
         env.remove('NODE_OPTIONS'); env.remove('NODE_PATH')

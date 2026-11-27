@@ -112,7 +112,7 @@ class AgentWorktreeTests(unittest.TestCase):
             self.trees.describe(self.root, "1" * 32)
         # Mock the OS lookup error, including on Windows where PATH alone need
         # not hide system directories.
-        with patch("app.agent_worktrees.subprocess.run", side_effect=FileNotFoundError):
+        with patch("app.windows_job.run_managed", side_effect=FileNotFoundError):
             with self.assertRaisesRegex(WorktreeError, "找不到 Git"):
                 self.trees.describe(self.repo, "1" * 32)
         self.assertTrue(paths_overlap(self.repo, self.repo / "child"))

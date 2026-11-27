@@ -306,7 +306,8 @@ class WindowsSandbox(QObject):
         self.publish()
 
     def _launch(self, operation):
-        process = QProcess(self)
+        from .windows_job import manage_qprocess
+        process = manage_qprocess(QProcess(self))
         self._process = process
         if operation == "setup":
             self._error = ""

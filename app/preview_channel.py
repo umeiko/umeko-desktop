@@ -159,7 +159,8 @@ class PreviewChannel(QObject):
         if self._busy or self._status.get('state') != 'restart-required': return
         try:
             self.controller.store.save()
-            start_channel(self.directory, self._state)
+            from .windows_job import detach_subprocess
+            detach_subprocess(start_channel(self.directory, self._state))
         except OSError as error:
             self._status = {'state': 'error', 'message': '无法启动所选通道，当前应用保持运行。', 'detail': str(error)}
             self.changed.emit()

@@ -14,6 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QStandardPaths, QTimer, Signal, Slot
 from PySide6.QtGui import QGuiApplication
 from .pi_runtime import node_executable
+from .windows_job import manage_qprocess
 
 
 def update_environment():
@@ -52,7 +53,7 @@ def start_update_cleanup(root, profile):
             version=info['version'], updatesDir=str(cache / 'updates'), downloadsDir=str(downloads),
             tempDir=tempfile.gettempdir()))
         app = QGuiApplication.instance()
-        process = QProcess(app)
+        process = manage_qprocess(QProcess(app))
         # Retain the worker until it exits. It never feeds the updater UI or toast.
         workers = getattr(app, '_update_cleanup_workers', None)
         if workers is None: app._update_cleanup_workers = workers = []
@@ -117,7 +118,7 @@ class AppUpdater(QObject):
     def run(self, mode):
         self.publish(state='downloading' if mode == 'download' else 'preparing', message='正在准备下载…' if mode == 'download' else '正在准备独立安装器…', busy=True, progress=-1)
         self.buffer = b''
-        p = QProcess(self); self.process = p
+        p = manage_qprocess(QProcess(self)); self.process = p
         p.setProcessEnvironment(update_environment())
         p.readyReadStandardOutput.connect(lambda: self.consume(p))
         p.errorOccurred.connect(lambda error: self.process_error(p, error))
@@ -208,7 +209,7 @@ class UpdateInstaller(QObject):
         self.buffer = b''
         self.job = {}
         self.terminal_status = None
-        self.process = QProcess(self)
+        self.process = manage_qprocess(QProcess(self))
         self.process.setProcessEnvironment(update_environment())
         self.process.readyReadStandardOutput.connect(self.consume)
         self.process.errorOccurred.connect(lambda _: self.set_error('安装引擎启动失败：' + self.process.errorString()))

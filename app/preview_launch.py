@@ -113,7 +113,8 @@ def route_start(root):
     if not ((getattr(sys, 'frozen', False) and preview) or (managed and not preview)):
         return False
     try:
-        start_channel(directory, state, sys.argv[1:])
+        from .windows_job import detach_subprocess
+        detach_subprocess(start_channel(directory, state, sys.argv[1:]))
         return True
     except OSError as error:
         # A damaged preview must never prevent opening the retained release.

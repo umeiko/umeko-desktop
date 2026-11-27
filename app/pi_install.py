@@ -65,6 +65,8 @@ def install_package(release, cwd, agent_dir, source, local=False, timeout=None, 
     with tempfile.TemporaryFile() as errors:
         process=subprocess.Popen([node_executable(),str(driver)],cwd=cwd,env=environment,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors,
             text=True,encoding='utf-8',creationflags=CREATE_NO_WINDOW,start_new_session=os.name!='nt')
+        from .windows_job import assign_subprocess
+        assign_subprocess(process)
         process.stdin.write(json.dumps(job)+'\n');process.stdin.flush()
         started=time.monotonic()
         def watch():
@@ -122,6 +124,8 @@ def package_operation(release, cwd, agent_dir, source, local=False, timeout=180,
         process = subprocess.Popen(args, cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
             stdout=log, stderr=subprocess.STDOUT, creationflags=CREATE_NO_WINDOW,
             start_new_session=os.name != "nt")
+        from .windows_job import assign_subprocess
+        assign_subprocess(process)
         try:
             code = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
