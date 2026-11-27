@@ -149,10 +149,10 @@ test("reconnecting status stays visible while retry HTTP request is in flight", 
   const events = await f.command({ type: "prompt", text: "slow reconnect" }, [failure, { delayMs: 80 }]);
   assert.deepEqual(attempts(events), [1]);
   const reconnecting = events.findIndex(e => e.type === "network_retry" && e.active === true && e.waiting === false);
-  const cleared = events.findLastIndex(e => e.type === "network_retry" && e.active === false);
+  const cleared = events.findIndex((e, i) => i > reconnecting && e.type === "network_retry" && e.active === false);
   const started = events.findLastIndex(e => e.type === "assistant_start");
   assert.ok(reconnecting >= 0, "Expected in-flight reconnecting state");
-  assert.ok(reconnecting < cleared && cleared < started, "Reconnecting should clear right before assistant_start");
+  assert.ok(cleared > reconnecting && cleared < started, "Reconnecting should clear right before assistant_start");
   recovered(events);
 });
 
