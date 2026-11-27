@@ -120,6 +120,19 @@ def run():
                 if backend.pendingApproval:
                     approvals.append(dict(backend.pendingApproval))
                     backend.respondApproval(approved)
+
+            def open_video_settings():
+                window.setProperty('page', 'settings')
+                window.setProperty('settingsTab', 0)
+                if not find(window, 'multimodalSettings').isVisible():
+                    assert QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
+                until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
+                category = find(window, 'multimodalCategory_video')
+                if category.isVisible():
+                    assert QMetaObject.invokeMethod(category, 'clicked')
+                until(lambda: find(window, 'videoGenerationModel').isVisible(), lambda: str(warnings))
+                QCoreApplication.processEvents()
+
             backend.approvalChanged.connect(approve)
             try:
                 workspace = profile / 'workspace'
@@ -139,12 +152,10 @@ def run():
                 provider['proxy'] = {'mode': 'direct', 'url': ''}
                 backend.changed.emit()
                 window.resize(1320, 2000)
-                window.setProperty('page', 'settings')
-                window.setProperty('settingsTab', 0)
-                QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
-                until(lambda: find(window, 'videoGenerationSettings').isVisible(), lambda: str(warnings))
-                QMetaObject.invokeMethod(find(window, 'videoGenerationProvider'), 'activated', Q_ARG(int, 1))
-                QMetaObject.invokeMethod(find(window, 'videoGenerationModel'), 'activated', Q_ARG(int, 1))
+                open_video_settings()
+                picker = find(window, 'videoGenerationModel')
+                assert picker.property('count') == 2
+                assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 1))
                 find(window, 'videoGenerationSeconds').setProperty('text', '8')
                 find(window, 'videoGenerationSize').setProperty('text', '1280x720')
                 QMetaObject.invokeMethod(find(window, 'saveMultimodalSettings'), 'clicked')
@@ -155,13 +166,8 @@ def run():
                 images = ROOT / 'docs/images'
                 for language in ('zh', 'en'):
                     backend.setLanguage(language)
-                    window.setProperty('page', 'settings')
-                    if not find(window, 'multimodalSettings').isVisible():
-                        QMetaObject.invokeMethod(find(window, 'multimodalSettingsEntry'), 'clicked')
-                    until(lambda: find(window, 'multimodalSettings').isVisible(), lambda: str(warnings))
-                    QCoreApplication.processEvents()
-                    assert find(window, 'videoGenerationProvider').property('displayText') == 'Test provider'
-                    assert find(window, 'videoGenerationModel').property('displayText') == 'test-video-model'
+                    open_video_settings()
+                    assert find(window, 'videoGenerationModel').property('displayText') == 'test-video-model · Test provider'
                     if capture:
                         screenshot(window, images / f'multimodal-models-{language}.png')
                     window.setProperty('page', 'chat')

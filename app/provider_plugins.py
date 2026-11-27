@@ -839,18 +839,20 @@ class ProviderPlugins(QObject):
         try:
             with self.lock:
                 self._idle(provider_id)
+                data = self.c.store.data
+                previous = data["providers"]
+                selection = {key: data[key] for key in ("selectedProvider", "selectedModel", "multimodal") if key in data}
                 self._invalidate(provider_id)
                 secrets = self._secrets(provider_id)
-                previous = self.c.store.data["providers"]
-                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel", "multimodal")}
-                self.c.store.data["providers"] = [p for p in self.c.store.data["providers"] if p["id"] != provider_id]
+                data["providers"] = [p for p in previous if p["id"] != provider_id]
                 try:
-                    self.c.store.data["multimodal"] = clear_selections(selection["multimodal"], {provider_id})
+                    if "multimodal" in selection:
+                        data["multimodal"] = clear_selections(selection["multimodal"], {provider_id})
                     self.repair_selection()
                     self.c.store.save()
                 except Exception:
-                    self.c.store.data["providers"] = previous
-                    self.c.store.data.update(selection)
+                    data["providers"] = previous
+                    data.update(selection)
                     raise
                 secrets.clear()
                 self.status.pop(provider_id, None)
@@ -865,23 +867,25 @@ class ProviderPlugins(QObject):
                 path = self.require_package(plugin_id, version)
                 accounts = self._accounts(plugin_id, version)
                 for account in accounts: self._idle(account["id"])
+                data = self.c.store.data
+                previous = data["providers"]
+                selection = {key: data[key] for key in ("selectedProvider", "selectedModel", "multimodal") if key in data}
+                previous_bundles = copy.deepcopy(data.get("bundledProviders"))
                 secrets = [self._secrets(p["id"]) for p in accounts]
                 for account in accounts: self._invalidate(account["id"])
                 retired = self._retire_package(path)
-                previous = self.c.store.data["providers"]
-                selection = {key: self.c.store.data[key] for key in ("selectedProvider", "selectedModel", "multimodal")}
-                previous_bundles = copy.deepcopy(self.c.store.data.get("bundledProviders"))
-                self.c.store.data["providers"] = [p for p in previous if p not in accounts]
+                data["providers"] = [p for p in previous if p not in accounts]
                 try:
-                    self.c.store.data["multimodal"] = clear_selections(selection["multimodal"], {p["id"] for p in accounts})
+                    if "multimodal" in selection:
+                        data["multimodal"] = clear_selections(selection["multimodal"], {p["id"] for p in accounts})
                     self.bundled.mark_uninstalled(plugin_id, version)
                     self.repair_selection()
                     self.c.store.save()
                 except Exception:
-                    self.c.store.data["providers"] = previous
-                    self.c.store.data.update(selection)
-                    if previous_bundles is None: self.c.store.data.pop("bundledProviders", None)
-                    else: self.c.store.data["bundledProviders"] = previous_bundles
+                    data["providers"] = previous
+                    data.update(selection)
+                    if previous_bundles is None: data.pop("bundledProviders", None)
+                    else: data["bundledProviders"] = previous_bundles
                     if retired: retired.rename(path)
                     raise
                 self._forget_package(path)
