@@ -61,11 +61,13 @@ def format_http_error(status, body='', headers=None, secrets=()):
     elif status == 404:
         hint = '请检查地址或模型名称'
     elif status == 408:
-        hint = '请求超时，请检查网络或超时设置'
+        hint = '请求超时，请检查网络或在供应商的网络设置中调大流式空闲超时'
     elif status == 413:
         hint = '请求过大或上下文过长'
     elif status == 429:
         hint = '请求受到限流，请稍后重试'
+    elif status == 504:
+        hint = '供应商服务端处理超时，请稍后重试'
     elif 500 <= status <= 599:
         hint = '供应商服务端错误'
     elif re.search(r'context[_ -]?(?:length|window)|maximum context|too many tokens|上下文.{0,8}(?:超|长)|上下文长度', reason + metadata_text, re.I):

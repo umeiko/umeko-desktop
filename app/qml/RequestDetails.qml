@@ -49,12 +49,50 @@ Popup {
         if (!Object.prototype.hasOwnProperty.call(value, "body")) return pretty(value)
         return splitBody(value) + I18n.t("请求正文") + "\n" + pretty(value.body)
     }
+    function formatDuration(ms) {
+        if (ms === undefined || ms === null || isNaN(Number(ms))) return "—"
+        const value = Math.max(0, Math.round(Number(ms)))
+        if (value < 1000) return value + " ms"
+        return (value / 1000).toFixed(2) + " s (" + value + " ms)"
+    }
+    function formatPhase(phase, fallback) {
+        const labels = {
+            waiting_headers: "发出请求后等待响应头",
+            waiting_first_sse: "收到响应头后等待首条 SSE 事件",
+            stream_idle: "流式输出中途长时间无数据",
+            incomplete_stream: "未收到正常结束标记即断流",
+            http_error: "供应商返回 HTTP 错误",
+            completed: "已正常结束"
+        }
+        return I18n.t(labels[phase] || fallback || phase || "—")
+    }
+    function formatTiming(timing) {
+        if (!timing || typeof timing !== "object") return ""
+        const lines = [I18n.t("流式诊断")]
+        lines.push(I18n.t("当前阶段：") + formatPhase(timing.phase, timing.phaseLabel))
+        const headers = timing.headersMs === undefined || timing.headersMs === null
+            ? I18n.t("未收到")
+            : formatDuration(timing.headersMs) + (timing.headersReceivedAt ? " (" + timing.headersReceivedAt + ")" : "")
+        lines.push(I18n.t("响应头时间：") + headers)
+        const firstEvent = timing.firstEventMs !== undefined && timing.firstEventMs !== null
+            ? formatDuration(timing.firstEventMs) + (timing.firstEventAt ? " (" + timing.firstEventAt + ")" : "")
+            : I18n.t("未收到")
+        lines.push(I18n.t("第一条事件时间：") + firstEvent)
+        lines.push(I18n.t("最后收到数据的时间：") + (timing.lastDataAt || I18n.t("未收到")))
+        lines.push(I18n.t("最后一次收到数据到报错间隔：") + formatDuration(timing.lastDataToErrorMs))
+        lines.push(I18n.t("总耗时：") + formatDuration(timing.totalMs))
+        lines.push(I18n.t("是否正常结束：") + I18n.t(timing.completedNormally ? "是" : "否"))
+        if (timing.heartbeatCount > 0)
+            lines.push(I18n.t("收到 SSE 心跳注释：") + String(timing.heartbeatCount))
+        return lines.join("\n") + "\n\n"
+    }
     function formatResponse(value) {
         const response = value && typeof value === "object" ? value : {body: value}
         const body = response.body === undefined || response.body === null ? "" : pretty(response.body)
         const received = response.status !== undefined && response.status !== null ||
                          response.headers && Object.keys(response.headers).length > 0 || body.length > 0
-        let text = splitBody(response)
+        const timing = (selectedCall && selectedCall.timing) || reportData.streamDiagnostics || null
+        let text = formatTiming(timing) + splitBody(response)
         if (reportData.summary) text = I18n.t(reportData.summary) + "\n\n" + text
         text += !received ? I18n.t("未收到服务器响应") : body ? I18n.t("服务器返回正文") + "\n" + body : I18n.t("服务器未返回响应正文")
         if (reportData.error) text += "\n\n" + I18n.t("本地异常") + "\n" + pretty(reportData.error)

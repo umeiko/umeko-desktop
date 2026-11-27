@@ -117,7 +117,7 @@ class HttpSession:
         except OSError as error:
             record['exception'] = traceback.format_exc()
             if isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError):
-                raise ProviderError('供应商请求超时，请检查网络或超时设置') from None
+                raise ProviderError('等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时') from None
             raise ProviderError('无法连接服务：' + safe_text(str(error), request_secrets)) from None
 
 

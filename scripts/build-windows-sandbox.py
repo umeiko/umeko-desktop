@@ -93,6 +93,11 @@ def adopt_sandbox(sandbox):
         "    anyhow::bail!(\"elevated sandbox needs setup or repair in Agent settings\");\n}\n\n"
     ) + body[end:]
     path.write_text(body, encoding="utf-8")
+    shutil.copyfile(ROOT / "scripts/windows-sandbox-search-access.rs", sandbox / "src/umeko_search_access.rs")
+    library = sandbox / "src/lib.rs"
+    with library.open("a", encoding="utf-8") as code:
+        code.write('\n#[cfg(windows)]\nmod umeko_search_access;\n'
+                   '#[cfg(windows)]\npub use umeko_search_access::prepare_legacy_search_read_access;\n')
     shutil.copyfile(ROOT / "scripts/umeko-sandbox.rs", sandbox / "src/bin/umeko-sandbox.rs")
 
 

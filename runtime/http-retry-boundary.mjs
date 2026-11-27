@@ -11,7 +11,7 @@ export function bindHttpRetryBoundary(session) {
     session.setAutoRetryEnabled(previous);
   };
   return {
-    observe(event) {
+    observe(event, skipRetry = false) {
       if (closed) return;
       if (event.type === 'agent_settled') {
         restore();
@@ -20,7 +20,7 @@ export function bindHttpRetryBoundary(session) {
       const message = event.message;
       if (event.type !== 'message_end' || message?.role !== 'assistant' ||
           message.stopReason !== 'error' || typeof message.errorMessage !== 'string' ||
-          !MANAGED_HTTP_FINAL.test(message.errorMessage) || pending) return;
+          (!skipRetry && !MANAGED_HTTP_FINAL.test(message.errorMessage)) || pending) return;
       previous = session.autoRetryEnabled;
       // A session with retry already disabled needs no temporary change.
       if (!previous) return;

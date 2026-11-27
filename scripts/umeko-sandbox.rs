@@ -10,7 +10,8 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_windows_sandbox::{
     ResolvedWindowsSandboxPermissions, SandboxSetupRequest, WindowsSandboxProvisioningSettings,
     WindowsSandboxProxySettingsMode, WindowsSandboxSessionRequest, clean_up_legacy_windows_sandbox,
-    forward_sandbox_session_stdio, run_elevated_setup, sandbox_setup_is_complete_with_settings,
+    forward_sandbox_session_stdio, prepare_legacy_search_read_access, run_elevated_setup,
+    sandbox_setup_is_complete_with_settings,
     spawn_windows_sandbox_session_for_level,
 };
 use std::collections::HashMap;
@@ -53,10 +54,10 @@ fn environment() -> HashMap<String, String> {
     }).collect()
 }
 
-async fn run(home: &Path, temp: &Path, workspace: &Path, cwd: &Path, level: &str, network: &str, command: &[String]) -> Result<i32> {
+async fn run(home: &Path, temp: &Path, workspace: &Path, cwd: &Path, level: &str, network: &str, command: &[String], search: bool) -> Result<i32> {
     // rust-v0.172.0 codex-rs/core/src/unified_exec/process_manager.rs:
     // keep standard input open only when the caller requests interaction.
-    let stdin_open = command.first().is_some_and(|arg| arg == "--stdin-open");
+    let stdin_open = !search && command.first().is_some_and(|arg| arg == "--stdin-open");
     let command = if stdin_open { &command[1..] } else { command };
     ensure!(!command.is_empty(), "no command was supplied");
     let workspace = dunce::canonicalize(workspace).context("open current workspace")?;
@@ -75,6 +76,9 @@ async fn run(home: &Path, temp: &Path, workspace: &Path, cwd: &Path, level: &str
         "block" => bail!("blocking network access requires elevated setup"),
         _ => bail!("invalid Windows sandbox network policy"),
     };
+    if search && level == WindowsSandboxLevel::RestrictedToken {
+        prepare_legacy_search_read_access(home, &workspace, &cwd)?;
+    }
     let roots = [AbsolutePathBuf::try_from(workspace)?];
     let writable = [AbsolutePathBuf::try_from(temp.clone())?];
     let profile = PermissionProfile::workspace_write_with(&writable, network, true, true);
@@ -142,8 +146,8 @@ async fn execute(args: &[String]) -> Result<i32> {
             remove_git_cache(Path::new(home))?;
             Ok(0)
         }
-        [operation, home, temp, workspace, cwd, level, network, command @ ..] if operation == "run" => {
-            run(Path::new(home), Path::new(temp), Path::new(workspace), Path::new(cwd), level, network, command).await
+        [operation, home, temp, workspace, cwd, level, network, command @ ..] if operation == "run" || operation == "run-search" => {
+            run(Path::new(home), Path::new(temp), Path::new(workspace), Path::new(cwd), level, network, command, operation == "run-search").await
         }
         _ => bail!("expected status, setup, run, uninstall or uninstall-cache"),
     }
@@ -156,7 +160,8 @@ async fn main() {
         Ok(code) => code,
         Err(err) => {
             eprintln!("Windows sandbox could not start: {err:#}");
-            1
+            // ripgrep and fd can use 1 for a legitimate no-match result.
+            if args.first().is_some_and(|operation| operation == "run-search") { 125 } else { 1 }
         }
     };
     std::process::exit(code);

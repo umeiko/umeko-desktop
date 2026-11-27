@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const release = join(root, "runtime/releases/coding-1.5.2");
 
-async function fixture(t, { compaction = false } = {}) {
+async function fixture(t, { compaction = false, streamMaxRetries = 5 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "umeko-retry-")), agentDir = join(dir, "agent");
   mkdirSync(agentDir);
   writeFileSync(join(agentDir, "settings.json"), JSON.stringify({
@@ -52,16 +52,24 @@ async function fixture(t, { compaction = false } = {}) {
   const replies = [], calls = [];
   const server = createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
-    const body = JSON.parse(raw); calls.push({ summary: !body.tools?.length });
+    const body = JSON.parse(raw); calls.push({ summary: !body.tools?.length, body });
     const next = replies.shift();
+    if (next?.delayMs) await new Promise(resolve => setTimeout(resolve, next.delayMs));
     if (!next || next.error) {
+      if (next?.partialText) {
+        const common = { id: "fixture", object: "chat.completion.chunk", created: 1, model: "test-model" };
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: { role: "assistant", content: next.partialText }, finish_reason: null }] })}\n\n`);
+        res.end(`data: ${JSON.stringify({ type: "error", error: { message: next.error } })}\n\n`);
+        return;
+      }
       res.writeHead(next?.status || 503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: { message: next?.error || "Unexpected fixture request" } }));
       return;
     }
     const delta = next.tool ? { role: "assistant", tool_calls: [{ index: 0, id: next.tool,
       type: "function", function: { name: "read", arguments: JSON.stringify({ path: join(dir, "fixture.txt") }) } }] }
-      : { role: "assistant", content: "fixture success" };
+      : { role: "assistant", content: next.content || "fixture success" };
     const common = { id: "fixture", object: "chat.completion.chunk", created: 1, model: "test-model" };
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     res.end(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n` +
@@ -77,7 +85,7 @@ async function fixture(t, { compaction = false } = {}) {
   let stderr = "";
   child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-1500); });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
-  const command = async (payload, responses = []) => {
+  const command = async (payload, responses = [], onEvent) => {
     replies.push(...responses);
     child.stdin.write(JSON.stringify(payload) + "\n");
     const events = [];
@@ -85,6 +93,7 @@ async function fixture(t, { compaction = false } = {}) {
       const next = await lines.next();
       assert.ok(!next.done, "Bridge exited: " + stderr);
       const event = JSON.parse(next.value); events.push(event);
+      onEvent?.(event, input => child.stdin.write(JSON.stringify(input) + "\n"));
       if (event.type === "done") break;
     }
     assert.deepEqual(events.filter(e => e.type === "error"), []);
@@ -100,12 +109,16 @@ async function fixture(t, { compaction = false } = {}) {
   });
   await command({ type: "inspect", gateway: `http://127.0.0.1:${server.address().port}/`, token: "fixture",
     workspace: dir, defaultCwd: dir, agentDir, sessionDir: join(dir, "sessions"),
-    model: "test-model", models: [{ id: "test-model", contextWindow: 128000 }],
+    model: "test-model", models: [{ id: "test-model", contextWindow: 128000, streamMaxRetries }],
     agent: { autoCompaction: false, safeMode: !compaction } });
   return { command, calls };
 }
 
 const failure = { error: "Network error: stream interrupted" };
+const timeout = { error: "[Umeko:gateway_timeout] Network error: the read operation timed out [Umeko:12345678-1234-1234-1234-123456789123]",
+  partialText: "Interrupted draft" };
+const continuationWaits = events => events.filter(e => e.type === "network_retry" && e.continuation).map(e => e.delayMs);
+const assistantErrors = events => events.filter(e => e.type === "message" && e.role === "assistant" && e.error);
 const attempts = events => events.filter(e => e.type === "pi_event" && e.event === "auto_retry_start").map(e => e.attempt);
 
 function recovered(events) {
@@ -134,6 +147,18 @@ test("N transient failures then success hides retry before streaming; exhausted 
   assert.equal(final.filter(e => e.type === "message" && e.role === "assistant" && e.error).length, 1);
   assert.equal(final.find(e => e.type === "pi_event" && e.event === "auto_retry_end").success, false);
   assert.equal(final.findLast(e => e.type === "network_retry").active, false);
+});
+
+test("reconnecting status stays visible while retry HTTP request is in flight", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "slow reconnect" }, [failure, { delayMs: 80 }]);
+  assert.deepEqual(attempts(events), [1]);
+  const reconnecting = events.findIndex(e => e.type === "network_retry" && e.active === true && e.waiting === false);
+  const cleared = events.findIndex((e, i) => i > reconnecting && e.type === "network_retry" && e.active === false);
+  const started = events.findLastIndex(e => e.type === "assistant_start");
+  assert.ok(reconnecting >= 0, "Expected in-flight reconnecting state");
+  assert.ok(cleared > reconnecting && cleared < started, "Reconnecting should clear right before assistant_start");
+  recovered(events);
 });
 
 test("one session, three turns: each interruption starts at one and each stream hides retry", { timeout: 60000 }, async t => {
@@ -171,4 +196,79 @@ test("compaction retries replace the retry indicator at attempt start and restar
     assert.equal(events.findLast(e => e.type === "compaction_event").state, "success");
   }
   assert.equal(f.calls.filter(c => c.summary).length, 4);
+});
+
+test("provider streamMaxRetries caps retries and staged-continue preserves partial reply without re-running confirmed tools", { timeout: 60000 }, async t => {
+  const f = await fixture(t, { streamMaxRetries: 2 });
+  const partialFailure = { error: "Network error: stream interrupted", partialText: "Partial stage draft..." };
+  // Step 1 succeeds with a confirmed read tool; Step 2 fails with partial output and exhausts streamMaxRetries=2 (3 attempts total).
+  const failed = await f.command({ type: "prompt", text: "staged task" }, [
+    { tool: "read-confirmed" },
+    partialFailure,
+    partialFailure,
+    partialFailure,
+  ]);
+  assert.deepEqual(attempts(failed), [1, 2]);
+  const toolEnds = failed.filter(e => e.type === "pi_event" && e.event === "tool_execution_end");
+  assert.equal(toolEnds.length, 1);
+  const failedState = failed.findLast(e => e.type === "state");
+  assert.ok(failedState.messages.some(m => m.role === "assistant" && m.error && m.text.includes("Partial stage draft...")));
+
+  // Trigger staged-continue in the same conversation.
+  const continued = await f.command({ type: "staged-continue" }, [{ content: "Stage 2 completed cleanly." }]);
+  assert.equal(continued.filter(e => e.type === "pi_event" && e.event === "tool_execution_end").length, 0);
+  const continuationCall = f.calls[f.calls.length - 1].body;
+  const serialized = JSON.stringify(continuationCall.messages);
+  assert.match(serialized, /Partial output preserved as incomplete/);
+  assert.match(serialized, /DO NOT re-execute.*read\(/);
+  assert.match(serialized, /Partial stage draft/);
+  const finalState = continued.findLast(e => e.type === "state");
+  assert.ok(finalState.messages.some(m => m.role === "assistant" && m.error && m.text.includes("Partial stage draft...")));
+  assert.ok(finalState.messages.some(m => m.role === "assistant" && !m.error && m.text.includes("Stage 2 completed cleanly.")));
+});
+
+test("gateway timeout sends continue at 5s, 10s and 30s without replaying completed tools", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "finish this task" }, [
+    { tool: "completed-tool" }, timeout, failure, timeout, { content: "Completed after resume" },
+  ]);
+  assert.deepEqual(continuationWaits(events), [5000, 10000, 30000]);
+  assert.deepEqual(attempts(events), []);
+  assert.deepEqual(assistantErrors(events), []);
+  const tags = events.filter(e => e.type === "gateway_continuation");
+  assert.equal(tags.length, 3);
+  assert.ok(tags.every(e => e.targetId && !Object.hasOwn(e, "diagnosticId")));
+  assert.equal(events.filter(e => e.type === "pi_event" && e.event === "tool_execution_end").length, 1);
+  for (const { body } of f.calls.slice(-3)) {
+    assert.equal(body._umeko_gateway_continuation, true);
+    const last = body.messages.at(-1);
+    assert.equal(last.role, "user");
+    assert.match(JSON.stringify(last.content), /continue/);
+    assert.ok(body.messages.some(message => message.role === "tool"));
+  }
+  assert.ok(events.findLast(e => e.type === "state").messages.some(m => m.text === "Completed after resume"));
+});
+
+test("gateway timeout reports only the third failed continuation and gives the next prompt a fresh budget", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "initial task" }, [timeout, timeout, timeout, timeout]);
+  assert.deepEqual(continuationWaits(events), [5000, 10000, 30000]);
+  assert.deepEqual(attempts(events), []);
+  const errors = assistantErrors(events);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].error, /The read operation timed out/i);
+  assert.doesNotMatch(errors[0].error, /gateway_timeout/);
+  const next = await f.command({ type: "prompt", text: "next task" }, [timeout, { content: "Resumed" }]);
+  assert.deepEqual(continuationWaits(next), [5000]);
+  assert.deepEqual(assistantErrors(next), []);
+});
+
+test("stopping during a gateway continuation delay prevents the next request", { timeout: 60000 }, async t => {
+  const f = await fixture(t);
+  const events = await f.command({ type: "prompt", text: "cancel this" }, [timeout], (event, send) => {
+    if (event.type === "network_retry" && event.continuation) send({ type: "abort" });
+  });
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(assistantErrors(events), []);
+  assert.ok(!events.some(event => event.type === "gateway_continuation"));
 });

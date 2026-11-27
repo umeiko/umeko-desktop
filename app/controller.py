@@ -2926,6 +2926,15 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def stop(self):
         self._stop()
 
+    @Slot(result=bool)
+    def continueInStages(self):
+        record = self._view
+        if is_dsh(record) or record.busy or record.approval or self._kernel_busy:
+            return False
+        if not record.messages and not record.file:
+            return False
+        return self._command_pi("staged-continue", record=record)
+
     def _job(self, name, fn):
         self.jobStarted.emit(name)
         def run():
