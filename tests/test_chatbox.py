@@ -15,6 +15,29 @@ APP = QCoreApplication.instance() or QCoreApplication([])
 
 
 class ChatboxTests(unittest.TestCase):
+    def test_generation_waiting_active_terminal_and_restored(self):
+        for name in ('image_gen', 'voice_gen'):
+            for state, pending, active in (('running', False, False), ('running', True, True),
+                                           ('error', True, False), ('done', True, False)):
+                tool = {'name': name, 'state': state, 'id': 'call', 'generationPending': pending}
+                row, = ChatModel.project([{'role': 'assistant', 'tools': [tool]}])
+                cards = [step for step in row['activity'] if step['kind'] == 'generation']
+                self.assertEqual(bool(cards), active)
+                if active:
+                    self.assertEqual((cards[0]['toolName'], cards[0]['toolId']), (name, 'call'))
+
+    def test_new_and_legacy_audio_cards(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / '听写 #1.WAV'
+            path.touch()
+            for kind in ('audio', 'file'):
+                row, = media_view([{'kind':kind, 'path':str(path)}])
+                self.assertEqual(row['kind'], 'audio')
+                self.assertIn('%23', row['url'])
+            raw = path.with_suffix('.pcm')
+            self.assertEqual(media_view([{'kind':'file', 'path':str(raw)}])[0]['kind'], 'file')
+            self.assertEqual(media_view([{'kind':'audio', 'path':'https://example.invalid/a.wav'}]), [])
+
     def test_projection_preview_limits_and_metadata_cache(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "large # 图.png"

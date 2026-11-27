@@ -5,6 +5,8 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QImageReader
 from .document_preview import document_kind
 
+AUDIO_SUFFIXES = frozenset(('.wav', '.mp3', '.m4a', '.aac', '.ogg', '.opus', '.flac'))
+
 
 def result_media(name, result):
     details = (result or {}).get("details")
@@ -22,12 +24,14 @@ def media_view(items):
         if not isinstance(item, dict): continue
         path, kind = item.get("path"), item.get("kind")
         if isinstance(path, str): kind = document_kind(path, kind) or kind
+        if isinstance(path, str) and kind in ('file', 'audio') and Path(path).suffix.lower() in AUDIO_SUFFIXES:
+            kind = 'audio'
         if kind=='web' and isinstance(path,str):
             url=QUrl(path,QUrl.StrictMode)
             if url.isValid() and url.scheme() in ('http','https') and url.host() and not url.userInfo():
                 out.append({'path':url.toString(),'url':url.toString(),'kind':'web','name':url.host(),'title':str(item.get('title') or url.host())[:160],'caption':str(item.get('caption') or '')[:1000]})
             continue
-        if not isinstance(path, str) or not Path(path).is_absolute() or any(c in path for c in "\0\r\n") or kind not in ("image", "file", "folder", "markdown", "code", "text"):
+        if not isinstance(path, str) or not Path(path).is_absolute() or any(c in path for c in "\0\r\n") or kind not in ("image", "audio", "file", "folder", "markdown", "code", "text"):
             continue
         title, caption = item.get("title"), item.get("caption")
         out.append(dict(_media_item(path, kind, str(title or Path(path).name)[:160], str(caption or "")[:1000], str(item.get("modified", "")))))

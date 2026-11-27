@@ -833,6 +833,13 @@ class ChatModel(QAbstractListModel):
                             else:
                                 steps.append({"kind": "subagents", "agents": [dict(tool["subagent"])]})
                             continue
+                        if (tool.get("name") in ("image_gen", "voice_gen") and tool.get("state") == "running"
+                                and tool.get("generationPending") is True and not tool.get("media")):
+                            if batch:
+                                steps.append({"kind": "tools", "tools": batch})
+                                batch = []
+                            steps.append({"kind": "generation", "toolName": tool["name"], "toolId": tool["id"]})
+                            continue
                         batch.append(tool)
                         if tool.get("name") in ("submit_to_chatbox", "image_gen", "voice_gen", "video_gen") and tool.get("media"):
                             steps.append({"kind": "tools", "tools": batch})

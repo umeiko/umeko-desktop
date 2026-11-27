@@ -726,6 +726,11 @@ class PiControllerMixin:
                 if isinstance(event.get("args"), dict):
                     tool["arguments"] = dict(event["args"])
             tool["state"] = event["state"]
+            if event['name'] in ('image_gen', 'voice_gen'):
+                if event['state'] != 'running':
+                    tool.pop('generationPending', None)
+                elif event.get('generationPending') is True and not record.cancelled:
+                    tool['generationPending'] = True
             if event['name'] == 'apply_patch' and event['state'] == 'done':
                 tool['patchFiles'] = patch_files(event.get('patchFiles'))
             if isinstance(event.get('video'), dict):
@@ -831,6 +836,11 @@ class PiControllerMixin:
             # cold readers derive the same failure from its missing terminal entry.
             for index, row in enumerate(record.messages):
                 resolved = compaction_status(row)
+                if any(tool.get('generationPending') for tool in resolved.get('tools', ())):
+                    resolved = {**resolved, 'tools': [
+                        {**{key: value for key, value in tool.items() if key != 'generationPending'}, 'state': 'error'}
+                        if tool.get('generationPending') else tool for tool in resolved['tools']
+                    ]}
                 if resolved is not row:
                     record.messages[index] = resolved
                     dirty = min(dirty, index)
