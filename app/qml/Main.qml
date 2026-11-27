@@ -297,9 +297,12 @@ ApplicationWindow {
     }
     Timer { id: dropFocusTimer; interval: 80; onTriggered: if (!coworkLauncher.visible) { backend.activateChatWindow(); composer.focusInput() } }
     readonly property bool conversationVisible: page === "chat" && visible && visibility !== Window.Minimized && active
-    onPageChanged: if (page !== "chat") {
-        cancelSidebarSelection()
-        webPane.dismiss()
+    onPageChanged: {
+        backend.channels.setVisible(page === "channel")
+        if (page !== "chat") {
+            cancelSidebarSelection()
+            webPane.dismiss()
+        }
     }
     onConversationVisibleChanged: backend.setConversationVisible(conversationVisible)
     Component.onCompleted: backend.setConversationVisible(conversationVisible)
@@ -443,7 +446,14 @@ ApplicationWindow {
                     onClicked: window.openConversationSearch()
                 }
             }
-            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : backend.cowork.active ? window.coworkRoleGroups ? (backend.language === "en" ? "Roles" : "角色") : (backend.language === "en" ? "Recent work" : "最近工作") : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
+            ActionButton {
+                objectName: "channelSidebarButton"
+                x: 16; y: sidebarActions.y + sidebarActions.height + 9
+                width: parent.width - 32; height: Theme.control(36)
+                text: "Channel"; glyph: "layers"; quiet: window.page !== "channel"
+                onClicked: window.page = "channel"
+            }
+            Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 61 + Theme.control(42) + Theme.control(36); text: backend.showArchived ? I18n.t("已归档") : backend.cowork.active ? window.coworkRoleGroups ? (backend.language === "en" ? "Roles" : "角色") : (backend.language === "en" ? "Recent work" : "最近工作") : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
             ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
             ActionButton {
                 objectName: "coworkGroupRolesButton"; visible: backend.cowork.active && !backend.showArchived
@@ -729,7 +739,7 @@ ApplicationWindow {
                 }
                 Text {
                     font.family: Theme.fontFamily
-                    text: window.page === "chat" ? (backend.cowork.active ? (backend.language === "en" ? "Cowork" : "协同办公") : I18n.t("工作空间")) : I18n.t("偏好设置")
+                    text: window.page === "channel" ? "Channel" : window.page === "chat" ? (backend.cowork.active ? (backend.language === "en" ? "Cowork" : "协同办公") : I18n.t("工作空间")) : I18n.t("偏好设置")
                     color: coworkHeaderOverview.containsMouse && coworkHeaderOverview.enabled ? Theme.ink : Theme.muted
                     font.pixelSize: Theme.font(11, visible)
                     anchors.verticalCenter: parent.verticalCenter
@@ -756,6 +766,8 @@ ApplicationWindow {
                     visible: window.page !== "chat" || !window.coworkEmpty
                     font.family: Theme.fontFamily
                     text: {
+                        if (window.page === "channel")
+                            return backend.channels.channel.title || (backend.language === "en" ? "Task Channels" : "任务频道")
                         if (window.page !== "chat")
                             return [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]
                         const title = window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle
@@ -1123,6 +1135,12 @@ ApplicationWindow {
             onReleased: finishResize(webGesture.collapseReady)
             onCanceled: finishResize(false)
             Rectangle { anchors.horizontalCenter: parent.horizontalCenter; width: 2; height: parent.height; color: parent.containsMouse || parent.pressed ? Theme.accent : "transparent"; opacity: 0.5 }
+        }
+
+        Loader {
+            anchors.top: header.bottom; anchors.bottom: parent.bottom; width: parent.width
+            active: window.page === "channel"
+            source: "ChannelPage.qml"
         }
 
         // Settings are built after the first frame, in idle frame time. Opening

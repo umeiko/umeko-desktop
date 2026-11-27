@@ -536,12 +536,20 @@ class GlobalAgents(QObject):
             if input_from_pet:text='(input from pet)\n'+text
             if record.bus_task and not record.busy: raise ValueError('任务结果正在处理，请等待完成')
             if not record.busy and sum(r.busy for r in (*self.records.values(), *self.member_sessions.values()))>=4: raise ValueError('最多同时运行 4 个全局子智能体')
+            channels = getattr(self.b, '_channels', None)
             if record.busy:
                 if not record.ready: raise ValueError('代理正在加载，请稍后发送')
+                if channels is not None:
+                    channels.invalidate(record)
                 self.b._pool.write(record,{'type':'steer','text':text}); return {'status':'queued'}
             record.messages.append({'role':'user','text':text}); record.messages.append({'role':'assistant','text':''})
             record.optimistic_user=True
             if not self.b._command_pi('prompt',record,text=text): record.optimistic_user=False;record.messages=record.messages[:-2]; raise ValueError('代理启动失败，请检查模型与内核')
+            if channels is not None:
+                if input_from_pet:
+                    channels.invalidate(record)
+                else:
+                    channels.start_human_turn(record, text)
             self.changed(); return {'status':'accepted'}
         if method=='stop':
             self.halt(identifier)
@@ -682,6 +690,8 @@ class GlobalAgents(QObject):
             row.update(scope)
             self.requests[identifier]=row
             self.enqueue(target_id,row,'Agent Bus sender '+self.self_info(caller)['name']+' sent the task in structured data.task. Report through umeko_desktop agent_bus.reply with requestId='+identifier+', status=progress|completed|failed, result=your report. The originator awaits an explicit result. Follow your own permissions and user approvals.',True)
+            if (channels := getattr(self.b, '_channels', None)) is not None:
+                channels.capture_dispatch(caller, row)
             self.changed(); return {'status':'accepted','requestId':identifier}
         if operation=='agent_bus.reply':
             identifier=self.text(args,'requestId',40); row=self.requests.get(identifier)
@@ -698,6 +708,8 @@ class GlobalAgents(QObject):
                 if time.time()-row.get('lastProgress',0)<5: raise ValueError('进度更新间隔至少为 5 秒')
                 row.update(status='running',result=result,lastProgress=time.time())
                 self.enqueue(row['source'],row,'Agent Bus progress: '+result,False)
+                if (channels := getattr(self.b, '_channels', None)) is not None:
+                    channels.observe_request(row)
             elif row.get('access'):
                 row['completion'] = {'status':status,'result':result}
             else: self.finish(row,status,result)
@@ -906,6 +918,8 @@ class GlobalAgents(QObject):
         if row.get('worktreeState') == 'ready' and status != 'completed':
             row['worktreeState'] = 'preserved'
         row.update(status=status,result=result[:8000],finished=time.time())
+        if (channels := getattr(self.b, '_channels', None)) is not None:
+            channels.observe_request(row)
         self.outbox={k:v for k,v in self.outbox.items() if v['requestId']!=row['id']}
         if self.active and self.can_route(row['target'],row['source']):
             self.enqueue(row['source'],row,'Agent Bus result ['+status+']: '+result,True)
@@ -1060,6 +1074,8 @@ class GlobalAgents(QObject):
                 if task:row.update(status='sending',started=time.time());self.changed()
                 notification={k:item[k] for k in ('id','requestId','message','wake','data')}
                 notification.update(widgetId='global-agents',name='Agent Bus（智能体总线）')
+                if record.global_agent and (channels := getattr(self.b, '_channels', None)) is not None:
+                    channels.before_notification(record, item)
                 if record.busy or not item['wake'] and record.process:
                     self.b._pool.write(record,{'type':'widget-notify','notification':notification}); item['sent']=now
                 elif self.b._command_pi('widget-notify',record,notification=notification): item['sent']=now
@@ -1087,6 +1103,9 @@ class GlobalAgents(QObject):
                 for field in ('source','target'):
                     if item['data'][field] in before:item['data'][field]=after
         kind=event.get('type')
+        channels = getattr(self.b, '_channels', None)
+        if record.global_agent and channels is not None:
+            channels.observe_coordinator(record, event)
         if kind in ('done', 'exit'):
             self.group_chat.active.pop(record.key, None)
         member = self.agents.get(record.global_agent)
@@ -1115,7 +1134,11 @@ class GlobalAgents(QObject):
             if status in ('delivered','failed') or (status == 'cancelled' and 'teamId' in item['data']):
                 self.outbox.pop(item['id'],None)
                 if row and row['status'] not in TERMINAL and item['target']==row['target']:
-                    if status=='delivered': row['status']='running'; self.changed()
+                    if status=='delivered':
+                        row['status']='running'
+                        if channels is not None:
+                            channels.observe_request(row)
+                        self.changed()
                     else: self.finish(row,'failed',event.get('error') or '目标未能接收消息')
         if getattr(record, 'global_agent', '') == self.selected_conversation and self.selected_conversation:
             if not self.chat_refresh.isActive(): self.chat_refresh.start()

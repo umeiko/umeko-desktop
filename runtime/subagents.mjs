@@ -153,7 +153,7 @@ export function subagentTool(previous, channel, event, record = {}, invocation =
   };
 }
 
-export function createSubagentExtension({ emit, loadPackage, restoreSession, getParentRun, getCowork } = {}) {
+export function createSubagentExtension({ emit, loadPackage, restoreSession, getParentRun, getCowork, decideChannelIntent } = {}) {
   const calls = new AsyncLocalStorage();
   const rows = new Map();
   const parentRuns = new Map();
@@ -401,6 +401,88 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     } catch (error) { reply(false,error.message); }
   }
 
+  const channelGrants = new Map();
+  function channelGrant(input) {
+    const grant = channelGrants.get(input.requestId);
+    if (grant && grant.childSessionId === input.childSessionId && grant.parentSessionId === input.parentSessionId)
+      grant.finish(input.ok === true);
+  }
+
+  async function channelFollowUp(input, parent) {
+    const {id, requestId, childFile, childSessionId, workspace} = input;
+    const row = rows.get(id)?.tool.subagent, context = contexts.get(id), token = generation;
+    const parentSessionId = parent.sessionManager.getSessionId();
+    const reject = message => emit({type:"channel_child_result", requestId, ok:false, message});
+    if (!/^[a-f0-9]{32}$/.test(requestId || "") || !row || row.status !== "completed"
+        || row.isBackground || row.outputFile !== childFile
+        || restoring.has(id) || compacting.has(id) || sessions.get(id)?.session?.isStreaming
+        || !context?.model || !context.systemPrompt || !Array.isArray(context.tools)
+        || context.cwd !== workspace || typeof input.text !== "string" || !input.text.trim()
+        || input.text.length > 16000) {
+      reject("原子智能体的会话、工具授权或运行状态已变化；未发送。");
+      return;
+    }
+    const cancellation = new AbortController();
+    restoring.set(id, cancellation);
+    let child, removeListener, started = false;
+    const ensureCurrent = () => {
+      if (token !== generation || cancellation.signal.aborted) throw new Error("原生会话已切换");
+    };
+    try {
+      const scope = {workspace, childSessionId, parentSessionId};
+      child = await restoreSession(row, context, [], {...scope, intent:"question"});
+      ensureCurrent();
+      const decision = await decideChannelIntent(child, input.text.trim(), cancellation.signal);
+      ensureCurrent();
+      if (decision.intent === "clarify") {
+        reject("我还不确定你是想讨论，还是要我现在执行并共享进度。请明确范围；当前内容未同步，草稿已保留。");
+        return;
+      }
+      if (decision.intent === "task") {
+        const allowed = await new Promise(resolve => {
+          const finish = ok => {
+            clearTimeout(timer);
+            channelGrants.delete(requestId);
+            cancellation.signal.removeEventListener("abort", cancelled);
+            resolve(ok);
+          };
+          const cancelled = () => finish(false);
+          const timer = setTimeout(cancelled, 5000);
+          channelGrants.set(requestId, {childSessionId, parentSessionId, finish});
+          cancellation.signal.addEventListener("abort", cancelled, {once:true});
+          emit({type:"channel_child_intent", requestId, childSessionId, parentSessionId, action:decision.action});
+        });
+        ensureCurrent();
+        if (!allowed) {
+          reject("任务权限已变化，未执行或同步；草稿已保留。");
+          return;
+        }
+        await child.dispose();
+        child = await restoreSession(row, context, [], {...scope, intent:"task"});
+        ensureCurrent();
+      }
+      cancellation.signal.addEventListener("abort", () => { void child.abort(); }, {once:true});
+      removeListener = child.subscribe(event => {
+        if (event.type !== "agent_start" || started) return;
+        started = true;
+        if (decision.intent === "task")
+          emit({type:"channel_child_started", requestId, childSessionId, parentSessionId, action:decision.action});
+      });
+      await child.prompt(input.text.trim(), {expandPromptTemplates:false});
+      ensureCurrent();
+      const final = [...child.messages].reverse().find(message => message.role === "assistant");
+      if (!started || !final || ["error", "aborted"].includes(final.stopReason))
+        throw new Error("子智能体未完成此次回复");
+      emit({type:"channel_child_result", requestId, ok:true});
+    } catch (error) {
+      emit({type:"channel_child_result", requestId, ok:false, started, message:error.message});
+    } finally {
+      removeListener?.();
+      await child?.dispose?.();
+      if (restoring.get(id) === cancellation) restoring.delete(id);
+    }
+  }
+
   function dispose() {
     generation++;
     for (const [id,cancellation] of restoring) { cancellation.abort(); void sessions.get(id)?.session.abort(); }
@@ -564,5 +646,5 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     const owner = [...sessions].find(([_id,value]) => value.session.sessionManager.getSessionId() === sessionId);
     if (owner && watching === owner[0]) emit({type:'subagent_event',id:owner[0],event});
   }
-  return { extension, dispose, command, hydrate, automaticTool };
+  return { extension, dispose, command, channelFollowUp, channelGrant, hydrate, automaticTool };
 }

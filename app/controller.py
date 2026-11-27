@@ -413,6 +413,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._umeko_control = UmekoControl(self)
         from .desktop_plugins import DesktopPlugins
         self._desktop_plugins = DesktopPlugins(self)
+        from .task_channels import TaskChannels
+        self._channels = TaskChannels(self)
         from .slash_commands import SlashCommands
         self._slash_commands = SlashCommands(self)
         self._reasoning_discovery = ReasoningDiscovery(self)
@@ -422,6 +424,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property(QObject, constant=True)
     def loginStartup(self):
         return self._login_startup
+
+    @Property(QObject, constant=True)
+    def channels(self):
+        return self._channels
 
     @Property(QObject, constant=True)
     def windowsSandbox(self):
@@ -3117,6 +3123,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._chat_wallpaper.close()
         self._cancel_pi_warmup()
         self._reasoning_discovery.close()
+        self._channels.close()
         self._desktop_plugins.close()
         self._cowork.close()
         self._appearance_save.stop()
