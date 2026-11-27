@@ -91,7 +91,7 @@ test('denial prevents both the provider call and filesystem output',async t=>{
   assert.deepEqual(await readdir(f.cwd),[]);
 });
 
-test('speech produces a chat file reference, forwards options, and never overwrites',async t=>{
+test('speech produces an inline audio reference, forwards options, and never overwrites',async t=>{
   const f=await fixture(t);
   await writeFile(join(f.cwd,'hello.mp3'),'user file');
   const result=await f.run('voice_gen',{text:'Hello there',voice:'test-voice',format:'mp3',speed:1.2,output_filename:'hello.mp3'});
@@ -99,7 +99,7 @@ test('speech produces a chat file reference, forwards options, and never overwri
   assert.equal(path,join(f.cwd,'hello-2.mp3'));
   assert.equal(await readFile(join(f.cwd,'hello.mp3'),'utf8'),'user file');
   assert.equal(await readFile(path,'utf8'),'fixture speech');
-  assert.equal(chatboxItems('voice_gen',result)[0].kind,'file');
+  assert.equal(chatboxItems('voice_gen',result)[0].kind,'audio');
   assert.deepEqual(f.requests[0].body,{kind:'speech',text:'Hello there',voice:'test-voice',format:'mp3',speed:1.2});
   assert.match(f.confirmations[0][1],/Voice account \/ voice-model/);
 });
