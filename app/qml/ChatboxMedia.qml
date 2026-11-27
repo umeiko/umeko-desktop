@@ -25,10 +25,11 @@ Column {
             readonly property bool sheet: backend.cowork.active && item.kind === "file" && /\.xlsx$/i.test(item.path || "")
             readonly property bool previewable: sheet || ["markdown", "code", "text"].includes(item.kind)
             readonly property bool inlineImage: item.kind === "image" && !!item.preview
+            readonly property bool inlineAudio: item.kind === "audio" && typeof chatboxAudio !== "undefined"
             objectName: "chatboxCard_" + key
-            width: inlineImage ? Math.min(root.width, 460, item.pixelWidth || 460) : Math.min(root.width, Math.min(400, Math.max(120, nameSize.advanceWidth + Theme.control(42) + (backend.cowork.active && previewable ? Theme.control(46) : 0))))
+            width: inlineAudio ? Math.min(root.width, Theme.control(350)) : inlineImage ? Math.min(root.width, 460, item.pixelWidth || 460) : Math.min(root.width, Math.min(400, Math.max(120, nameSize.advanceWidth + Theme.control(42) + (backend.cowork.active && previewable ? Theme.control(46) : 0))))
             height: content.implicitHeight
-            radius: 7
+            radius: inlineAudio ? 12 : 7
             color: inlineImage ? "transparent" : headerArea.pressed || contextMenu.visible ? Theme.accentBg : headerArea.interactionHovered ? Theme.hover : Theme.surface
             border.color: inlineImage ? "transparent" : headerArea.interactionHovered || contextMenu.visible ? Qt.alpha(Theme.accent, 0.45) : Theme.line
             Behavior on color { ColorAnimation { duration: 110 } }
@@ -42,6 +43,7 @@ Column {
             Column {
                 id: content; width: parent.width; spacing: 6
                 Item {
+                    visible: !card.inlineAudio
                     width: parent.width; height: Theme.control(card.inlineImage ? 23 : 30)
                     Glyph { visible: !card.inlineImage; x: 9; width: Theme.icon(14); height: Theme.icon(14); anchors.verticalCenter: parent.verticalCenter; name: card.item.kind === "web" ? "globe" : card.item.kind === "code" ? "code" : card.item.kind === "folder" ? "folder" : "file" }
                     Text { font.family: Theme.fontFamily;
@@ -64,6 +66,26 @@ Column {
                     }
                     HoverTip { objectName: "chatboxTip_" + card.key; active: headerArea.interactionHovered && !headerArea.pressed && !contextMenu.visible; heading: card.item.title || card.item.name || ""; text: [card.item.path, card.item.caption, card.item.previewNote].filter(value => !!value).join("\n") }
                     Accessible.role: Accessible.Button; Accessible.name: card.item.title || card.item.name || I18n.t("文件"); Accessible.description: card.item.path || ""
+                }
+                Loader {
+                    active: card.inlineAudio
+                    visible: active
+                    width: parent.width
+                    sourceComponent: ChatboxAudioControls {
+                        player: chatboxAudio
+                        key: card.key + ":" + (card.item.path || "")
+                        path: card.item.path || ""
+                        title: card.item.title || card.item.name || ""
+                        formatLabel: (card.item.name || "").split(".").pop().toUpperCase()
+                        playbackAllowed: root.sessionActive && visible
+                        selectionController: root.selectionController
+                        itemId: card.key
+                        onOpenRequested: card.open()
+                        onMenuRequested: at => {
+                            const point = mapToItem(card, at.x, at.y)
+                            contextMenu.popup(point.x, point.y)
+                        }
+                    }
                 }
                 Item {
                     width: parent.width; visible: card.inlineImage
@@ -143,7 +165,9 @@ Column {
                     }
                 }
                 SelectableText {
-                    visible: card.inlineImage && text.length > 0; width: parent.width; text: card.item.caption || ""; textFormat: TextEdit.PlainText; color: Theme.muted
+                    visible: (card.inlineImage || card.inlineAudio) && text.length > 0
+                    x: card.inlineAudio ? Theme.control(12) : 0
+                    width: parent.width - 2 * x; text: card.item.caption || ""; textFormat: TextEdit.PlainText; color: Theme.muted
                     font.pixelSize: Theme.font(11, visible, root.selectionController); wrapMode: TextEdit.Wrap
                     selectionController: root.selectionController; messageIndex: root.messageIndex; blockIndex: root.blockOffset + card.index * 3 + 1
                 }

@@ -33,6 +33,8 @@ On macOS, `Start-Umeko.command` also opens from Finder. The launcher includes st
 
 On Linux, install your distribution's Qt/X11/Wayland runtime libraries and desktop keyring first. Credentials are stored only in the keyring; if it is locked or unavailable, Umeko tells you.
 
+Inline audio playback on Linux requires the PulseAudio client library (`libpulse0` on Debian and Ubuntu). If it is missing, you can still open the original audio attachment in a system player.
+
 ## Build
 
 Build on the target OS and CPU architecture:
