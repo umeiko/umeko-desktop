@@ -1,17 +1,81 @@
 """Per-provider networking and opt-in, credential-redacted request diagnostics."""
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime, timezone
+import http.client
 import urllib.request
 import urllib.parse
 import re
 import os
 import ssl
 import sys
+import time
 from pathlib import Path
 
 policy = ContextVar('umeko_network_policy', default=None)
 trace = ContextVar('umeko_network_trace', default=None)
 _MACOS_CA_FILE = Path('/etc/ssl/cert.pem')
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 15.0
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def set_response_timeout(response, timeout_seconds):
+    """Adjust the underlying socket read timeout after headers or first SSE event."""
+    raw = getattr(response, 'response', response)
+    fp = getattr(raw, 'fp', None)
+    sock = getattr(getattr(fp, 'raw', fp), '_sock', None) or getattr(raw, '_sock', None)
+    if sock is not None and hasattr(sock, 'settimeout'):
+        try:
+            sock.settimeout(timeout_seconds)
+            return True
+        except OSError:
+            return False
+    return False
+
+
+class SplitTimeoutHTTPHandler(urllib.request.HTTPHandler):
+    """Apply a short TCP connect timeout separately from header/stream read timeout."""
+    def __init__(self, *, connect_timeout=DEFAULT_CONNECT_TIMEOUT_SECONDS, debuglevel=0):
+        super().__init__(debuglevel=debuglevel)
+        self._connect_timeout = connect_timeout
+
+    def http_open(self, req):
+        connect_limit = self._connect_timeout
+        class _Connection(http.client.HTTPConnection):
+            def connect(self):
+                read_timeout = self.timeout
+                self.timeout = min(connect_limit, read_timeout) if isinstance(read_timeout, (int, float)) else connect_limit
+                try:
+                    super().connect()
+                finally:
+                    self.timeout = read_timeout
+                if self.sock is not None and read_timeout is not None:
+                    self.sock.settimeout(read_timeout)
+        return self.do_open(_Connection, req)
+
+
+class SplitTimeoutHTTPSHandler(urllib.request.HTTPSHandler):
+    """Apply a short TCP/TLS connect timeout separately from header/stream read timeout."""
+    def __init__(self, *, context=None, connect_timeout=DEFAULT_CONNECT_TIMEOUT_SECONDS, debuglevel=0):
+        super().__init__(debuglevel=debuglevel, context=context)
+        self._connect_timeout = connect_timeout
+
+    def https_open(self, req):
+        connect_limit = self._connect_timeout
+        class _Connection(http.client.HTTPSConnection):
+            def connect(self):
+                read_timeout = self.timeout
+                self.timeout = min(connect_limit, read_timeout) if isinstance(read_timeout, (int, float)) else connect_limit
+                try:
+                    super().connect()
+                finally:
+                    self.timeout = read_timeout
+                if self.sock is not None and read_timeout is not None:
+                    self.sock.settimeout(read_timeout)
+        return self.do_open(_Connection, req, context=self._context)
 
 
 def validate_ca_file(value):
@@ -80,24 +144,117 @@ def proxy_handler(settings=None, environment_proxy=True):
 
 
 class TracedResponse:
-    def __init__(self, response, record):
+    def __init__(self, response, record, *, started_mono=None, started_at=None, headers_mono=None, headers_at=None):
         self.response, self.record = response, record
+        now_mono = time.monotonic()
+        now_iso = _utc_now()
+        self._started_mono = now_mono if started_mono is None else started_mono
+        self._headers_mono = now_mono if headers_mono is None else headers_mono
+        self._first_event_mono = None
+        self._last_data_mono = None
+        self._bytes_received = 0
+        self._sse_events = 0
+        self._heartbeat_count = 0
+        self._sse_line_tail = ''
+        self._completed_normally = False
+        content_type = ''
+        if getattr(response, 'headers', None) is not None:
+            content_type = str(response.headers.get('Content-Type', '') or '').lower()
+        self._is_sse = 'event-stream' in content_type
+        self.record['timing'] = {
+            'phase': 'waiting_first_sse' if self._is_sse else 'waiting_body',
+            'requestStartedAt': started_at or now_iso,
+            'headersReceivedAt': headers_at or now_iso,
+            'headersMs': max(0, round((self._headers_mono - self._started_mono) * 1000)),
+            'firstEventAt': None,
+            'firstEventMs': None,
+            'lastDataAt': None,
+            'lastDataToErrorMs': None,
+            'totalMs': None,
+            'bytesReceived': 0,
+            'sseEvents': 0,
+            'heartbeatCount': 0,
+            'completedNormally': False,
+        }
+
     def __getattr__(self, name):
         return getattr(self.response, name)
+
+    def _observe_chunk(self, data):
+        if not data:
+            return
+        now_mono = time.monotonic()
+        now_iso = _utc_now()
+        self._bytes_received += len(data)
+        self._last_data_mono = now_mono
+        decoded = data.decode('utf-8', 'replace')
+        self.record['response']['body'] += decoded
+        if self._is_sse:
+            combined = self._sse_line_tail + decoded
+            lines = combined.split('\n')
+            self._sse_line_tail = lines.pop()
+            for line in lines:
+                if line.rstrip('\r').startswith(':'):
+                    self._heartbeat_count += 1
+        timing = self.record['timing']
+        timing['lastDataAt'] = now_iso
+        timing['bytesReceived'] = self._bytes_received
+        timing['heartbeatCount'] = self._heartbeat_count
+
+    def mark_event(self):
+        now_mono = time.monotonic()
+        timing = self.record['timing']
+        if self._first_event_mono is None:
+            self._first_event_mono = now_mono
+            timing['firstEventAt'] = _utc_now()
+            timing['firstEventMs'] = max(0, round((now_mono - self._started_mono) * 1000))
+            timing['phase'] = 'streaming'
+        self._sse_events += 1
+        timing['sseEvents'] = self._sse_events
+
+    def mark_completed(self):
+        now_mono = time.monotonic()
+        self._completed_normally = True
+        timing = self.record['timing']
+        timing['completedNormally'] = True
+        timing['phase'] = 'completed'
+        timing['totalMs'] = max(0, round((now_mono - self._started_mono) * 1000))
+
+    def mark_failed(self, error):
+        now_mono = time.monotonic()
+        timing = self.record['timing']
+        timing['completedNormally'] = False
+        timing['totalMs'] = max(0, round((now_mono - self._started_mono) * 1000))
+        anchor = self._last_data_mono if self._last_data_mono is not None else self._headers_mono
+        timing['lastDataToErrorMs'] = max(0, round((now_mono - anchor) * 1000))
+        if isinstance(error, (http.client.IncompleteRead, http.client.RemoteDisconnected, ConnectionError)) or \
+                'Upstream stream ended before completion' in str(error):
+            timing['phase'] = 'incomplete_stream'
+        elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError):
+            timing['phase'] = 'waiting_first_sse' if self._first_event_mono is None else 'stream_idle'
+        elif timing.get('phase') not in ('waiting_headers', 'waiting_first_sse', 'stream_idle', 'incomplete_stream'):
+            timing['phase'] = 'stream_error'
+
     def _read(self, method, *args):
         data = getattr(self.response, method)(*args)
-        self.record['response']['body'] += data.decode('utf-8', 'replace')
+        self._observe_chunk(data)
         return data
+
     def read(self, *args):
         return self._read('read', *args)
+
     def readline(self, *args):
         return self._read('readline', *args)
+
     def read1(self, *args):
         return self._read('read1' if hasattr(self.response, 'read1') else 'read', *args)
+
     def __enter__(self):
         return self
+
     def __exit__(self, *args):
         self.response.close()
+
     def __iter__(self):
         return iter(self.readline, b'')
 

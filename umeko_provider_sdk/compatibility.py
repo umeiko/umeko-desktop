@@ -233,13 +233,39 @@ def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), autom
             record['compatibility'] = copy.deepcopy(remembered)
         if records is not None:
             records.append(record)
+        started_mono = time.monotonic()
+        started_at = datetime.now(timezone.utc).isoformat()
         try:
             response = opener.open(outgoing, timeout=timeout)
+            headers_mono = time.monotonic()
+            headers_at = datetime.now(timezone.utc).isoformat()
             record['response'].update(status=response.status, headers=dict(response.headers))
-            return TracedResponse(response, record) if records is not None else response
+            return TracedResponse(
+                response, record,
+                started_mono=started_mono, started_at=started_at,
+                headers_mono=headers_mono, headers_at=headers_at,
+            ) if records is not None else response
         except urllib.error.HTTPError as error:
             raw = error.read()
+            now_mono = time.monotonic()
+            now_iso = datetime.now(timezone.utc).isoformat()
+            elapsed_ms = max(0, round((now_mono - started_mono) * 1000))
             record['response'].update(status=error.code, headers=dict(error.headers), body=raw.decode('utf-8', 'replace'))
+            record['timing'] = {
+                'phase': 'http_error',
+                'requestStartedAt': started_at,
+                'headersReceivedAt': now_iso,
+                'headersMs': elapsed_ms,
+                'firstEventAt': None,
+                'firstEventMs': None,
+                'lastDataAt': now_iso,
+                'lastDataToErrorMs': 0,
+                'totalMs': elapsed_ms,
+                'bytesReceived': len(raw),
+                'sseEvents': 0,
+                'heartbeatCount': 0,
+                'completedNormally': False,
+            }
             names = rejected_parameters(error.code, raw, automatic) if not rejected_once else set()
             if names and isinstance(body, dict):
                 changed = {name for name in names if _adapt(body, name)}
@@ -262,5 +288,21 @@ def compatible_open(opener, request, *, timeout=20, memory=None, scope=(), autom
             error.close()
             raise urllib.error.HTTPError(error.url, error.code, error.msg, error.headers, io.BytesIO(raw)) from None
         except OSError as error:
+            elapsed_ms = max(0, round((time.monotonic() - started_mono) * 1000))
             record['exception'] = str(error)
+            record['timing'] = {
+                'phase': 'waiting_headers',
+                'requestStartedAt': started_at,
+                'headersReceivedAt': None,
+                'headersMs': None,
+                'firstEventAt': None,
+                'firstEventMs': None,
+                'lastDataAt': None,
+                'lastDataToErrorMs': elapsed_ms,
+                'totalMs': elapsed_ms,
+                'bytesReceived': 0,
+                'sseEvents': 0,
+                'heartbeatCount': 0,
+                'completedNormally': False,
+            }
             raise

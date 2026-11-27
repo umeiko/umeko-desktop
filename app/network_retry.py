@@ -66,7 +66,7 @@ def transient_failure(error, http=()):
         return True
     if isinstance(error, (TimeoutError, ConnectionError)) or isinstance(getattr(error, 'reason', None), (TimeoutError, ConnectionError)):
         return True
-    return bool(re.search(r'ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network.?error|fetch failed|connection(?:reset|aborted|refused)error|connection (?:reset|lost|closed|refused)|socket (?:hang up|closed)|timed? out|timeout|terminated|incomplete.?read|remote.?disconnected|premature|stream (?:interrupted|ended|failed)|overloaded|rate.?limit|server_busy|temporarily unavailable|供应商流已中断|供应商请求超时|等待模型输出超时|接收模型输出时连接中断|请求超时|连接.*(?:中断|重置|超时)|网络.*(?:中断|超时)', detail, re.I))
+    return bool(re.search(r'ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network.?error|fetch failed|connection(?:reset|aborted|refused)error|connection (?:reset|lost|closed|refused)|socket (?:hang up|closed)|timed? out|timeout|terminated|incomplete.?read|remote.?disconnected|premature|stream (?:interrupted|ended|failed)|overloaded|rate.?limit|server_busy|temporarily unavailable|供应商流已中断|供应商请求超时|等待模型输出超时|发出请求后等待响应头超时|收到响应头后等待首条模型输出超时|流式输出中途长时间未收到数据而超时|接收模型输出时连接中断|接收模型输出时未收到正常结束标记即断流|请求超时|连接.*(?:中断|重置|超时)|网络.*(?:中断|超时)', detail, re.I))
 
 
 def upstream_failure(error):

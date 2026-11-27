@@ -6,7 +6,7 @@ import { installProviderPolicy, setGateway, setMcpNetwork } from "./provider-pol
 import { prepareNativeSettings, sessionResourceSettings, sessionExtensionPaths, manageResources, builtins, extensionName, SUBAGENT_COMPLETION_HINT } from "./resources.mjs";
 import { sessionSkillOptions, manageSkills } from "./skills.mjs";
 import { chatboxExtension, chatboxItems, CHATBOX_TOOL } from "./chatbox.mjs";
-import { GATEWAY_HTTP_IDLE_TIMEOUT_MS, NETWORK_RETRY, retryOmissions } from "./network-retry.mjs";
+import { GATEWAY_HTTP_IDLE_TIMEOUT_MS, NETWORK_RETRY, buildStagedContinuation, normalizeStreamMaxRetries, retryOmissions } from "./network-retry.mjs";
 import { bindHttpRetryBoundary } from "./http-retry-boundary.mjs";
 import { DESKTOP_PI_PROMPT, addMcpFromInput, createPiCommandController, piCommandsEnabled } from "./pi-commands.mjs";
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, REPLY_TO_GROUPCHAT, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
@@ -111,6 +111,8 @@ globalThis[Symbol.for("umeko:shell-environment")] = (name, env, config) =>
 const nativeTools = [...allToolNames, "codemode", "tool_search", CHATBOX_TOOL, UMEKO_TOOL, "background_job"];
 const remoteTools = ["remote_command", "remote_files", "remote_network"];
 const applyPatchEnabled = model => config?.models?.some(row => row.id === model?.id && row.applyPatch === true) === true;
+const streamMaxRetriesFor = modelId => normalizeStreamMaxRetries(config?.models?.find(row => row.id === modelId)?.streamMaxRetries);
+globalThis[Symbol.for("umeko:stream-retry-policy")] = { getMaxRetries: () => streamMaxRetriesFor(selectedModel?.id || config?.model) };
 const version = JSON.parse(readFileSync(new URL("../package.json", entry), "utf8")).version;
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 const bashHost = process.env.UMEKO_BASH_JOB_HOST;
@@ -467,7 +469,8 @@ async function bindSession(session) {
       patchFiles: event.toolName === APPLY_PATCH && event.type === "tool_execution_end" && !event.isError ? event.result?.details?.patchFiles : undefined,
       taskStep: trackingTask && event.type === "tool_execution_update" ? false : undefined,
       state: event.type === "tool_execution_end" ? event.isError ? "error" : "done" : "running" });
-    const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < NETWORK_RETRY.maxRetries &&
+    const activeMaxRetries = session.settingsManager?.getRetrySettings?.()?.maxRetries ?? streamMaxRetriesFor(session.model?.id);
+    const willRetry = event.type === "message_end" && session.autoRetryEnabled && session.retryAttempt < activeMaxRetries &&
       isRetryableAssistantError(event.message) && !isContextOverflow(event.message, session.model?.contextWindow || 128000);
     if (event.type === "message_end" && !willRetry) {
       const error = event.message.stopReason === "aborted" ? "" : event.message.errorMessage || "";
@@ -644,7 +647,7 @@ async function restoreSubagentSession(child, context, customTools) {
     "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。", SUBAGENT_COMPLETION_HINT);
   const native = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
   const settings = await sessionResourceSettings(Pi, {...config,cwd:manager.getCwd()}, native);
-  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),httpIdleTimeoutMs:GATEWAY_HTTP_IDLE_TIMEOUT_MS,retry:{...NETWORK_RETRY,provider:{maxRetries:0}},cacheWarming:"off"});
+  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),httpIdleTimeoutMs:GATEWAY_HTTP_IDLE_TIMEOUT_MS,retry:{...NETWORK_RETRY,maxRetries:streamMaxRetriesFor(model?.id),provider:{maxRetries:0}},cacheWarming:"off"});
   // New children persist their exact resolved prompt and allowlist. Older
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
@@ -758,7 +761,7 @@ async function init(input) {
     }
     const settings = Pi.SettingsManager.inMemory({ ...nativeSettings,
       httpIdleTimeoutMs: GATEWAY_HTTP_IDLE_TIMEOUT_MS,
-      retry: { ...nativeSettings.retry, ...NETWORK_RETRY, provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
+      retry: { ...nativeSettings.retry, ...NETWORK_RETRY, maxRetries: streamMaxRetriesFor(selectedModel?.id || input.model), provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(remoteWorkspaceEnabled ? remoteTools : []), ...(settingsManager.getDefaultTools() || [])])],
       codemode: { ...nativeSettings.codemode, mode: "on" },
       cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
@@ -995,11 +998,17 @@ async function capabilities() {
 }
 
 async function selectModel(alias) {
-  if (!alias || runtime.session.model?.id === alias) return;
+  if (!alias) return;
+  const maxRetries = streamMaxRetriesFor(alias);
+  if (runtime.session.model?.id === alias) {
+    runtime.session.settingsManager?.applyOverrides?.({ retry: { ...NETWORK_RETRY, maxRetries, provider: { maxRetries: 0 } } });
+    return;
+  }
   const model = modelRuntime.getModel("umeko", alias);
   if (!model) throw new Error("模型未配置");
   await runtime.session.setModel(model);
   selectedModel = model;
+  runtime.session.settingsManager?.applyOverrides?.({ retry: { ...NETWORK_RETRY, maxRetries, provider: { maxRetries: 0 } } });
   exposeNativeTools(runtime.session);
 }
 
@@ -1267,6 +1276,17 @@ async function execute(input) {
       await runtime.session.sendCustomMessage({customType: "umeko-model-resume", display: false,
         content: "Continue the same task after the model change. Use the conversation and existing tool results to pick up where the previous model stopped. Do not repeat completed actions.",
       }, {triggerTurn: true});
+    }
+    else if (input.type === "staged-continue") {
+      blockedSessions.delete(runtime.session);
+      const continuation = buildStagedContinuation(runtime.session.sessionManager.getBranch());
+      emit({ type: "status", text: "正在分阶段继续" });
+      await runtime.session.sendCustomMessage({
+        customType: "umeko-staged-continue",
+        display: false,
+        content: continuation.content,
+        details: continuation.details,
+      }, { triggerTurn: true });
     }
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);

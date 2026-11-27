@@ -1,5 +1,5 @@
 """Private local request reports. Credentials are redacted before persistence."""
-import http.client
+from http.client import IncompleteRead, RemoteDisconnected
 import json
 import re
 import threading
@@ -9,6 +9,24 @@ from PySide6.QtCore import QObject, Signal
 from umeko_provider_sdk.network import redact, secret_values
 from .network_retry import transient_failure, certificate_failure, describe_failure
 from .provider_errors import format_http_error, safe_text
+
+_STREAM_PHASE_LABELS = {
+    'waiting_headers': '发出请求后等待响应头',
+    'waiting_first_sse': '收到响应头后等待首条 SSE 事件',
+    'stream_idle': '流式输出中途长时间无数据',
+    'incomplete_stream': '未收到正常结束标记即断流',
+    'http_error': '供应商返回 HTTP 错误',
+    'completed': '已正常结束',
+}
+
+
+def _stream_diagnostics(http_calls):
+    for call in reversed(http_calls or ()):
+        timing = call.get('timing')
+        if isinstance(timing, dict):
+            phase = str(timing.get('phase') or '')
+            return {**timing, 'phaseLabel': _STREAM_PHASE_LABELS.get(phase, phase)}
+    return None
 
 
 class RequestFailure(ValueError):
@@ -93,41 +111,66 @@ class RequestDiagnostics(QObject):
         record = {'id': str(uuid.uuid4()), 'at': datetime.now(timezone.utc).isoformat(),
                   'providerId': provider.get('id', ''), 'provider': provider.get('name', ''),
                   'request': request, 'response': http[-1].get('response', {}) if http else {}, 'http': http}
+        timing = _stream_diagnostics(http)
+        if timing:
+            record['streamDiagnostics'] = timing
         record = redact(record, self._secrets(provider, record))
         self._persist(record)
         return record['id']
 
     def failure(self, provider, request, response, error, http=None):
+        http_calls = http or []
         record = {'id': str(uuid.uuid4()), 'at': datetime.now(timezone.utc).isoformat(),
                   'providerId': provider.get('id', ''), 'provider': provider.get('name', ''), 'request': request,
-                  'response': response, 'error': describe_failure(error), 'http': http or []}
+                  'response': response, 'error': describe_failure(error), 'http': http_calls}
+        timing = _stream_diagnostics(http_calls)
+        if timing:
+            record['streamDiagnostics'] = timing
         secrets = self._secrets(provider, record)
         record = redact(record, secrets)
         failed_response = record['http'][-1].get('response', record['response']) if record['http'] else record['response']
         status = failed_response.get('status')
+        phase = (record.get('streamDiagnostics') or {}).get('phase', '')
         code = certificate_failure(error)
+        error_text = str(error)
         if str(status).isdigit() and int(status) >= 400:
             message = format_http_error(status, failed_response.get('body', ''), failed_response.get('headers', {}))
         elif code:
             message = f'TLS certificate validation failed ({code}); check the provider\'s Network settings and CA file, then open request details'
-        elif str(error).startswith('供应商返回 HTTP 200：'):
-            message = str(error)
-        elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError) or str(error) in (
+        elif error_text.startswith('供应商返回 HTTP 200：'):
+            message = error_text
+        elif isinstance(error, TimeoutError) or isinstance(getattr(error, 'reason', None), TimeoutError) or error_text in (
+                '发出请求后等待响应头超时，请检查网络或在供应商的网络设置中调大流式空闲超时',
+                '收到响应头后等待首条模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时',
+                '流式输出中途长时间未收到数据而超时，请检查网络或在供应商的网络设置中调大流式空闲超时',
                 '等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时',
                 '供应商请求超时，请检查网络或超时设置'):
-            message = '等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时'
-        elif isinstance(error, (ConnectionError, http.client.IncompleteRead, http.client.RemoteDisconnected)) or \
-                'Upstream stream ended before completion' in str(error) or str(error) == '接收模型输出时连接中断，请稍后重试':
-            message = '接收模型输出时连接中断，请稍后重试'
-        elif str(error).startswith('无法连接供应商：'):
-            message = str(error)
+            if phase == 'waiting_headers' or error_text.startswith('发出请求后等待响应头超时'):
+                message = '发出请求后等待响应头超时，请检查网络或在供应商的网络设置中调大流式空闲超时'
+            elif phase == 'waiting_first_sse' or error_text.startswith('收到响应头后等待首条模型输出超时'):
+                message = '收到响应头后等待首条模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时'
+            elif phase == 'stream_idle' or error_text.startswith('流式输出中途长时间未收到数据而超时'):
+                message = '流式输出中途长时间未收到数据而超时，请检查网络或在供应商的网络设置中调大流式空闲超时'
+            else:
+                message = '等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时'
+        elif isinstance(error, (ConnectionError, IncompleteRead, RemoteDisconnected)) or \
+                'Upstream stream ended before completion' in error_text or error_text in (
+                '接收模型输出时未收到正常结束标记即断流，请稍后重试',
+                '接收模型输出时连接中断，请稍后重试'):
+            if phase == 'incomplete_stream' or 'Upstream stream ended before completion' in error_text or \
+                    error_text.startswith('接收模型输出时未收到正常结束标记即断流'):
+                message = '接收模型输出时未收到正常结束标记即断流，请稍后重试'
+            else:
+                message = '接收模型输出时连接中断，请稍后重试'
+        elif error_text.startswith('无法连接供应商：'):
+            message = error_text
         else:
-            message = '供应商请求失败：' + safe_text(str(error), [provider.get('key', '')])
+            message = '供应商请求失败：' + safe_text(error_text, [provider.get('key', '')])
         record['summary'] = safe_text(message, secrets)
         self._persist(record)
         managed = bool(record['http'] and record['http'][-1].get('httpRetryManaged'))
         failure = RequestFailure(f'{record["summary"]} [Umeko:{record["id"]}]',
-                                 transient_failure(error, http or []) and not managed)
+                                 transient_failure(error, http_calls) and not managed)
         failure.http_retry_managed = managed
         failure.tls_code = code
         return failure

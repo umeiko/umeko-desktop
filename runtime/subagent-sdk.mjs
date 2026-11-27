@@ -71,7 +71,9 @@ export class SettingsManager extends NativeSettingsManager {
     const settings = NativeSettingsManager.create(...args);
     const applyRetry = () => {
       const retry = settings.getSettings().retry;
-      settings.applyOverrides({ httpIdleTimeoutMs: GATEWAY_HTTP_IDLE_TIMEOUT_MS, retry: { ...retry, ...NETWORK_RETRY,
+      const configuredMax = globalThis[Symbol.for("umeko:stream-retry-policy")]?.getMaxRetries?.();
+      const maxRetries = typeof configuredMax === "number" ? configuredMax : NETWORK_RETRY.maxRetries;
+      settings.applyOverrides({ httpIdleTimeoutMs: GATEWAY_HTTP_IDLE_TIMEOUT_MS, retry: { ...retry, ...NETWORK_RETRY, maxRetries,
         provider: { ...retry?.provider, maxRetries: 0 } } });
     };
     applyRetry();

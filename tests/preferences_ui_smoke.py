@@ -50,10 +50,16 @@ try:
     mode=find('providerProxyMode');mode.setProperty('currentIndex',2)
     find('providerProxyAddress').setProperty('text','http://127.0.0.1:7890')
     assert find('providerStreamIdleTimeout').property('text')=='300'
+    assert find('providerStreamMaxRetries').property('text')=='5'
+    assert find('providerRequestMaxRetries').property('text')=='2'
     find('providerStreamIdleTimeout').setProperty('text','600')
+    find('providerStreamMaxRetries').setProperty('text','8')
+    find('providerRequestMaxRetries').setProperty('text','4')
     click('saveProviderProxy')
     assert backend.store.data['providers'][0]['proxy']['mode']=='custom'
     assert backend.store.data['providers'][0]['streamIdleTimeoutMs']==600000
+    assert backend.store.data['providers'][0]['streamMaxRetries']==8
+    assert backend.store.data['providers'][0]['requestMaxRetries']==4
     window.setProperty('page','chat')
     click('modelSelector');QTest.qWait(700)
     slider=find('reasoningEffortSlider');slider.forceActiveFocus();QTest.keyClick(window,Qt.Key_End);QTest.qWait(100)

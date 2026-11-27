@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createServer, get } from 'node:https';
-import { NETWORK_RETRY, certificateFailure, transientFailure, upstreamFailure, retryOmissions } from '../runtime/network-retry.mjs';
+import { NETWORK_RETRY, buildStagedContinuation, certificateFailure, normalizeStreamMaxRetries, retryOmissions, transientFailure, upstreamFailure } from '../runtime/network-retry.mjs';
 
 test('five bounded exponential backoffs', () => {
   assert.equal(NETWORK_RETRY.maxRetries, 5);
@@ -63,4 +63,32 @@ test('native Node TLS verification errors remain terminal when nested', async ()
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('stream max retries normalization and staged continuation prompt builder', () => {
+  assert.equal(normalizeStreamMaxRetries(undefined), 5);
+  assert.equal(normalizeStreamMaxRetries(0), 0);
+  assert.equal(normalizeStreamMaxRetries(100), 100);
+  assert.equal(normalizeStreamMaxRetries(101), 5);
+  assert.equal(normalizeStreamMaxRetries(-1), 5);
+
+  const branch = [
+    { id: 'u1', type: 'message', message: { role: 'user', content: 'write two files' } },
+    { id: 'a1', type: 'message', message: { role: 'assistant', content: [
+      { type: 'toolCall', id: 'c1', name: 'write', arguments: { path: 'stage1.txt', content: 'done' } },
+    ], stopReason: 'toolUse' } },
+    { id: 'r1', type: 'message', message: { role: 'toolResult', toolCallId: 'c1', toolName: 'write', isError: false, content: [{ type: 'text', text: 'ok' }] } },
+    { id: 'a2', type: 'message', message: { role: 'assistant', content: [
+      { type: 'text', text: 'Halfway through stage 2...' },
+      { type: 'toolCall', id: 'c2', name: 'write', arguments: { path: 'stage2.txt', content: 'partial' } },
+    ], stopReason: 'error', errorMessage: 'timeout' } },
+  ];
+  const staged = buildStagedContinuation(branch);
+  assert.equal(staged.details.hasPartialOutput, true);
+  assert.deepEqual(staged.details.confirmedTools, ['write(stage1.txt)']);
+  assert.deepEqual(staged.details.unconfirmedTools, ['write(stage2.txt)']);
+  assert.match(staged.content, /Partial output preserved as incomplete/);
+  assert.match(staged.content, /Halfway through stage 2/);
+  assert.match(staged.content, /DO NOT re-execute.*write\(stage1\.txt\)/);
+  assert.match(staged.content, /VERIFY actual current state first.*write\(stage2\.txt\)/);
 });

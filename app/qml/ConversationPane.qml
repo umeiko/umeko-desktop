@@ -1253,6 +1253,17 @@ Item {
                                 selectionController: chatSelection
                                 messageIndex: messageRow.index
                             }
+                            Text {
+                                objectName: "partialIncompleteNotice_" + messageRow.index
+                                visible: !!modelData.partialIncomplete
+                                width: parent.width
+                                text: I18n.t("已保留中断前的部分回复（未完成）")
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.font(11, visible, chatSelection)
+                            }
                             Loader {
                                 id: userBody
                                 width: parent.width
@@ -1279,16 +1290,31 @@ Item {
                         }
                     }
                     Loader {
-                        active: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (modelData.diagnosticId || "").length > 0
+                        readonly property bool showDetails: (modelData.diagnosticId || "").length > 0
+                        readonly property bool showStagedContinue: !pane.messagePrefix && !!modelData.stagedContinueAvailable && messageRow.index === conversation.count - 1 && !pane.busy && backend.sessionBackend !== "dsh"
+                        active: !modelData._loading && !messageRow.statusNotice && !!modelData.error && (showDetails || showStagedContinue)
                         visible: active
                         x: 33
-                        sourceComponent: ActionButton {
-                            objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
-                            selectionController: chatSelection
-                            text: I18n.t("查看请求与返回")
-                            glyph: "code"
-                            quiet: true
-                            onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                        sourceComponent: Row {
+                            spacing: 8
+                            ActionButton {
+                                objectName: (pane.messagePrefix ? pane.messagePrefix + "RequestDetails_" : "requestDetails_") + messageRow.index
+                                visible: (modelData.diagnosticId || "").length > 0
+                                selectionController: chatSelection
+                                text: I18n.t("查看请求与返回")
+                                glyph: "code"
+                                quiet: true
+                                onClicked: backend.showRequestDetails(modelData.diagnosticId)
+                            }
+                            ActionButton {
+                                objectName: "stagedContinue_" + messageRow.index
+                                visible: !pane.messagePrefix && !!modelData.stagedContinueAvailable && messageRow.index === conversation.count - 1 && !pane.busy && backend.sessionBackend !== "dsh"
+                                selectionController: chatSelection
+                                text: I18n.t("分阶段继续")
+                                glyph: "layers"
+                                primary: true
+                                onClicked: backend.continueInStages()
+                            }
                         }
                     }
                     Text {

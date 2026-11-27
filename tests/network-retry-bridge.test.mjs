@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const release = join(root, "runtime/releases/coding-1.5.2");
 
-async function fixture(t, { compaction = false } = {}) {
+async function fixture(t, { compaction = false, streamMaxRetries = 5 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "umeko-retry-")), agentDir = join(dir, "agent");
   mkdirSync(agentDir);
   writeFileSync(join(agentDir, "settings.json"), JSON.stringify({
@@ -52,17 +52,24 @@ async function fixture(t, { compaction = false } = {}) {
   const replies = [], calls = [];
   const server = createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
-    const body = JSON.parse(raw); calls.push({ summary: !body.tools?.length });
+    const body = JSON.parse(raw); calls.push({ summary: !body.tools?.length, body });
     const next = replies.shift();
     if (next?.delayMs) await new Promise(resolve => setTimeout(resolve, next.delayMs));
     if (!next || next.error) {
+      if (next?.partialText) {
+        const common = { id: "fixture", object: "chat.completion.chunk", created: 1, model: "test-model" };
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta: { role: "assistant", content: next.partialText }, finish_reason: null }] })}\n\n`);
+        res.end(`data: ${JSON.stringify({ type: "error", error: { message: next.error } })}\n\n`);
+        return;
+      }
       res.writeHead(next?.status || 503, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: { message: next?.error || "Unexpected fixture request" } }));
       return;
     }
     const delta = next.tool ? { role: "assistant", tool_calls: [{ index: 0, id: next.tool,
       type: "function", function: { name: "read", arguments: JSON.stringify({ path: join(dir, "fixture.txt") }) } }] }
-      : { role: "assistant", content: "fixture success" };
+      : { role: "assistant", content: next.content || "fixture success" };
     const common = { id: "fixture", object: "chat.completion.chunk", created: 1, model: "test-model" };
     res.writeHead(200, { "Content-Type": "text/event-stream" });
     res.end(`data: ${JSON.stringify({ ...common, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n` +
@@ -101,7 +108,7 @@ async function fixture(t, { compaction = false } = {}) {
   });
   await command({ type: "inspect", gateway: `http://127.0.0.1:${server.address().port}/`, token: "fixture",
     workspace: dir, defaultCwd: dir, agentDir, sessionDir: join(dir, "sessions"),
-    model: "test-model", models: [{ id: "test-model", contextWindow: 128000 }],
+    model: "test-model", models: [{ id: "test-model", contextWindow: 128000, streamMaxRetries }],
     agent: { autoCompaction: false, safeMode: !compaction } });
   return { command, calls };
 }
@@ -184,4 +191,33 @@ test("compaction retries replace the retry indicator at attempt start and restar
     assert.equal(events.findLast(e => e.type === "compaction_event").state, "success");
   }
   assert.equal(f.calls.filter(c => c.summary).length, 4);
+});
+
+test("provider streamMaxRetries caps retries and staged-continue preserves partial reply without re-running confirmed tools", { timeout: 60000 }, async t => {
+  const f = await fixture(t, { streamMaxRetries: 2 });
+  const partialFailure = { error: "Network error: stream interrupted", partialText: "Partial stage draft..." };
+  // Step 1 succeeds with a confirmed read tool; Step 2 fails with partial output and exhausts streamMaxRetries=2 (3 attempts total).
+  const failed = await f.command({ type: "prompt", text: "staged task" }, [
+    { tool: "read-confirmed" },
+    partialFailure,
+    partialFailure,
+    partialFailure,
+  ]);
+  assert.deepEqual(attempts(failed), [1, 2]);
+  const toolEnds = failed.filter(e => e.type === "pi_event" && e.event === "tool_execution_end");
+  assert.equal(toolEnds.length, 1);
+  const failedState = failed.findLast(e => e.type === "state");
+  assert.ok(failedState.messages.some(m => m.role === "assistant" && m.error && m.text.includes("Partial stage draft...")));
+
+  // Trigger staged-continue in the same conversation.
+  const continued = await f.command({ type: "staged-continue" }, [{ content: "Stage 2 completed cleanly." }]);
+  assert.equal(continued.filter(e => e.type === "pi_event" && e.event === "tool_execution_end").length, 0);
+  const continuationCall = f.calls[f.calls.length - 1].body;
+  const serialized = JSON.stringify(continuationCall.messages);
+  assert.match(serialized, /Partial output preserved as incomplete/);
+  assert.match(serialized, /DO NOT re-execute.*read\(/);
+  assert.match(serialized, /Partial stage draft/);
+  const finalState = continued.findLast(e => e.type === "state");
+  assert.ok(finalState.messages.some(m => m.role === "assistant" && m.error && m.text.includes("Partial stage draft...")));
+  assert.ok(finalState.messages.some(m => m.role === "assistant" && !m.error && m.text.includes("Stage 2 completed cleanly.")));
 });

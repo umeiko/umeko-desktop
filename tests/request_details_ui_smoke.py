@@ -133,8 +133,49 @@ try:
     assert QMetaObject.invokeMethod(dialog, 'show', Q_ARG('QVariant', '00000000-0000-0000-0000-000000000000'))
     QTest.qWait(100)
     assert 'expired' in text.property('text')
+    dialog.close(); QTest.qWait(80)
+
+    # Four-phase stream diagnostics render in both languages, and exhausted stream timeouts expose staged continuation.
+    backend.setLanguage('zh'); QTest.qWait(80)
+    stream_calls = [{
+        'request': {'method': 'POST', 'url': 'https://example.invalid/v1/chat/completions', 'body': {'model': 'fixture'}},
+        'response': {'status': 200, 'headers': {'Content-Type': 'text/event-stream'}, 'body': 'data: {"choices":[{"delta":{"content":"半截内容"}}]}\n\n'},
+        'timing': {
+            'phase': 'stream_idle',
+            'requestStartedAt': '2026-01-01T00:00:00+00:00',
+            'headersReceivedAt': '2026-01-01T00:00:01+00:00',
+            'headersMs': 1000,
+            'firstEventAt': '2026-01-01T00:00:02+00:00',
+            'firstEventMs': 2000,
+            'lastDataAt': '2026-01-01T00:00:02+00:00',
+            'lastDataToErrorMs': 10000,
+            'totalMs': 12000,
+            'bytesReceived': 64,
+            'sseEvents': 1,
+            'heartbeatCount': 3,
+            'completedNormally': False,
+        },
+    }]
+    stream_failure = backend.gateway.diagnostics.failure(
+        {'name': 'Fixture'}, {'model': 'fixture'}, stream_calls[0]['response'],
+        TimeoutError('流式输出中途长时间未收到数据而超时，请检查网络或在供应商的网络设置中调大流式空闲超时'),
+        stream_calls,
+    )
+    record.messages = [{'role': 'assistant', 'text': '半截内容', 'error': True, 'errorMessage': str(stream_failure), 'stopReason': 'error'}]
+    backend.chatChanged.emit()
+    window.setProperty('page', 'chat')
+    wait(lambda: (item := find('stagedContinue_0', required=False)) is not None and item.isVisible(), 'Staged continue button missing')
+    assert find('partialIncompleteNotice_0').isVisible()
+    click('requestDetails_0')
+    wait(lambda: dialog.property('opened'), 'Stream failure details did not open')
+    click('requestDetailsResponseTab')
+    zh_detail = text.property('text')
+    assert '流式诊断' in zh_detail and '流式输出中途长时间无数据' in zh_detail and '10.00 s' in zh_detail and '12.00 s' in zh_detail and '是否正常结束：否' in zh_detail
+    backend.setLanguage('en'); QTest.qWait(80)
+    en_detail = text.property('text')
+    assert 'Stream diagnostics' in en_detail and 'No data received mid-stream' in en_detail and 'Completed normally: No' in en_detail
     assert not warnings, '\n'.join(warnings)
-    print('REQUEST_DETAILS_UI_OK: partial failure chat/child entry points, request/response tabs, full raw body/status/headers, HTTP selection, redaction, legacy and no-response reports')
+    print('REQUEST_DETAILS_UI_OK: partial failure chat/child entry points, request/response tabs, full raw body/status/headers, HTTP selection, redaction, legacy, no-response, 4-phase timing and staged continue')
 finally:
     app.clipboard().clear()
     backend.close(); window.hide()

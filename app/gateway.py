@@ -37,7 +37,17 @@ from .reasoning_detection import allowed_levels, is_effort_rejection, detect_mod
 from .reasoning_observation import observe_reasoning
 from .reasoning_activity import ReasoningActivity
 from .thinking_formats import format_parameters, valid_format
-from umeko_provider_sdk.network import network_scope, proxy_handler, tls_context, trace, TracedResponse
+from umeko_provider_sdk.network import (
+    DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    SplitTimeoutHTTPHandler,
+    SplitTimeoutHTTPSHandler,
+    TracedResponse,
+    network_scope,
+    proxy_handler,
+    set_response_timeout,
+    tls_context,
+    trace,
+)
 from umeko_provider_sdk import current_request_cancelled, request_scope
 from umeko_provider_sdk.compatibility import ParameterMemory, compatible_open, raise_api_error
 from umeko_provider_sdk.streaming import normalize_openai_events
@@ -58,12 +68,21 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("供应商返回重定向；请直接填写最终 API 地址")
 
 
-# Align default idle timeout between stream chunks with Codex CLI / DSH / Pi (5 min).
+# Align default idle timeout and retry ceilings with Codex CLI / DSH / Pi.
 DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 MIN_STREAM_IDLE_TIMEOUT_MS = 10_000
 MAX_STREAM_IDLE_TIMEOUT_MS = 1_800_000
+DEFAULT_GROUP_FIRST_PACKET_TIMEOUT_MS = 45_000
+DEFAULT_STREAM_MAX_RETRIES = 5
+MAX_STREAM_MAX_RETRIES = 100
+DEFAULT_REQUEST_MAX_RETRIES = 2
+MAX_REQUEST_MAX_RETRIES = 100
 STREAM_TIMEOUT_ERROR = "等待模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时"
+STREAM_HEADER_TIMEOUT_ERROR = "发出请求后等待响应头超时，请检查网络或在供应商的网络设置中调大流式空闲超时"
+STREAM_FIRST_EVENT_TIMEOUT_ERROR = "收到响应头后等待首条模型输出超时，请检查网络或在供应商的网络设置中调大流式空闲超时"
+STREAM_IDLE_TIMEOUT_ERROR = "流式输出中途长时间未收到数据而超时，请检查网络或在供应商的网络设置中调大流式空闲超时"
 STREAM_INTERRUPTED_ERROR = "接收模型输出时连接中断，请稍后重试"
+STREAM_INCOMPLETE_ERROR = "接收模型输出时未收到正常结束标记即断流，请稍后重试"
 
 
 def normalize_stream_idle_timeout_ms(value):
@@ -94,6 +113,67 @@ def provider_stream_idle_timeout_seconds(provider):
     return normalize_stream_idle_timeout_ms((provider or {}).get("streamIdleTimeoutMs")) / 1000.0
 
 
+def normalize_stream_max_retries(value):
+    if value is None or value == "":
+        return DEFAULT_STREAM_MAX_RETRIES
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return DEFAULT_STREAM_MAX_RETRIES
+    count = int(round(value))
+    return count if 0 <= count <= MAX_STREAM_MAX_RETRIES else DEFAULT_STREAM_MAX_RETRIES
+
+
+def validate_stream_max_retries(raw):
+    text = str("" if raw is None else raw).strip()
+    if not text:
+        return None
+    if not re.fullmatch(r"\d+", text):
+        raise ValueError(f"流式重连次数须为 0 到 {MAX_STREAM_MAX_RETRIES} 之间的整数，留空则使用默认值 {DEFAULT_STREAM_MAX_RETRIES}")
+    count = int(text)
+    if not 0 <= count <= MAX_STREAM_MAX_RETRIES:
+        raise ValueError(f"流式重连次数须为 0 到 {MAX_STREAM_MAX_RETRIES} 之间的整数，留空则使用默认值 {DEFAULT_STREAM_MAX_RETRIES}")
+    return count
+
+
+def provider_stream_max_retries(provider):
+    return normalize_stream_max_retries((provider or {}).get("streamMaxRetries"))
+
+
+def normalize_request_max_retries(value):
+    if value is None or value == "":
+        return DEFAULT_REQUEST_MAX_RETRIES
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return DEFAULT_REQUEST_MAX_RETRIES
+    count = int(round(value))
+    return count if 0 <= count <= MAX_REQUEST_MAX_RETRIES else DEFAULT_REQUEST_MAX_RETRIES
+
+
+def validate_request_max_retries(raw):
+    text = str("" if raw is None else raw).strip()
+    if not text:
+        return None
+    if not re.fullmatch(r"\d+", text):
+        raise ValueError(f"请求重试次数须为 0 到 {MAX_REQUEST_MAX_RETRIES} 之间的整数，留空则使用默认值 {DEFAULT_REQUEST_MAX_RETRIES}")
+    count = int(text)
+    if not 0 <= count <= MAX_REQUEST_MAX_RETRIES:
+        raise ValueError(f"请求重试次数须为 0 到 {MAX_REQUEST_MAX_RETRIES} 之间的整数，留空则使用默认值 {DEFAULT_REQUEST_MAX_RETRIES}")
+    return count
+
+
+def provider_request_max_retries(provider):
+    return normalize_request_max_retries((provider or {}).get("requestMaxRetries"))
+
+
+def _phase_timeout_error(records):
+    phase = (records[-1].get("timing") or {}).get("phase") if records else ""
+    if phase == "waiting_headers":
+        return STREAM_HEADER_TIMEOUT_ERROR
+    if phase == "waiting_first_sse":
+        return STREAM_FIRST_EVENT_TIMEOUT_ERROR
+    if phase == "stream_idle":
+        return STREAM_IDLE_TIMEOUT_ERROR
+    return STREAM_TIMEOUT_ERROR
+
+
 def _quota_exhausted(error, response):
     status = str(response.get("status", ""))
     if status == "402":
@@ -112,7 +192,9 @@ def _member_unavailable(error, records):
     return status in (401, 402, 403, 404, 408, 425, 429) or status >= 500 or bool(re.search(
         r"insufficient[ _-]?(?:quota|balance)|quota.{0,20}(?:exceed|exhaust)|rate[ _-]?limit|out of budget|"
         r"billing|usage limit reached|model_not_found|限流|额度不足|余额不足|配额.{0,8}(?:不足|用尽)|"
-        r"供应商正在登录或刷新|无法连接供应商|供应商请求超时|等待模型输出超时|接收模型输出时连接中断|"
+        r"供应商正在登录或刷新|无法连接供应商|供应商请求超时|等待模型输出超时|"
+        r"发出请求后等待响应头超时|收到响应头后等待首条模型输出超时|流式输出中途长时间未收到数据而超时|"
+        r"接收模型输出时连接中断|接收模型输出时未收到正常结束标记即断流|"
         r"Upstream stream ended before completion", detail, re.I))
 
 
@@ -145,6 +227,7 @@ class Gateway:
                              "contextWindow": metadata["contextWindow"],
                              **{key: metadata[key] for key in ("providerContextWindow",) if key in metadata},
                              "input": ["text", "image"] if metadata["vision"] else ["text"],
+                             "streamMaxRetries": provider_stream_max_retries(p),
                               **({'applyPatch': True} if metadata.get('applyPatch') else {}),
                              "reasoningLevels": reasoning_levels(model),
                              "reasoningFormat": model.get("reasoningFormat", "openai"),
@@ -182,16 +265,20 @@ class Gateway:
         last_report = ""
         last_summary = ""
         any_retryable = False
-        for member, provider, model in candidates:
+        for index, (member, provider, model) in enumerate(candidates):
             if cancelled.is_set():
                 raise InterruptedError("供应商请求已取消")
             key = (provider["id"], model["alias"])
             effort = reconcile_effort(member.get("effort", "off"), reasoning_levels(model))
+            # Only apply the shorter first-packet failover timeout when another backup candidate exists.
+            # Once streaming starts (or on the final candidate), use the provider's full streamIdleTimeoutMs.
+            first_packet = (DEFAULT_GROUP_FIRST_PACKET_TIMEOUT_MS / 1000.0) if index < len(candidates) - 1 else None
             committed = False
             preamble = None
             try:
                 for event in self.events(model["alias"], messages, tools, max_tokens, provider["id"],
-                                         {**inputs, "_umeko_reasoning_effort": effort}, group=True):
+                                         {**inputs, "_umeko_reasoning_effort": effort}, group=True,
+                                         first_packet_timeout=first_packet):
                     if not committed:
                         if not any(choice.get("finish_reason") or any((choice.get("delta") or choice.get("message") or {}).get(name)
                                    for name in ("content", "reasoning_content", "tool_calls", "refusal"))
@@ -280,7 +367,7 @@ class Gateway:
         calls = [{"id": c["id"], "name": c["function"]["name"], "arguments": json.loads(c["function"]["arguments"])} for c in msg.get("tool_calls") or []]
         return Completion(msg.get("content") or "", calls, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data["choices"][0]["finish_reason"], msg.get("reasoning_content") or "")
 
-    def events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False):
+    def events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False, first_packet_timeout=None):
         p, model = self.resolve(alias, provider_id)
         records = []
         request = {'transport': p['api'], 'model': model, 'messages': messages,
@@ -288,8 +375,12 @@ class Gateway:
         try:
             with self.reasoning_activity.chat((p.get('id', ''), model)), network_scope(p.get('proxy'), records):
                 def open_events(projected):
-                    transport = self._events(alias, projected, tools, max_tokens, provider_id, parameters,
-                                             **({"group": True} if group else {}))
+                    extra = {}
+                    if group:
+                        extra["group"] = True
+                    if first_packet_timeout is not None:
+                        extra["first_packet_timeout"] = first_packet_timeout
+                    transport = self._events(alias, projected, tools, max_tokens, provider_id, parameters, **extra)
                     for event in normalize_openai_events(transport):
                         if event.get('error'):
                             raise ValueError(json.dumps(event, ensure_ascii=False))
@@ -335,7 +426,7 @@ class Gateway:
         message = safe_text(str(error), self.diagnostics._secrets(provider, {"http": records}))
         return RequestFailure(f'{message}\n当前可选推理档位：{", ".join(supported)}。请调整档位后重新发送。', retryable=False)
 
-    def _events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False):
+    def _events(self, alias, messages, tools=None, max_tokens=None, provider_id=None, parameters=None, *, group=False, first_packet_timeout=None):
         p, model = self.resolve(alias, provider_id)
         if any(isinstance(m.get("content"), list) and any(block.get("type") == "image_url" for block in m["content"]) for m in messages) and not self.supports_vision(alias, p["id"]):
             raise ValueError("当前模型未启用视觉，请在模型配置中勾选“视觉”或切换支持图片的模型")
@@ -439,32 +530,63 @@ class Gateway:
         from .request_headers import build, OmitHeaders
         headers, omitted = build(self.store.data.get('requestHeaders'), p)
         secrets = [p['key'], *headers.values()]
-        request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
-        opener = urllib.request.build_opener(proxy_handler(p.get('proxy')), urllib.request.HTTPSHandler(context=tls_context(p.get('proxy'))), NoRedirect(), OmitHeaders(omitted))
         idle_timeout = provider_stream_idle_timeout_seconds(p)
-        request_timeout = min(90.0, idle_timeout) if probe_override else idle_timeout
+        if probe_override:
+            header_timeout = min(90.0, idle_timeout)
+        elif first_packet_timeout is not None:
+            header_timeout = min(float(first_packet_timeout), idle_timeout)
+        else:
+            header_timeout = idle_timeout
+        connect_timeout = min(DEFAULT_CONNECT_TIMEOUT_SECONDS, header_timeout)
+        request = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
+        opener = urllib.request.build_opener(
+            proxy_handler(p.get('proxy')),
+            SplitTimeoutHTTPHandler(connect_timeout=connect_timeout),
+            SplitTimeoutHTTPSHandler(context=tls_context(p.get('proxy')), connect_timeout=connect_timeout),
+            NoRedirect(),
+            OmitHeaders(omitted),
+        )
+        http_retries = 0 if group or probe_override else provider_request_max_retries(p)
+        records = trace.get()
         try:
-            with compatible_open(opener, request, timeout=request_timeout, memory=self.compatibility,
+            with compatible_open(opener, request, timeout=header_timeout, memory=self.compatibility,
                                  scope=(p['id'], base, model), automatic=automatic,
-                                 records=trace.get(), http_retries=0 if group or probe_override else 2) as response:
-                def checked_events():
-                    for event in response_events(response):
-                        if event is None:
-                            continue
-                        try:
-                            raise_api_error(event)
-                        except ValueError:
-                            # Retain both SSE bytes and a structured error for
-                            # the existing reasoning capability reader.
-                            records = trace.get()
-                            if records:
-                                failure = records[-1]['response']
-                                failure['streamBody'] = failure.get('body', '')
-                                failure['body'] = json.dumps(event, ensure_ascii=False)
-                            raise
-                        yield event
-                events = checked_events()
-                yield from anthropic_events_to_openai(events) if p["api"] == "anthropic" else responses_events(events) if p.get('wireApi') == 'responses' else events if probe_override else normalize_openai_events(events)
+                                 records=records, http_retries=http_retries) as response:
+                try:
+                    def checked_events():
+                        switched_timeout = False
+                        for event in response_events(response):
+                            if event is None:
+                                continue
+                            if hasattr(response, 'mark_event'):
+                                response.mark_event()
+                            if not switched_timeout and header_timeout != idle_timeout:
+                                set_response_timeout(response, idle_timeout)
+                                switched_timeout = True
+                            try:
+                                raise_api_error(event)
+                            except ValueError:
+                                # Retain both SSE bytes and a structured error for
+                                # the existing reasoning capability reader.
+                                active_records = trace.get()
+                                if active_records:
+                                    failure = active_records[-1]['response']
+                                    failure['streamBody'] = failure.get('body', '')
+                                    failure['body'] = json.dumps(event, ensure_ascii=False)
+                                raise
+                            yield event
+                    events = checked_events()
+                    stream = (anthropic_events_to_openai(events) if p["api"] == "anthropic"
+                              else responses_events(events) if p.get('wireApi') == 'responses'
+                              else events if probe_override
+                              else normalize_openai_events(events))
+                    yield from stream
+                    if hasattr(response, 'mark_completed'):
+                        response.mark_completed()
+                except Exception as exc:
+                    if hasattr(response, 'mark_failed'):
+                        response.mark_failed(exc)
+                    raise
         except urllib.error.HTTPError as exc:
             try:
                 raise ValueError(format_http_error(exc.code, exc.read(), exc.headers, secrets)) from None
@@ -472,10 +594,14 @@ class Gateway:
                 exc.close()
         except (urllib.error.URLError, TimeoutError) as exc:
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError):
-                raise TimeoutError(STREAM_TIMEOUT_ERROR) from None
+                raise TimeoutError(_phase_timeout_error(records)) from None
             raise ValueError('无法连接供应商：' + safe_text(str(exc), secrets)) from None
         except (http.client.IncompleteRead, http.client.RemoteDisconnected, ConnectionError) as exc:
             raise ConnectionError(STREAM_INTERRUPTED_ERROR) from exc
+        except ValueError as exc:
+            if 'Upstream stream ended before completion' in str(exc):
+                raise ConnectionError(STREAM_INCOMPLETE_ERROR) from exc
+            raise
 
     @staticmethod
     def to_anthropic_message(m):

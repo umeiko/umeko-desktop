@@ -26,7 +26,7 @@ STOP_TERMINAL = {'done': 'stopped', 'failed': 'stop_failed', 'timed_out': 'stop_
 class PiControllerMixin:
     def _turn_status(self, record):
         """Execution is live only in this process; terminal UI metadata survives reopening."""
-        if record.busy and record.action in ('prompt', 'widget-notify') and record.prompt_started is not None:
+        if record.busy and record.action in ('prompt', 'widget-notify', 'resume-model', 'staged-continue') and record.prompt_started is not None:
             elapsed = max(0, time.monotonic() - record.prompt_started)
             state = getattr(record, 'stop_state', '')
             return {'state': 'stopping' if record.cancelled else 'running', 'stopStage': state, 'elapsed': elapsed,
@@ -42,7 +42,7 @@ class PiControllerMixin:
         return {'state': state}
 
     def _finish_turn(self, record, failed=False):
-        if record.action not in ('prompt', 'widget-notify') or record.prompt_started is None:
+        if record.action not in ('prompt', 'widget-notify', 'resume-model', 'staged-continue') or record.prompt_started is None:
             return
         stop_state = getattr(record, 'stop_state', '')
         state = stop_state if stop_state in STOP_TERMINAL.values() else 'stopped' if record.cancelled else 'failed' if failed or record.failed else 'finished'
@@ -330,11 +330,11 @@ class PiControllerMixin:
         record.action, record.failed, record.cancelled = action, False, False
         record.stop_token = record.stop_state = record.stop_detail = ''
         record.pet_activity = 'thinking'
-        record.prompt_started = time.monotonic() if action in ('prompt','widget-notify','resume-model') else None
-        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
+        record.prompt_started = time.monotonic() if action in ('prompt', 'widget-notify', 'resume-model', 'staged-continue') else None
+        record.phase = "loading" if not record.ready else "running" if action in ("prompt", "compact", "widget-notify", "resume-model", "staged-continue") else "working"
         if getattr(self, '_reasoning_discovery', None):
             self._reasoning_discovery.update_activity()
-        record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
+        record.tool_status = "正在加载 Pi" if record.phase == "loading" else "正在压缩上下文" if action == "compact" else "正在分阶段继续" if action == "staged-continue" else "正在生成" if record.phase == "running" else "正在处理"
         payload = self._pi_command_payload(record, action, **values)
         try:
             if record.process:
@@ -527,8 +527,8 @@ class PiControllerMixin:
             record.ready, record.prewarming = True, False
             command, record.warm_command = record.warm_command, None
             if command:
-                record.phase = 'running' if record.action in ('prompt', 'compact', 'widget-notify') else 'working'
-                record.tool_status = '正在压缩上下文' if record.action == 'compact' else '正在生成' if record.phase == 'running' else '正在处理'
+                record.phase = 'running' if record.action in ('prompt', 'compact', 'widget-notify', 'resume-model', 'staged-continue') else 'working'
+                record.tool_status = '正在压缩上下文' if record.action == 'compact' else '正在分阶段继续' if record.action == 'staged-continue' else '正在生成' if record.phase == 'running' else '正在处理'
                 self._write_first_warm_command(record, command)
                 if visible:
                     self.chatChanged.emit()
@@ -618,8 +618,8 @@ class PiControllerMixin:
         elif kind == "ready":
             record.ready = True
             self._subagents.process_ready(record)
-            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify", "resume-model") else "working"
-            record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在生成" if record.phase == "running" else "正在处理"
+            record.phase = "running" if record.action in ("prompt", "compact", "widget-notify", "resume-model", "staged-continue") else "working"
+            record.tool_status = "正在压缩上下文" if record.action == "compact" else "正在分阶段继续" if record.action == "staged-continue" else "正在生成" if record.phase == "running" else "正在处理"
             if event.get("session"):
                 self._record_info(record, event["session"])
         elif kind == "session":
@@ -880,7 +880,7 @@ class PiControllerMixin:
                         transcript = True
                     if visible:
                         self.toast.emit(message)
-            if was_busy and not record.global_agent and record.action == "prompt" and not record.cancelled and record.id:
+            if was_busy and not record.global_agent and record.action in ("prompt", "staged-continue") and not record.cancelled and record.id:
                 self.store.data["sessionMeta"].setdefault(record.id, {})["unread"] = not (visible and self._chat_visible)
                 self.store.save()
                 self.taskFinished.emit(record.id, record.title, kind == 'done' and not record.failed, long_running)
