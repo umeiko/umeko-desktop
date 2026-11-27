@@ -188,7 +188,7 @@ jobs:
     if: needs.changes.outputs.packages == 'true'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: ${{ startsWith(matrix.platform, 'windows-') && 45 || 35 }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
