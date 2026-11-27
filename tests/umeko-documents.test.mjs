@@ -20,6 +20,10 @@ test('delegation guide contains current wrapped model names without changing the
   configureUmekoDocs({directory:join(root,'second'),models:[{id:'other-model'}]});
   assert.notEqual(umekoHelp().docsRoot,first.docsRoot);
   const current = readFileSync(join(umekoHelp().docsRoot,'delegate-subagents.md'),'utf8');
+  assert.equal(umekoHelp().topics.generation, 'generation-providers.md');
+  const generation = readFileSync(join(umekoHelp().docsRoot, umekoHelp().topics.generation), 'utf8');
+  for (const name of ['plugins.import', 'plugins.login', 'jobs.get', 'generation.configure', 'MODEL_NOT_READY'])
+    assert.ok(generation.includes(name), name);
   assert.match(current,/umeko\/other-model/); assert.doesNotMatch(current,/analysis-model/);
   assert.equal(UMEKO_PROMPT,prompt);
   assert.deepEqual(availableModels(models).map(row=>row.model),['umeko/analysis-model']);

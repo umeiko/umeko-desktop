@@ -119,6 +119,32 @@ class SettingsOperationTests(unittest.TestCase):
         self.b._pool.records[record.key] = record
         return record
 
+    def test_generation_guide_and_configuration_requested_during_turn(self):
+        docs = self.b.store.directory / 'agent-docs'
+        docs.mkdir(exist_ok=True)
+        (docs / 'README.md').write_text('cached docs from an older runtime', encoding='utf-8')
+        guide = self.execute('help', {'topic': 'generation'})
+        self.assertTrue(guide['ok'], guide)
+        self.assertEqual(Path(guide['entry']).name, 'generation-providers.md')
+        self.assertIn('plugins.import', guide['document'])
+        self.assertIn('generation.configure', guide['document'])
+
+        caller = self.b._view
+        caller.busy = True
+        patch = {'config': {'image': {'count': 2, 'format': 'png'}}}
+        ticket = self.execute('generation.configure', patch, caller=caller)
+        self.assertEqual(ticket.get('status'), 'queued', ticket)
+        self.assertEqual(self.execute('settings.get')['config']['multimodal']['image']['count'], 1)
+
+        caller.busy = False
+        self.control._drain()
+        job, = self.execute('jobs.get', {'id': ticket['jobId']}, caller=caller)['jobs']
+        self.assertEqual(job['status'], 'done', job)
+        saved = self.execute('settings.get')['config']['multimodal']
+        self.assertEqual(saved['image']['count'], 2)
+        self.assertEqual(saved['image']['format'], 'png')
+        self.assertEqual(saved['speech']['providerId'], '')
+
     def test_default_reasoning_persists_and_only_new_desktop_sessions_inherit(self):
         current = self.b._view
         current.reasoning_effort = 'low'
