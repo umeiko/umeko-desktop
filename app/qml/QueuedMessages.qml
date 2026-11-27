@@ -10,6 +10,7 @@ Item {
     property bool primaryActionVisible: true
     property bool editEnabled: true
     property bool showSourceNames: false
+    property string messageHoverHint: ""
     signal inspected(var message)
     property real heightLimit: Theme.control(170)
     height: implicitHeight
@@ -32,7 +33,20 @@ Item {
                     color: editArea.containsMouse ? Theme.accentBg : "transparent"
                     Glyph { x: 2; width: Theme.icon(13); height: Theme.icon(13); name: "queue"; anchors.verticalCenter: parent.verticalCenter; opacity: 0.65 }
                     Text { font.family: Theme.fontFamily; x: 12 + Theme.icon(13); width: Math.max(20, parent.width - Theme.control(150)); anchors.verticalCenter: parent.verticalCenter; text: [(root.showSourceNames && row.modelData.sourceTitle ? row.modelData.sourceTitle + "：" : "") + row.modelData.text.replace(/\n/g, " "), ...(row.modelData.attachments || []).map(item => item.name)].filter(part => part.length).join(" · "); textFormat: Text.PlainText; elide: Text.ElideRight; font.pixelSize: Theme.font(13, visible); color: Theme.ink }
-                    MouseArea { id: editArea; objectName: root.objectPrefix + "editQueued_" + row.index; x: 0; width: parent.width - Theme.control(122); height: parent.height; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { if(root.editEnabled) root.controller.editQueued(row.modelData.id); else root.inspected(row.modelData) } }
+                    MouseArea {
+                        id: editArea
+                        objectName: root.objectPrefix + "editQueued_" + row.index
+                        width: parent.width - Theme.control(122)
+                        height: parent.height
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { if (root.editEnabled) root.controller.editQueued(row.modelData.id); else root.inspected(row.modelData) }
+                        HoverTip {
+                            objectName: root.objectPrefix + "queuedMessageHint_" + row.index
+                            active: editArea.containsMouse
+                            text: root.messageHoverHint
+                        }
+                    }
                     Row {
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 5
                         Item {

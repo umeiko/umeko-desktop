@@ -1199,6 +1199,7 @@ var strings = {
   "CA 证书文件（可选）": "CA certificate file (optional)",
   "Enter 加入队列 · Ctrl+S 优先": "Enter to queue · Ctrl+S to interrupt",
   "Enter 发送": "Enter to send",
+  "Ctrl+S直接插入": "Ctrl+S to insert directly",
   "Ctrl+Enter / Alt+Enter 换行": "Ctrl+Enter / Alt+Enter for a new line",
   "Ctrl+Enter / Alt+Enter / Shift+Enter 换行": "Ctrl+Enter / Alt+Enter / Shift+Enter for a new line",
   "Key（留空保持原值）": "Key (leave blank to keep)",

@@ -371,6 +371,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         from .conversation_search import ConversationSearch
         self._chat_search = ConversationSearch(self)
         self._session_files = SessionFiles(self)
+        from .session_group import SessionGroup
+        self._session_group = SessionGroup(self)
         self._document_preview = DocumentPreview(self, store=self.store)
         self._subagents = Subagents(self)
         self._view.id = ""
@@ -513,6 +515,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     @Property(QObject, constant=True)
     def desktopPlugins(self):
         return self._desktop_plugins
+
+    @Property(QObject, constant=True)
+    def sessionGroup(self):
+        return self._session_group
 
     def _new_view(self, workspace=None):
         if not self._welcome_greetings:

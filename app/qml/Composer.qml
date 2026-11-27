@@ -59,7 +59,12 @@ Item {
         query: prompt.text
         onChosen: entry => root.chooseSlash(entry)
     }
-    QueuedMessages { id: queued; width: parent.width; primaryActionVisible: backend.sessionBackend !== "dsh" }
+    QueuedMessages {
+        id: queued
+        width: parent.width
+        primaryActionVisible: backend.sessionBackend !== "dsh"
+        messageHoverHint: primaryActionVisible ? I18n.t("Ctrl+S直接插入") : ""
+    }
     Rectangle { x: 0; y: root.queueOffset + 6; width: parent.width; height: parent.height - root.queueOffset; radius: 17; color: "#090f0a"; opacity: Theme.dark ? 0.1 : 0.035 }
     Rectangle {
         x: 0; y: root.queueOffset; width: parent.width; height: parent.height - root.queueOffset; radius: 15; color: Theme.surface

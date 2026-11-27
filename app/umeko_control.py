@@ -233,6 +233,11 @@ class UmekoControl(QObject):
                     operation, args, caller, reply=lambda value: reply({'operation': operation, **value}))
                 if result is None:
                     return None
+            elif operation == 'session_group.submit':
+                result = self.b.sessionGroup.report(caller, args,
+                    reply=(lambda value: reply({'operation': operation, **value})) if reply else None)
+                if result is None:
+                    return None
             else:
                 result = self._execute(operation, args, caller, queue, _job_id, _widget_install=_widget_install)
             return {'ok': True, 'operation': operation, **result}

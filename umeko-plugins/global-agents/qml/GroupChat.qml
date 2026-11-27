@@ -12,6 +12,9 @@ Rectangle {
     required property var agents
     required property bool active
     required property bool collaborationEnabled
+    property var sessionCandidates: null
+    readonly property bool managesSessions: sessionCandidates !== null
+    property var managedMember: null
     signal openAgent(string id)
     readonly property var c: sdk.colors
     readonly property real scale: sdk.scale
@@ -68,10 +71,10 @@ Rectangle {
 
     function tr(zh, en) { return sdk.language === "en" ? en : zh }
     function agentById(id) { return agents.find(row => "agent:" + row.id === id) || ({}) }
-    function displayName(id) {
+    function displayName(id, fallback) {
         if (id === "user") return tr("我", "Me")
         if (id === "all") return tr("所有人", "Everyone")
-        return agentById(id).name || members.find(row => row.targetId === id)?.name || tr("智能体", "Agent")
+        return agentById(id).name || members.find(row => row.targetId === id)?.name || fallback || tr("智能体", "Agent")
     }
     function messageText(message) {
         if (!message) return ""
@@ -149,7 +152,8 @@ Rectangle {
             return false
         }
         pending = Object.assign({}, pending, {
-            [id]: {method, before: args?.before || 0, historyGeneration, searchGeneration}
+            [id]: {method, before: args?.before || 0, historyGeneration, searchGeneration,
+                   addedSessionId: method === "groupChatAddMember" ? args.id : ""}
         })
         return true
     }
@@ -213,6 +217,9 @@ Rectangle {
             fileMenu.close()
             detailsPopup.close()
             clearDialog.close()
+            memberPicker.close()
+            memberActions.close()
+            renameMember.close()
         }
     }
     onCollaborationEnabledChanged: if (active && collaborationEnabled) refresh()
@@ -234,8 +241,11 @@ Rectangle {
             if (method === "groupChatSearch") root.searchReading = false
             if (method === "groupChatSend") root.sending = false
             if (method === "groupChatClear") root.clearing = false
+            if (method === "groupChatAddMember") memberPicker.submitting = false
             if (!value.ok) {
-                root.error = value.error || root.tr("操作失败", "Operation failed")
+                const message = value.error || root.tr("操作失败", "Operation failed")
+                if (method === "groupChatAddMember" && memberPicker.visible) memberPicker.errorText = message
+                else root.error = message
                 return
             }
             const data = value.result
@@ -251,6 +261,18 @@ Rectangle {
             } else if (method === "groupChatPoke") {
                 root.error = ""
                 root.refresh()
+            } else if (method === "groupChatAddMember") {
+                root.error = ""
+                if (root.active && memberPicker.opened) {
+                    memberPicker.addedSessionId = entry.addedSessionId
+                    memberPicker.close()
+                }
+            } else if (method === "groupChatRenameMember") {
+                root.error = ""
+                renameMember.close()
+            } else if (method === "groupChatRemoveMember") {
+                root.error = ""
+                if (!root.selectedMention) root.recipient = "all"
             } else if (method === "groupChatClear") {
                 root.error = ""
                 root.historyGeneration++
@@ -392,30 +414,42 @@ Rectangle {
         anchors.margins: 10 * root.scale
         spacing: 8 * root.scale
         RowLayout {
+            id: groupHeader
             Layout.fillWidth: true
             visible: root.collaborationEnabled
-            TextField {
+            Item { Layout.fillWidth: true }
+            Umeko.InputField {
                 id: searchField
                 objectName: "groupChatSearchField"
-                Layout.fillWidth: true
+                Layout.preferredWidth: Math.min(Umeko.Theme.control(344), Math.max(0, groupHeader.width - detailsButton.width - 2 * groupHeader.spacing))
+                Layout.preferredHeight: Umeko.Theme.control(36)
                 visible: root.searchMode
                 placeholderText: root.tr("查找聊天内容", "Search messages")
+                Accessible.name: placeholderText
                 maximumLength: 256
-                selectByMouse: true
+                leftPadding: Umeko.Theme.control(34)
+                rightPadding: Umeko.Theme.control(34)
                 onAccepted: { searchDelay.stop(); root.search() }
                 Keys.onShortcutOverride: event => {
                     if (event.key === Qt.Key_Escape) event.accepted = true
                 }
                 Keys.onEscapePressed: root.searchMode = false
-            }
-            Item { Layout.fillWidth: true; visible: !root.searchMode }
-            Umeko.ActionButton {
-                visible: root.searchMode
-                glyph: "x"
-                quiet: true
-                hint: root.tr("关闭搜索", "Close search")
-                Accessible.name: hint
-                onClicked: root.searchMode = false
+                Umeko.Glyph {
+                    name: "search"
+                    width: Umeko.Theme.icon(15); height: width
+                    anchors.left: parent.left; anchors.leftMargin: Umeko.Theme.control(11)
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Umeko.ActionButton {
+                    objectName: "groupChatCloseSearch"
+                    width: Umeko.Theme.control(27); height: width
+                    anchors.right: parent.right; anchors.rightMargin: Umeko.Theme.control(4)
+                    anchors.verticalCenter: parent.verticalCenter
+                    glyph: "x"; quiet: true
+                    hint: root.tr("关闭搜索", "Close search")
+                    Accessible.name: hint
+                    onClicked: root.searchMode = false
+                }
             }
             Umeko.ActionButton {
                 id: detailsButton
@@ -518,7 +552,7 @@ Rectangle {
                         spacing: 8 * root.scale
                         Avatar {
                             objectName: "groupChatAvatar_" + entry.modelData.author
-                            label: root.displayName(entry.modelData.author)
+                            label: root.displayName(entry.modelData.author, entry.modelData.authorName)
                             portrait: root.agentById(entry.modelData.author).portrait || ""
                             MouseArea {
                                 id: avatarMouse
@@ -542,7 +576,7 @@ Rectangle {
                             Caption {
                                 width: Math.min(entry.width * 0.78, implicitWidth)
                                 visible: !entry.mine
-                                text: root.displayName(entry.modelData.author)
+                                text: root.displayName(entry.modelData.author, entry.modelData.authorName)
                                 elide: Text.ElideRight
                                 color: root.c.muted
                             }
@@ -745,7 +779,7 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     Umeko.ActionButton {
-                        text: "☺"
+                        glyph: "smile"
                         quiet: true
                         hint: root.tr("表情", "Emoji")
                         Accessible.name: root.tr("表情", "Emoji")
@@ -799,6 +833,32 @@ Rectangle {
         padding: 10 * root.scale
         margins: 8
         focus: true
+        property string highlightedMember: ""
+
+        function revealAddedMember() {
+            if (!opened || !highlightedMember) return
+            const index = memberRepeater.model.findIndex(member => member.id === highlightedMember)
+            const item = memberRepeater.itemAt(index)
+            if (!item) return
+            const view = memberScroll.contentItem
+            const top = item.mapToItem(view.contentItem, 0, 0).y
+            if (top < view.contentY) view.contentY = top
+            else if (top + item.height > view.contentY + view.height)
+                view.contentY = top + item.height - view.height
+        }
+        onOpened: if (highlightedMember) {
+            Qt.callLater(revealAddedMember)
+            memberHighlight.restart()
+        }
+        onClosed: {
+            memberHighlight.stop()
+            highlightedMember = ""
+        }
+        Timer {
+            id: memberHighlight
+            interval: 2200
+            onTriggered: detailsPopup.highlightedMember = ""
+        }
         background: Rectangle { radius: 10; color: root.c.surface; border.color: root.c.line }
         contentItem: ColumnLayout {
             spacing: 8 * root.scale
@@ -807,6 +867,7 @@ Rectangle {
                 color: root.c.muted
             }
             ScrollView {
+                id: memberScroll
                 Layout.fillWidth: true
                 Layout.preferredHeight: Math.min(memberGrid.implicitHeight, 184 * root.scale)
                 contentWidth: availableWidth
@@ -816,17 +877,21 @@ Rectangle {
                     width: parent.width
                     spacing: 3 * root.scale
                     Repeater {
+                        id: memberRepeater
                         model: [{id: "user", name: root.displayName("user"), portrait: ""}].concat(root.mentionChoices.slice(1))
                         delegate: ItemDelegate {
                             id: memberButton
                             required property var modelData
+                            objectName: "groupChatMember_" + modelData.id
                             width: 59 * root.scale
                             height: 59 * root.scale
                             padding: 3 * root.scale
                             Accessible.name: modelData.name
                             background: Rectangle {
                                 radius: 6
-                                color: memberButton.hovered && memberButton.modelData.id !== "user" ? root.c.hover : "transparent"
+                                color: detailsPopup.highlightedMember === memberButton.modelData.id ? root.c.accentBg
+                                    : memberButton.hovered && memberButton.modelData.id !== "user" ? root.c.hover : "transparent"
+                                Behavior on color { ColorAnimation { duration: 160 } }
                             }
                             contentItem: ColumnLayout {
                                 spacing: 3 * root.scale
@@ -849,6 +914,49 @@ Rectangle {
                                 detailsPopup.close()
                                 root.openAgent(modelData.id.slice(6))
                             }
+                            MouseArea {
+                                id: memberContextClick
+                                anchors.fill: parent
+                                enabled: root.managesSessions && memberButton.modelData.id !== "user"
+                                acceptedButtons: Qt.RightButton
+                                onClicked: mouse => {
+                                    root.managedMember = memberButton.modelData
+                                    memberActions.openAt(mapToItem(memberActions.parent, mouse.x, mouse.y))
+                                }
+                            }
+                        }
+                    }
+                    ItemDelegate {
+                        id: addSessionMember
+                        objectName: "groupChatAddMember"
+                        visible: root.managesSessions
+                        width: 59 * root.scale
+                        height: 59 * root.scale
+                        padding: 3 * root.scale
+                        Accessible.name: root.tr("添加群成员", "Add group member")
+                        background: Rectangle {
+                            radius: 6
+                            color: addSessionMember.hovered ? root.c.hover : "transparent"
+                        }
+                        contentItem: ColumnLayout {
+                            spacing: 3 * root.scale
+                            Rectangle {
+                                Layout.alignment: Qt.AlignHCenter
+                                implicitWidth: 32 * root.scale; implicitHeight: width
+                                radius: 7; color: "transparent"; border.color: root.c.line
+                                Umeko.Glyph { name: "plus"; width: 17 * root.scale; height: width; anchors.centerIn: parent }
+                            }
+                            Caption {
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                text: root.tr("添加", "Add")
+                                font.pixelSize: 10 * root.scale
+                                color: root.c.muted
+                            }
+                        }
+                        onClicked: {
+                            detailsPopup.close()
+                            memberPicker.begin()
                         }
                     }
                 }
@@ -879,6 +987,83 @@ Rectangle {
                     detailsPopup.close()
                     clearDialog.open()
                 }
+            }
+        }
+    }
+    Umeko.FloatingMenu {
+        id: memberActions
+        objectName: "groupChatMemberActions"
+        parent: root
+        Umeko.ContextAction {
+            objectName: "groupChatRenameMember"
+            glyph: "edit"
+            text: root.tr("设置群备注", "Set group nickname")
+            onTriggered: {
+                const id = root.managedMember?.id || ""
+                renameInput.text = root.agentById(id).alias || ""
+                detailsPopup.close()
+                renameMember.open()
+            }
+        }
+        Umeko.ContextAction {
+            objectName: "groupChatRemoveMember"
+            glyph: "trash"
+            text: root.tr("移出群聊", "Remove from group")
+            destructive: true
+            onTriggered: if (root.managedMember) {
+                root.request("groupChatRemoveMember", {id: root.managedMember.id.slice(6)})
+                memberActions.close()
+            }
+        }
+    }
+    GroupMemberPicker {
+        id: memberPicker
+        property string addedSessionId: ""
+        candidates: root.sessionCandidates || []
+        english: root.sdk.language === "en"
+        onMemberSelected: sessionId => {
+            memberPicker.errorText = ""
+            memberPicker.submitting = root.request("groupChatAddMember", {id: sessionId})
+            if (!memberPicker.submitting) memberPicker.errorText = root.error
+        }
+        onClosed: {
+            const sessionId = addedSessionId
+            addedSessionId = ""
+            if (sessionId && root.active && root.collaborationEnabled) {
+                detailsPopup.highlightedMember = "agent:" + sessionId
+                detailsPopup.open()
+            }
+        }
+    }
+    Popup {
+        id: renameMember
+        objectName: "groupChatRenameDialog"
+        parent: root
+        anchors.centerIn: parent
+        width: Math.min(365 * root.scale, root.width - 20)
+        focus: true; modal: true; padding: 16
+        background: Rectangle { radius: 12; color: root.c.surface; border.color: root.c.line }
+        onOpened: { renameInput.forceActiveFocus(); renameInput.selectAll() }
+        function save() {
+            if (root.managedMember) root.request("groupChatRenameMember", {
+                id: root.managedMember.id.slice(6), alias: renameInput.text.trim()
+            })
+        }
+        contentItem: ColumnLayout {
+            spacing: 10 * root.scale
+            Caption { text: root.tr("设置群备注", "Set group nickname"); font.weight: Font.DemiBold }
+            TextField {
+                id: renameInput
+                objectName: "groupChatRenameInput"
+                Layout.fillWidth: true
+                placeholderText: root.tr("留空使用会话名称", "Leave blank to use the conversation name")
+                maximumLength: 80
+                onAccepted: renameMember.save()
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Umeko.ActionButton { text: root.tr("取消", "Cancel"); quiet: true; onClicked: renameMember.close() }
+                Umeko.ActionButton { objectName: "groupChatSaveNickname"; text: root.tr("保存", "Save"); primary: true; onClicked: renameMember.save() }
             }
         }
     }
@@ -933,7 +1118,7 @@ Rectangle {
         Umeko.ContextAction {
             objectName: "groupChatQuoteFile"
             text: root.tr("引用", "Quote")
-            glyph: "chat"
+            glyph: "quote"
             onTriggered: root.quoteMessage(root.contextFile.message, root.contextFile.index)
         }
         Umeko.ContextAction {
@@ -974,7 +1159,7 @@ Rectangle {
         Umeko.ContextAction {
             objectName: "groupChatQuoteMessage"
             text: root.tr("引用", "Quote")
-            glyph: "chat"
+            glyph: "quote"
             onTriggered: root.quoteMessage(root.contextMessage)
         }
     }

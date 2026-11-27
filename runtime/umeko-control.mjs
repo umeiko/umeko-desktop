@@ -11,6 +11,7 @@ export const UMEKO_TOOL = 'umeko_desktop';
 export const SEND_TO_USER = 'send_to_user';
 export const REMINDER = 'reminder';
 export const REPLY_TO_GROUPCHAT = 'reply_to_groupchat';
+export const SUBMIT_TO_CHATGROUP = 'submit_to_chatgroup';
 export const coordinatorNativeTools = value => Array.isArray(value)
   ? [...new Set(value.filter(name => CORE_TOOLS.includes(name)))] : [];
 let instanceDocs;
@@ -54,6 +55,23 @@ export function createUmekoControl({ emit, timeoutMs = 90000, getCommandRulesCon
     },
     response(event) { finish(event.id, null, event.result); },
     clear() { for (const id of [...pending.keys()]) finish(id, 'Umeko connection closed');speechLife.abort();speechLife=new AbortController();speechTail=Promise.resolve(); },
+    sessionGroupExtension(pi) {
+      pi.registerTool({
+        name: SUBMIT_TO_CHATGROUP, label: '汇报到群聊', exposure: 'direct',
+        description: 'Post an update or a local artifact to your workspace group chat. The recipient defaults to the user. Use one listed member ID for a necessary handoff. Send meaningful milestones and blockers during long tasks, and reply to tagged group-chat messages through this tool.',
+        parameters: Type.Object({
+          text: Type.Optional(Type.String({minLength: 1, maxLength: 4000})),
+          items: Type.Optional(Type.Array(Type.Object({
+            path: Type.String({minLength: 1, maxLength: 4096}),
+          }), {minItems: 1, maxItems: 8})),
+          recipient: Type.Optional(Type.String({minLength: 1, maxLength: 128, default: 'user'})),
+        }),
+        execute: async (_id, args, signal) => {
+          const result = await this.request('session_group.submit', args, signal);
+          return {content: [{type: 'text', text: JSON.stringify(result)}], isError: result.ok === false};
+        },
+      });
+    },
     extension(pi, { runPiCommand, canRunPiCommand = () => false, globalCoordinator = false } = {}) {
       if (globalCoordinator) pi.registerTool({
         name: REPLY_TO_GROUPCHAT, label: '回复群聊', exposure: 'direct',

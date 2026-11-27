@@ -123,6 +123,14 @@ ApplicationWindow {
         sidebarToken++; pendingSidebarId = ""
         backend.sessionPreview.cancel(); chatCover.cancel()
     }
+    function showSessionGroup() {
+        cancelSidebarSelection()
+        modelPopup.close()
+        subagentMatrix.close()
+        backend.sessionGroup.refreshMembers()
+        workspaceGroupLoader.visited = true
+        page = "sessionGroup"
+    }
     function selectSidebar(row) {
         if (row.kind === "coworkType") {
             backend.cowork.toggleType(row.typeId)
@@ -192,7 +200,9 @@ ApplicationWindow {
     property real webPreferredWidth: 0
     readonly property real webMinimumWidth: 320
     readonly property real chatMinimumWidth: 640
-    readonly property bool previewSidebarCollapsed: webPane.opened && page === "chat" && width - Math.min(sidebarPreferredWidth, sidebarMaximumWidth) < chatMinimumWidth + webMinimumWidth
+    readonly property bool groupPageOpen: page === "sessionGroup"
+    onGroupPageOpenChanged: if (!groupPageOpen) webPane.dismiss()
+    readonly property bool previewSidebarCollapsed: webPane.opened && (page === "chat" || groupPageOpen) && width - Math.min(sidebarPreferredWidth, sidebarMaximumWidth) < chatMinimumWidth + webMinimumWidth
     readonly property bool sidebarLayoutCollapsed: !searchVisible && (sidebarCollapsed || previewSidebarCollapsed)
     readonly property real webMaximumWidth: Math.max(webMinimumWidth, mainArea.width - chatMinimumWidth)
     function showChatWidthLimitHint() {
@@ -283,7 +293,7 @@ ApplicationWindow {
         if (!url) return
         backend.openWebPreview(url, item.title || item.name || "")
     }
-    function previewChatDocument(item, sourceWidget) { if (backend.openExternalHtml(item.path)) return; window.page = "chat"; webPane.showDocument(item, sourceWidget || "") }
+    function previewChatDocument(item, sourceWidget) { if (backend.openExternalHtml(item.path)) return; if (!groupPageOpen) window.page = "chat"; webPane.showDocument(item, sourceWidget || "") }
     function showSubagentGroup(agents, anchor) {
         if (subagentMatrix.desiredOpen && subagentMatrix.parent === anchor) { subagentMatrix.close(); return }
         subagentMatrix.agents = agents; subagentMatrix.parent = anchor; subagentMatrix.open()
@@ -313,7 +323,7 @@ ApplicationWindow {
     Shortcut { sequence: "Escape"; enabled: !coworkLauncher.visible && !window.wallpaperDialogVisible && !composer.slashVisible && !workspacePicker.visible && backend.pendingApproval.id === undefined && backend.desktopPlugins.hostServices.pendingApproval.id === undefined && !imageViewer.visible; onActivated: { if (window.searchVisible) window.closeConversationSearch(false); else if (window.page === "settings") window.page = "chat"; else modelPopup.close() } }
     Connections { target: backend; function onToast(message) { window.notification = message; toastTimer.restart() }
         function onViewChanged() { window.avatarChatKey = String(Math.random()); if (backend.desktopPlugins.page.id !== "global-agents") webPane.dismiss() }
-        function onWebRequested(url, title) { if (backend.desktopSettings.webDisplay === "external") backend.openWebPreview(url,title); else {window.page = "chat"; webPane.submit(url, title)} }
+        function onWebRequested(url, title) { if (backend.desktopSettings.webDisplay === "external") backend.openWebPreview(url,title); else {if (!window.groupPageOpen) window.page = "chat"; webPane.submit(url, title)} }
         function onDesktopSettingsChanged() { if (backend.desktopSettings.webDisplay === "external" && (webPane.mode === "web" || webPane.mode === "document" && backend.documentPreview.state.fileType === "html")) webPane.dismiss() }
         function onDocumentRequested(path, title, kind) { window.previewChatDocument({path:path, title:title, kind:kind}) }
         function onWidgetDocumentRequested(path, title, kind, widget) { window.previewChatDocument({path:path, title:title, kind:kind}, widget) } }
@@ -444,6 +454,24 @@ ApplicationWindow {
                 }
             }
             Text { font.family: Theme.fontFamily; id: recentLabel; x: 29; y: 52 + Theme.control(42); text: backend.showArchived ? I18n.t("已归档") : backend.cowork.active ? window.coworkRoleGroups ? (backend.language === "en" ? "Roles" : "角色") : (backend.language === "en" ? "Recent work" : "最近工作") : I18n.t("项目"); font.pixelSize: Theme.font(10, visible); color: Theme.muted; font.letterSpacing: 1 }
+            ActionButton {
+                objectName: "workspaceGroupChatButton"
+                visible: !backend.cowork.active
+                anchors.right: parent.right; anchors.rightMargin: 34 + 2 * Theme.control(26)
+                y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26)
+                glyph: "group-chat"; quiet: true
+                glyphColor: Theme.accent
+                hint: window.groupPageOpen ? I18n.t("返回会话")
+                                           : backend.language === "en" ? "Group chat" : "群聊"
+                Accessible.name: hint
+                background: Rectangle { radius: 6; color: window.groupPageOpen ? Theme.accentBg : parent.hovered ? Theme.hover : "transparent" }
+                onClicked: {
+                    if (window.groupPageOpen) {
+                        window.page = "chat"
+                        Qt.callLater(composer.focusInput)
+                    } else window.showSessionGroup()
+                }
+            }
             ActionButton { objectName: "archivedViewButton"; anchors.right: parent.right; anchors.rightMargin: 28 + Theme.control(26); y: recentLabel.y - 7; width: Theme.control(26); height: Theme.control(26); glyph: "archive"; quiet: true; hint: backend.showArchived ? I18n.t("返回项目") : I18n.t("查看归档会话"); onClicked: backend.toggleArchived() }
             ActionButton {
                 objectName: "coworkGroupRolesButton"; visible: backend.cowork.active && !backend.showArchived
@@ -729,7 +757,7 @@ ApplicationWindow {
                 }
                 Text {
                     font.family: Theme.fontFamily
-                    text: window.page === "chat" ? (backend.cowork.active ? (backend.language === "en" ? "Cowork" : "协同办公") : I18n.t("工作空间")) : I18n.t("偏好设置")
+                    text: window.groupPageOpen || window.page === "chat" ? (backend.cowork.active ? (backend.language === "en" ? "Cowork" : "协同办公") : I18n.t("工作空间")) : I18n.t("偏好设置")
                     color: coworkHeaderOverview.containsMouse && coworkHeaderOverview.enabled ? Theme.ink : Theme.muted
                     font.pixelSize: Theme.font(11, visible)
                     anchors.verticalCenter: parent.verticalCenter
@@ -756,6 +784,7 @@ ApplicationWindow {
                     visible: window.page !== "chat" || !window.coworkEmpty
                     font.family: Theme.fontFamily
                     text: {
+                        if (window.groupPageOpen) return backend.language === "en" ? "Group chat" : "群聊"
                         if (window.page !== "chat")
                             return [I18n.t("账号与供应商"), I18n.t("API 代理服务"), I18n.t("API 代理服务"), "Agent", "Agent", I18n.t("外观"), I18n.t("关于"), I18n.t("Umeko 插件管理")][window.settingsTab]
                         const title = window.sidebarSwitching ? window.pendingSidebarTitle : backend.sessionTitle
@@ -1080,13 +1109,29 @@ ApplicationWindow {
             }
         }
 
+        Loader {
+            id: workspaceGroupLoader
+            property bool visited: false
+            anchors { left: parent.left; top: header.bottom; bottom: parent.bottom }
+            width: parent.width - (window.groupPageOpen ? webPane.animatedWidth : 0)
+            visible: window.groupPageOpen
+            active: visited
+            sourceComponent: SessionGroupPage {
+                active: window.groupPageOpen
+                onOpenAgent: id => window.selectSidebar({
+                    kind: "session", id, title: backend.sessionGroup.memberRows.find(row => row.id === id)?.name || ""
+                })
+                onPreviewDocument: item => webPane.showDocument(item, "")
+            }
+        }
+
         WebPane {
             id: webPane
-            visible: window.page === "chat" && animatedWidth > 0.5
+            visible: (window.page === "chat" || window.groupPageOpen) && animatedWidth > 0.5
             anchors.right: parent.right; anchors.top: header.bottom; anchors.bottom: parent.bottom
             preferredWidth: Math.max(window.webMinimumWidth, Math.min(window.webMaximumWidth, webResizeHandle.resizing ? webResizeHandle.dragWidth : window.webPreferredWidth > 0 ? window.webPreferredWidth : Math.min(540, Math.max(350, parent.width * 0.46))))
             resizing: webResizeHandle.resizing
-            blocked: window.page !== "chat" || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || desktopPluginMenu.popupVisible || backend.pendingApproval.id !== undefined || backend.desktopPlugins.hostServices.pendingApproval.id !== undefined
+            blocked: (window.page !== "chat" && !window.groupPageOpen) || !window.visible || window.visibility === Window.Minimized || window.mediaOverlayActive || modelPopup.visible || (subagentMatrix.visible && (subagentMatrix.desiredOpen || subagentMatrix.animating)) || subagentIndicator.popupVisible || desktopPluginMenu.popupVisible || backend.pendingApproval.id !== undefined || backend.desktopPlugins.hostServices.pendingApproval.id !== undefined
         }
 
         MouseArea {

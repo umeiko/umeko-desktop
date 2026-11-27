@@ -298,6 +298,8 @@ class PiControllerMixin:
                 payload['initialSessionTitle'] = record.initial_title
         if record.terminal_owned:
             payload.update(terminalOwned=True, mcpEnv={}, initialSessionId=record.id if not record.id.startswith("pending-") else "")
+        if getattr(self, '_session_group', None):
+            payload.update(self._session_group.runtime_config(record))
         self._pool.start(record, node_executable(), bridge, payload)
 
     def _write_first_warm_command(self, record, payload):

@@ -115,11 +115,13 @@ class GroupChat(QObject):
         self.bus.changed(persist=False)
         return {'cleared': True}
 
-    def append(self, store, author, recipient, text, files=(), *, poke=False, quote=None):
+    def append(self, store, author, recipient, text, files=(), *, poke=False, quote=None, author_name=''):
         message = {'author': author, 'recipient': recipient, 'text': text, 'files': list(files),
                    'poke': poke, 'created': datetime.now(timezone.utc).isoformat(timespec='seconds')}
         if quote is not None:
             message['quote'] = quote
+        if author_name:
+            message['authorName'] = author_name
         with store.connection() as db:
             cursor = db.execute('INSERT INTO global_chat_messages (message) VALUES (?)',
                                 (json.dumps(message, ensure_ascii=False),))

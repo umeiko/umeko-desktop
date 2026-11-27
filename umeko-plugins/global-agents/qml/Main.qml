@@ -232,7 +232,8 @@ Rectangle {
     }
     component TreeIcon: IconImage {
         property string iconName
-        source:"../assets/"+iconName+".svg";color:root.c.muted
+        source: iconName === "chat" ? "../../../app/icons/chat.svg" : "../assets/" + iconName + ".svg"
+        color: root.c.muted
         sourceSize:Qt.size(32,32);Layout.preferredWidth:16*root.sdk.scale;Layout.preferredHeight:16*root.sdk.scale
     }
     component CompactCheckBox: CheckBox {

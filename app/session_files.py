@@ -204,6 +204,8 @@ class SessionFiles(QObject):
             self.deleted.update(ids)
             b._desktop_plugins.global_agents.forget_sessions(ids, [record.key for record in context['records']])
             b._sessions = [row for row in b._sessions if row['id'] not in ids]
+            if getattr(b, '_session_group', None):
+                b._session_group.remove_deleted(ids)
             for identifier in ids: b.store.data['sessionMeta'].pop(identifier, None)
             for record in context['records']:
                 if record.id in ids or not value['errors'] and (not record.id or context['cowork']):

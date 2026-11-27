@@ -34,7 +34,7 @@ paths = {
     "minus": '<path d="M5 12h14"/>',
     "x": '<path d="m6 6 12 12M18 6 6 18"/>',
     "search": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
-    "chat": '<path d="M20 11.5a7.8 7.8 0 0 1-8 7.5H5l-3 2 1.4-5.3A7.3 7.3 0 0 1 4 6.3 8.2 8.2 0 0 1 20 11.5Z"/>',
+    # chat.svg is a shared, hand-authored glyph.
     "folder": '<path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>',
     "folder-code": '<path d="M3 7V5h6l2 3h10v12H3Z"/><path d="m10 12-3 3 3 3m4-6 3 3-3 3"/>',
     "code": '<path d="m8 5-6 7 6 7m8-14 6 7-6 7m-3-16-2 18"/>',
