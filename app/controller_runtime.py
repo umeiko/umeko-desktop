@@ -582,6 +582,9 @@ class PiControllerMixin:
             self._clear_dangerous_approval(record.id)
             self.store.save()
             return
+        if kind == "subagent_usage":
+            self._subagents.handle(record, event)
+            return
         if kind in ("subagents", "subagent_context", "subagent_event", "subagent_command", "subagent_queue", "subagent_queue_edited", "subagent_queue_returned"):
             self._subagents.handle(record, event)
             archived = self.store.data['sessionMeta'].get(record.id, {}).get('archived')

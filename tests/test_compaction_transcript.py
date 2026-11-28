@@ -130,6 +130,17 @@ class CompactionTranscriptTests(unittest.TestCase):
             self.assertEqual(fresh.page(0)[0]["compaction"]["state"], "failure")
             self.assertEqual(replace(fresh, active_compactions=frozenset({EVENT})).cached(0)["compaction"]["state"], "running")
 
+    def test_manual_no_op_updates_one_history_row_and_is_not_a_failure(self):
+        for reason in ("too-short", "already-compacted"):
+            start = transition("start", None, "running")
+            finish = transition("finish", "start", "skipped", skipReason=reason)
+            rows = present([start, finish], ".")[0]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["entryId"], "start")
+            self.assertEqual(rows[0]["compaction"], finish["data"])
+        self.assertIsNone(compaction_view(transition("invalid", None, "skipped")))
+        self.assertIsNone(compaction_view(transition("invalid", None, "skipped", skipReason="unknown")))
+
     def test_invalid_typed_transitions_are_ignored(self):
         for changes in ({"eventId": "not-a-uuid"}, {"state": "done"}, {"mode": "other"},
                         {"before": -1}, {"after": True}, {"before": float("inf")},

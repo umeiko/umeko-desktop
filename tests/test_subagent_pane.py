@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QGuiApplication
 
 from app.chat_model import ChatModel
+from app.controller_runtime import PiControllerMixin
 from app.pi_sessions import SessionState
 from app.subagents import Subagents
 from app.transcript_index import TranscriptRepository
@@ -45,6 +46,22 @@ class SubagentPaneTests(unittest.TestCase):
     def tearDown(self):
         self.hub.close()
         self.directory.cleanup()
+
+    def test_controller_routes_context_usage_only_to_its_selected_child(self):
+        record = self.host._view
+        self.host._subagents = self.hub
+        self.hub.merge(record, {"id": "child", "status": "completed"})
+        self.hub.open("child")
+        event = {"type": "subagent_usage", "id": "child", "usage": {"tokens": 1200},
+                 "compactAvailable": True, "busy": False}
+        PiControllerMixin._handle_pi_event(self.host, record, event)
+        self.assertTrue(self.hub.conversation.compactionAvailable)
+        self.assertEqual(self.hub.conversation.contextUsage["tokens"], 1200)
+        PiControllerMixin._handle_pi_event(self.host, record, {**event, "id": "sibling", "compactAvailable": False})
+        self.assertTrue(self.hub.conversation.compactionAvailable)
+        PiControllerMixin._handle_pi_event(self.host, record, {**event, "compactAvailable": False, "busy": True})
+        self.assertFalse(self.hub.conversation.compactionAvailable)
+        self.assertTrue(self.hub.conversation.busy)
 
     def test_file_watermark_replays_live_prefix_and_deltas_once(self):
         import json

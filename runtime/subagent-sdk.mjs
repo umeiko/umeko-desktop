@@ -69,18 +69,21 @@ export async function createAgentSession(options) {
 export class SettingsManager extends NativeSettingsManager {
   static create(...args) {
     const settings = NativeSettingsManager.create(...args);
-    const applyRetry = () => {
-      const retry = settings.getSettings().retry;
+    const applyDesktopPolicy = () => {
+      const native = settings.getSettings();
+      const enabled = globalThis[Symbol.for("umeko:subagent-compaction-policy")]?.();
+      const retry = native.retry;
       const configuredMax = globalThis[Symbol.for("umeko:stream-retry-policy")]?.getMaxRetries?.();
       const maxRetries = typeof configuredMax === "number" ? configuredMax : NETWORK_RETRY.maxRetries;
       settings.applyOverrides({ httpIdleTimeoutMs: GATEWAY_HTTP_IDLE_TIMEOUT_MS, retry: { ...retry, ...NETWORK_RETRY, maxRetries,
-        provider: { ...retry?.provider, maxRetries: 0 } } });
+        provider: { ...retry?.provider, maxRetries: 0 } },
+        ...(typeof enabled === "boolean" ? { compaction: { ...native.compaction, enabled } } : {}) });
     };
-    applyRetry();
+    applyDesktopPolicy();
     // The child's DefaultResourceLoader reloads these settings before creating
     // its session. Reapply only this instance's policy after that native read.
     const reload = settings.reload.bind(settings);
-    settings.reload = async (...options) => { await reload(...options); applyRetry(); };
+    settings.reload = async (...options) => { await reload(...options); applyDesktopPolicy(); };
     return settings;
   }
 }

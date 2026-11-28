@@ -77,7 +77,8 @@ def compaction_view(entry):
             UUID(event_id)
         except (ValueError, AttributeError):
             return None
-        if (details.get("state") not in ("running", "success", "failure")
+        if (details.get("state") not in ("running", "success", "failure", "skipped")
+                or (details.get("state") == "skipped" and details.get("skipReason") not in ("already-compacted", "too-short"))
                 or details.get("mode") not in ("manual", "auto")
                 or details.get("afterEstimated") is not True
                 or any(number is not None and (type(number) not in (int, float)
