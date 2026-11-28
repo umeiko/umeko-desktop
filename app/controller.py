@@ -751,10 +751,10 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
 
     @Property("QVariantMap", notify=changed)
     def config(self):
-        # Per-session metadata belongs to the backend. Copying and converting
-        # it for every QML binding makes settings clicks scale with all history.
-        data = copy.deepcopy({key: value for key, value in self.store.data.items()
-                              if key != 'sessionMeta'})
+        # Per-session metadata belongs to the backend. Every QML binding that
+        # reads settings calls this, so only the branches rewritten below are
+        # copied instead of deep-copying settings and history for each read.
+        data = {key: value for key, value in self.store.data.items() if key != 'sessionMeta'}
         if self._view.cowork:
             data["workspace"] = self._view.workspace
         data["hasPassword"] = bool(data.pop("password"))
@@ -763,12 +763,15 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             data["providers"] = [p for p in data["providers"] if p["api"] != "internal"]
             if data["selectedProvider"] == "internal":
                 data.update(selectedProvider="", selectedModel="")
-        data["server"].pop("keys", None)
+        data["server"] = {key: value for key, value in data["server"].items() if key != "keys"}
+        providers = []
         for provider in data["providers"]:
+            provider = dict(provider)
             provider["hasKey"] = bool(provider.pop("key", ""))
             provider.update(self.gateway.diagnostics.latest_compatibility(provider['id'], data.get('language', 'zh')))
-            for model in provider["models"]:
-                model.update(normalize_model(model))
+            provider["models"] = [{**model, **normalize_model(model)} for model in provider["models"]]
+            providers.append(provider)
+        data["providers"] = providers
         return data
 
     @Property(int, notify=layoutChanged)
