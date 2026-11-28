@@ -443,6 +443,25 @@ class StreamTimeoutGatewayTests(unittest.TestCase):
         caught.exception.close()
         self.assertEqual(len(self.calls), 1)
 
+    def test_unwritable_diagnostics_keep_gateway_timeout_retryable(self):
+        self.gateway.diagnostics.directory.write_text("not a directory", encoding="utf-8")
+        self.mode = "non_stream_slow"
+        self.delay = 1.2
+        with patch.object(gateway_module, "MIN_STREAM_IDLE_TIMEOUT_MS", 100):
+            with self.assertRaises(HTTPError) as caught:
+                self._post("primary", stream=True)
+            with caught.exception as response:
+                self.assertEqual(response.code, 503)
+                error = json.load(response)["error"]
+            self.assertTrue(error["retryable"])
+            self.assertIn(STREAM_HEADER_TIMEOUT_ERROR, error["message"])
+            self.assertNotIn("[Umeko:", error["message"])
+
+            self.mode = "ok"
+            self.delay = 0.0
+            with self._post("primary", stream=True) as response:
+                self.assertIn("ok:primary", response.read().decode("utf-8"))
+
     def test_non_stream_timeout_and_504_and_mid_stream_drop_are_retryable(self):
         with patch.object(gateway_module, "MIN_STREAM_IDLE_TIMEOUT_MS", 100):
             self.mode = "non_stream_slow"
