@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from .tool_visibility import catalog, NATIVE_ID
 from .plugin_sessions import OPERATIONS as SESSION_OPERATIONS, PluginSessions
+from .im_widget_channel import OPERATIONS as IM_OPERATIONS, WIDGET_ID as IM_WIDGET_ID
 from collections import OrderedDict
 
 from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
@@ -41,7 +42,7 @@ OPERATIONS = {
     'systemPrompt.restore': ('pi.manage', None),
     **{name: ('tasks.read' if name in ('tasks.list', 'tasks.get', 'tasks.detail') else 'tasks.manage', None)
        for name in TASK_FIELDS},
-    **{name: ('sessions.manage', None) for name in SESSION_OPERATIONS},
+    **{name: ('sessions.manage', None) for name in (*SESSION_OPERATIONS, *IM_OPERATIONS)},
     'scheduledTasks.profiles': ('sessions.manage', None),
     'scheduledTasks.openSession': ('sessions.manage', None),
     **{name: ('sessions.manage', None) for name in ('scheduledTasks.targets', 'scheduledTasks.trigger', 'scheduledTasks.status', 'scheduledTasks.openTarget')},
@@ -207,6 +208,8 @@ class WidgetHost(QObject):
 
     def stop(self, identifier):
         if self._sessions: self._sessions.stop(identifier)
+        if identifier == IM_WIDGET_ID:
+            self.m.global_agents.im_channel.stop()
         for token in [token for token, lock in self.checkpoint_locks.items() if lock['widget'] == identifier]:
             self.release_checkpoint(identifier, token)
         if self._skills: self._skills.stop(identifier)
@@ -254,6 +257,10 @@ class WidgetHost(QObject):
             raise ValueError('Widget instance has stopped')
         if not self.m.enabled(identifier) or not self.m.session_enabled(identifier):
             raise ValueError('Widget is not enabled')
+        if request['operation'] in IM_OPERATIONS:
+            if identifier != IM_WIDGET_ID or request['page'] or not self.m.application(identifier):
+                raise ValueError('IM host operations require the authorized application Widget worker')
+            return identifier
         if request['operation'] in SESSION_OPERATIONS:
             if not self.m.application(identifier):
                 raise ValueError('Session service requires an application lifecycle Widget')
@@ -387,6 +394,10 @@ class WidgetHost(QObject):
                     self.b.openSession(session_id)
                     return
                 raise ValueError('Invalid Scheduled Tasks arguments')
+            if operation in IM_OPERATIONS:
+                result = self.m.global_agents.im_channel.request(operation, args)
+                self._reply(request, {'ok': True, 'result': result})
+                return
             if operation in SESSION_OPERATIONS:
                 if self._sessions is None: self._sessions = PluginSessions(self)
                 self._sessions.request(request)
