@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 ComboBox {
     id: control
+    property bool plainText: false
     Accessible.onPressAction: {
         if (popup.visible) popup.close()
         else popup.open()
@@ -10,7 +11,7 @@ ComboBox {
     font.pixelSize: Theme.font(12, visible)
     leftPadding: 12; rightPadding: Theme.control(30)
     background: Rectangle { color: Theme.surface; border.color: control.activeFocus ? Theme.accent : Theme.line; radius: 8 }
-    contentItem: Text { text: control.displayText; color: Theme.ink; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; font: control.font }
+    contentItem: Text { textFormat: control.plainText ? Text.PlainText : Text.AutoText; text: control.displayText; color: Theme.ink; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; font: control.font }
     indicator: Glyph { name: "chevron-down"; width: Theme.icon(14); height: Theme.icon(14); x: control.width - width - 9; y: (control.height - height) / 2 }
     popup: Popup {
         y: control.height + 4; width: control.width; padding: 5
@@ -21,7 +22,7 @@ ComboBox {
     delegate: ItemDelegate { width: control.width - 10; height: Math.max(36, font.pixelSize + 14); text: modelData; font.pixelSize: Theme.font(12, visible)
         Accessible.name: text
         Accessible.onPressAction: clicked()
-        contentItem: Text { text: modelData; color: Theme.ink; font: parent.font; verticalAlignment: Text.AlignVCenter }
+        contentItem: Text { textFormat: control.plainText ? Text.PlainText : Text.AutoText; text: modelData; color: Theme.ink; font: parent.font; verticalAlignment: Text.AlignVCenter }
         background: Rectangle { radius: 5; color: parent.highlighted ? Theme.accentBg : "transparent" }
         highlighted: control.highlightedIndex === index }
 }

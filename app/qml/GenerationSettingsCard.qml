@@ -9,6 +9,19 @@ SectionCard {
     required property string title
     property string providerId: ""
     property string modelId: ""
+    property string voiceValue: ""
+    readonly property var offeredVoices: kind === "speech" && account && account.speechVoices
+        ? account.speechVoices[modelId] || [] : []
+    readonly property var voiceChoices: {
+        if (!offeredVoices.length) return []
+        const rows = [{id: "", label: I18n.t("供应商默认")}]
+        for (const row of offeredVoices)
+            rows.push({id: row.id, label: row.id})
+        // Keep a saved custom voice selectable after an upgrade adds a catalog.
+        if (voiceValue && !rows.some(row => row.id === voiceValue))
+            rows.push({id: voiceValue, label: voiceValue})
+        return rows
+    }
     property string formatValue: kind === "speech" ? "mp3" : ""
     readonly property var saved: backend.multimodalPreferences[kind]
     readonly property string savedSignature: JSON.stringify(saved)
@@ -57,7 +70,8 @@ SectionCard {
         seconds.text = kind === "video" ? value.seconds : ""
         quality.text = kind === "image" ? value.quality : ""
         count.text = kind === "image" ? String(value.count) : "1"
-        voice.text = kind === "speech" ? value.voice : ""
+        voiceValue = kind === "speech" ? value.voice : ""
+        voice.text = voiceValue
         speed.text = kind === "speech" ? String(value.speed) : "1"
         formatValue = value.format || ""
         Qt.callLater(syncPickers)
@@ -67,7 +81,7 @@ SectionCard {
         if (kind === "video")
             return Object.assign(common, {seconds: seconds.text, size: videoSize.text})
         return kind === "image" ? Object.assign(common, {size: size.text, quality: imagePreset ? "" : quality.text, count: Number(count.text), format: formatValue})
-                                : Object.assign(common, {voice: voice.text, format: formatValue, speed: Number(speed.text)})
+                                : Object.assign(common, {voice: voiceChoices.length ? voiceValue : voice.text, format: formatValue, speed: Number(speed.text)})
     }
     readonly property var formats: kind === "image" ? imageLimits ? [""].concat(imageLimits.formats) : ["", "png", "jpeg", "webp"] : ["mp3", "opus", "aac", "flac", "wav", "pcm"]
     Component.onCompleted: { load(); loaded = true }
@@ -93,6 +107,9 @@ SectionCard {
             onModelChanged: Qt.callLater(root.syncPickers)
             onActivated: index => {
                 if (index < 0 || index >= root.choices.length) return
+                if (root.kind === "speech" && (root.providerId !== root.choices[index].providerId ||
+                                              root.modelId !== root.choices[index].model))
+                    root.voiceValue = voice.text = ""
                 root.providerId = root.choices[index].providerId
                 root.modelId = root.choices[index].model
             }
@@ -121,8 +138,29 @@ SectionCard {
             visible: root.kind === "speech" && !!root.account; Layout.fillWidth: true; spacing: 14
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 6
-                Text { text: I18n.t("音色 ID"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
-                InputField { id: voice; objectName: root.kind === "speech" ? "speechGenerationVoice" : ""; Layout.fillWidth: true; placeholderText: root.account && root.account.api === "plugin" ? I18n.t("供应商默认") : I18n.t("输入供应商支持的音色 ID"); Accessible.name: I18n.t("音色 ID") }
+                Text { text: I18n.t("音色"); font.family: Theme.fontFamily; color: Theme.muted; font.pixelSize: Theme.font(11, visible) }
+                Picker {
+                    id: voicePicker
+                    objectName: root.kind === "speech" ? "speechGenerationVoicePicker" : ""
+                    visible: root.voiceChoices.length > 0
+                    Layout.fillWidth: true
+                    plainText: true
+                    model: root.voiceChoices.map(row => row.label)
+                    currentIndex: root.voiceChoices.findIndex(row => row.id === root.voiceValue)
+                    onActivated: index => {
+                        if (index >= 0 && index < root.voiceChoices.length)
+                            root.voiceValue = root.voiceChoices[index].id
+                    }
+                    Accessible.name: I18n.t("音色")
+                }
+                InputField {
+                    id: voice
+                    objectName: root.kind === "speech" ? "speechGenerationVoice" : ""
+                    visible: !root.voiceChoices.length
+                    Layout.fillWidth: true
+                    placeholderText: root.account && root.account.api === "plugin" ? I18n.t("供应商默认") : I18n.t("输入供应商支持的音色 ID")
+                    Accessible.name: I18n.t("音色 ID")
+                }
             }
             ColumnLayout {
                 Layout.fillWidth: false; Layout.preferredWidth: 100; Layout.maximumWidth: 100; spacing: 6

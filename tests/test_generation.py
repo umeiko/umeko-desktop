@@ -338,6 +338,20 @@ class GenerationTests(unittest.TestCase):
         (folder / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
         validated, _, _ = validate_folder(folder)
         self.assertEqual(ProviderPlugins._new_account(validated)['generationCapabilities'], ['image', 'speech'])
+        catalog = {'tts-model': [{'id': 'announcer', 'name': 'Announcer', 'nameZh': '播音员'}]}
+        extended = {**manifest, 'speechVoices': catalog}
+        (folder / 'manifest.json').write_text(json.dumps(extended), encoding='utf-8')
+        validated, _, _ = validate_folder(folder)
+        self.assertEqual(ProviderPlugins._new_account(validated)['speechVoices'], catalog)
+        for rejected in (
+            {**extended, 'generationCapabilities': ['image']},
+            {**extended, 'speechVoices': {'tts-model': catalog['tts-model'] * 2}},
+            {**extended, 'speechVoices': {'tts-model': [{'id': 'speaker', 'name': 'bad\nname'}]}},
+            {**extended, 'speechVoices': ['bad']},
+        ):
+            (folder / 'manifest.json').write_text(json.dumps(rejected), encoding='utf-8')
+            with self.assertRaises(ProviderError):
+                validate_folder(folder)
         invalid = copy.deepcopy(manifest)
         invalid['generationCapabilities'] = ['image', 'unsupported']
         (folder / 'manifest.json').write_text(json.dumps(invalid), encoding='utf-8')

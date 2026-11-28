@@ -73,6 +73,8 @@ def validate_folder(folder):
             or len(set(capabilities)) != len(capabilities)):
         raise ProviderError('generationCapabilities must list image, speech and/or video without duplicates')
     manifest['generationCapabilities'] = capabilities
+    if 'speechVoices' in manifest:
+        manifest['speechVoices'] = validate_speech_voices(manifest['speechVoices'], capabilities)
     entry, sep, factory = manifest.get("entrypoint", "").partition(":")
     if not sep or not factory.isidentifier() or not entry.endswith(".py"):
         raise ProviderError("entrypoint must be scripts/provider.py:create_provider")
@@ -94,6 +96,32 @@ def validate_folder(folder):
     schema = read(manifest.get("configSchema", "config.schema.json"))
     validate_config(config, schema)
     return manifest, config, schema
+
+
+def validate_speech_voices(value, capabilities):
+    """A bounded, optional model-to-voices catalog. Voice IDs remain opaque."""
+    def valid_text(text, limit):
+        return (isinstance(text, str) and 0 < len(text) <= limit and text == text.strip()
+                and not any(ord(char) < 32 or ord(char) == 127 for char in text))
+
+    if 'speech' not in capabilities or not isinstance(value, dict) or len(value) > 32:
+        raise ProviderError('speechVoices must be an object for a speech provider')
+    catalog = {}
+    for model, voices in value.items():
+        if not valid_text(model, 200) or not isinstance(voices, list) or not 0 < len(voices) <= 100:
+            raise ProviderError('Invalid speech voice catalog')
+        seen = set()
+        rows = []
+        for voice in voices:
+            if (not isinstance(voice, dict) or set(voice) - {'id', 'name', 'nameZh'}
+                    or not valid_text(voice.get('id'), 200) or not valid_text(voice.get('name'), 80)
+                    or ('nameZh' in voice and not valid_text(voice['nameZh'], 80))
+                    or voice['id'] in seen):
+                raise ProviderError('Invalid or duplicate speech voice')
+            seen.add(voice['id'])
+            rows.append(dict(voice))
+        catalog[model] = rows
+    return catalog
 
 
 def validate_config(config, schema):
