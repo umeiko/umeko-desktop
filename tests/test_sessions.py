@@ -312,6 +312,16 @@ class SessionTests(unittest.TestCase):
                 self.assertNotIn("lastTurn", c.store.data["sessionMeta"].get(session_id, {}))
                 self.assertIsNone(c._view.process)
 
+    def test_switching_local_workspace_notifies_composer(self):
+        second = self.path / 'project B'
+        second.mkdir()
+        c = self.controller
+        observed = []
+        c.changed.connect(lambda: observed.append(
+            (c.config['workspace'], c.workspaceName, c._view.workspace)))
+        self.assertTrue(c.setWorkspace(str(second)))
+        self.assertIn((str(second), second.name, str(second)), observed)
+
     def test_sidebar_bindings_reuse_rows_and_canonicalize_each_workspace_once(self):
         c = self.controller
         workspaces = [str(self.path / ('project-' + str(i))) for i in range(3)]
