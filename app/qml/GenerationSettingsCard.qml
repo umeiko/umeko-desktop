@@ -107,11 +107,17 @@ SectionCard {
             onModelChanged: Qt.callLater(root.syncPickers)
             onActivated: index => {
                 if (index < 0 || index >= root.choices.length) return
-                if (root.kind === "speech" && (root.providerId !== root.choices[index].providerId ||
-                                              root.modelId !== root.choices[index].model))
-                    root.voiceValue = voice.text = ""
-                root.providerId = root.choices[index].providerId
-                root.modelId = root.choices[index].model
+                const next = root.choices[index]
+                if (root.kind === "speech" && (root.providerId !== next.providerId || root.modelId !== next.model)) {
+                    const saved = root.saved
+                    // Do not carry a voice across models, but restore it when returning to the saved selection.
+                    const originalVoice = saved && saved.providerId === next.providerId && saved.model === next.model
+                        ? saved.voice : ""
+                    root.voiceValue = originalVoice
+                    voice.text = originalVoice
+                }
+                root.providerId = next.providerId
+                root.modelId = next.model
             }
             Accessible.name: I18n.t("默认模型")
         }

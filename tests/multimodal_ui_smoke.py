@@ -251,6 +251,12 @@ def run():
             backend.changed.emit()
             until(lambda: picker.property('count') == 3, lambda: str(warnings))
             assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 2))
+            assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 1))
+            assert find(window, 'speechGenerationVoice').property('text') == 'test-voice', (
+                'Returning to the saved provider must restore its saved manual voice')
+            click('saveMultimodalSettings')
+            assert Store(Path(profile)).data['multimodal']['speech'] == speech
+            assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 2))
             voice_picker = find(window, 'speechGenerationVoicePicker')
             until(lambda: voice_picker.isVisible() and voice_picker.property('count') == 3, lambda: str(warnings))
             assert not find(window, 'speechGenerationVoice').isVisible()
