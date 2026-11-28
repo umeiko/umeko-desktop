@@ -14,6 +14,22 @@ Window {
     property bool assistantCaption: false
     property bool placed: false
     property bool dragged: false
+    property bool hoverArmed: false
+    readonly property bool canPreview: visible && hoverArmed && pointer.containsMouse
+        && !pointer.pressed && assistant.bound && !menu.visible
+        && !taskComposer.visible && !reminderCard.length && !(assistantCaption && caption)
+    function closeHoverPreview() {
+        hoverArmed = false
+        hoverDelay.stop()
+        hoverPreview.visible = false
+    }
+    onCanPreviewChanged: {
+        if (canPreview) hoverDelay.restart()
+        else {
+            hoverDelay.stop()
+            hoverPreview.visible = false
+        }
+    }
     property real pressX: 0
     property real pressY: 0
     property real startX: 0
@@ -80,7 +96,7 @@ Window {
     }
     onVisibleChanged: {
         if (visible) { if (!placed) place(false); else constrain(); Qt.callLater(updateInputMask) }
-        else if (taskComposer) taskComposer.close()
+        else { closeHoverPreview(); if (taskComposer) taskComposer.close() }
     }
     onAssistantChanged: {
         if (taskComposer && (!assistant.bound || taskComposer.targetId !== assistant.id)) taskComposer.close()
@@ -123,7 +139,7 @@ Window {
         // Respect both letterboxing and the transparent margin inside the art.
         y:Math.max(4,art.y+art.height-(art.item?art.item.paintedHeight:art.height)*(1-(root.state.contentTop || 0))-height-8)
         width:Math.min(root.width,spoken.implicitWidth+24);height:spoken.implicitHeight+16;radius:12
-        color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length && (root.assistantCaption || !taskComposer.visible)
+        color:Theme.surface;border.color:Theme.line;visible:!!root.caption && !root.reminderCard.length && (root.assistantCaption || (!taskComposer.visible && !hoverPreview.visible))
         Text { font.family: Theme.fontFamily;id:spoken;anchors.centerIn:parent;width:Math.min(implicitWidth,root.width-24);text:root.caption;textFormat:Text.PlainText;wrapMode:Text.Wrap;maximumLineCount:4;elide:Text.ElideRight;color:Theme.ink;font.pixelSize: Theme.font(11, visible)}
     }
     Rectangle {
@@ -180,11 +196,47 @@ Window {
             }
         }
     }
+    // Passive overlay in the already open pet window: never activates a window,
+    // enters the editor, or adds a clickable region to the native input mask.
+    Timer {
+        id: hoverDelay
+        interval: 420
+        onTriggered: if (root.canPreview) hoverPreview.visible = true
+    }
+    Rectangle {
+        id: hoverPreview
+        objectName: "desktopPetHoverPreview"
+        z: 3
+        visible: false
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(root.width - 8, previewText.implicitWidth + 16)
+        height: previewText.implicitHeight + 12
+        y: Math.max(4, art.y + art.height - (art.item ? art.item.paintedHeight : art.height)
+                    * (1 - (root.state.contentTop || 0)) - height - 8)
+        radius: 10
+        color: Theme.surface
+        border.color: Theme.line
+        Text {
+            id: previewText
+            objectName: "desktopPetHoverPreviewLabel"
+            anchors.centerIn: parent
+            width: parent.width - 16
+            text: I18n.t("双击桌宠打开聊天")
+            textFormat: Text.PlainText
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.font(11, visible)
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            color: Theme.ink
+        }
+    }
     MouseArea {
         id:pointer;objectName:"desktopPetPointer";anchors.fill:art
         acceptedButtons:Qt.LeftButton | Qt.RightButton;hoverEnabled:true;cursorShape:pressed?Qt.ClosedHandCursor:Qt.PointingHandCursor
-        onEntered:root.pet.interact("hover")
+        onEntered: { root.pet.interact("hover"); root.hoverArmed = !pointer.pressed && !menu.visible }
+        onExited: root.closeHoverPreview()
         onPressed:mouse => {
+            root.closeHoverPreview()
             root.dragged=false
             const cursor = root.pet.cursorPosition()
             root.pressX=cursor.x;root.pressY=cursor.y;root.startX=root.x;root.startY=root.y
@@ -206,11 +258,15 @@ Window {
         onDoubleClicked: mouse => {
             if (mouse.button === Qt.LeftButton && !root.dragged) root.openTaskComposer()
         }
-        onCanceled:if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
+        onCanceled: {
+            root.closeHoverPreview()
+            if(root.dragged){root.constrain();root.pet.savePosition(root.x,root.y)}
+        }
     }
     function openTaskComposer() {
+        root.closeHoverPreview()
         if (!root.assistant.bound) return
-        if (taskComposer.targetId !== root.assistant.id) taskInput.clear()
+        if (taskComposer.targetId !== root.assistant.id) { taskInput.clear(); taskComposer.projectMode = false }
         taskComposer.targetId = root.assistant.id
         taskComposer.error = ""
         if (!taskWindow.placement.blocked) taskComposer.open()
@@ -253,7 +309,10 @@ Window {
         Timer {
             interval: 150; repeat: true; running: taskComposer.opened
             onTriggered: {
-                if (!taskWindow.active && !root.active && !taskInput.inputMethodComposing)
+                if (!taskWindow.active && !root.active && !timerPrompt.focusWithin
+                        && !(projectMenu.visible && projectMenu.contentItem.Window.window.active)
+                        && !(commandMenu.visible && commandMenu.contentItem.Window.window.active)
+                        && !taskInput.inputMethodComposing)
                     taskComposer.close()
             }
         }
@@ -265,9 +324,31 @@ Window {
             property string targetId: ""
             property string error: ""
             property bool sending: false
+            property bool projectMode: false
+            property string globalDraft: ""
+            property string timerDraft: ""
+            property var commandQuery: ({entries: []})
+            function showCommands() {
+                commandQuery = root.pet.commandMenu.query(targetId)
+                if (!commandQuery.ok) { error = I18n.t(commandQuery.error); return }
+                commandMenu.open()
+            }
+            function chooseCommand(identifier) {
+                const result = root.pet.commandMenu.choose(commandQuery.ticket, identifier)
+                commandMenu.close()
+                if (!result.ok) { error = I18n.t(result.error); return }
+                const body = taskInput.text.replace(/^\s*\/(?:项目|定时任务|提醒)?(?:\s|$)/, "")
+                taskInput.text = result.command + " " + body
+                taskInput.cursorPosition = taskInput.length
+                if (projectMode) root.pet.projectEntry.setBody(taskInput.text)
+                focusTimerInput()
+            }
+            readonly property var timerState: root.pet.taskSchedule.state
+            readonly property bool timerMode: timerState.opened
+            readonly property var projectState: root.pet.projectEntry.state
             readonly property bool notificationBlocked: taskWindow.placement.blocked
             readonly property color inputBlue: Theme.dark ? "#83b7ff" : "#2463c4"
-            readonly property bool controlFocused: taskInput.activeFocus || taskSend.activeFocus || taskDesktop.activeFocus
+            readonly property bool controlFocused: taskInput.activeFocus || taskSend.activeFocus || taskDesktop.activeFocus || projectTarget.activeFocus || taskCommands.activeFocus
             opacity: notificationBlocked ? 0 : animationProgress
             onNotificationBlockedChanged: if (notificationBlocked && visible) close()
             modal: false
@@ -278,19 +359,106 @@ Window {
             // Fit to the work area ourselves instead of shrinking to its parent.
             margins: -1
             focus: true
-            closePolicy: taskInput.inputMethodComposing ? Popup.NoAutoClose : Popup.CloseOnEscape
-            onAboutToHide: Qt.inputMethod.reset()
+            closePolicy: taskInput.inputMethodComposing || timerMode ? Popup.NoAutoClose : Popup.CloseOnEscape
+            onAboutToHide: {
+                Qt.inputMethod.reset()
+                commandMenu.close()
+                projectMenu.close()
+                if (timerMode) { root.pet.taskSchedule.close(); taskInput.text = timerDraft }
+                root.pet.projectEntry.close()
+                taskInput.focus = false
+            }
             onOpened: {
+                if (projectMode) root.pet.projectEntry.openCommand("/项目", targetId)
                 taskWindow.requestActivate()
                 taskInput.forceActiveFocus(Qt.PopupFocusReason)
                 Qt.inputMethod.update(Qt.ImQueryAll)
             }
+            // Auxiliary surfaces share the capsule's screen and avoid urgent notices.
+            function auxiliaryPlacement(surfaceHeight, preferBelow) {
+                const area = root.bounds()
+                const notice = reminder.visible ? reminder : bubble.visible && root.assistantCaption ? bubble : null
+                const above = taskWindow.y - surfaceHeight - 6
+                const below = taskWindow.y + taskWindow.height + 6
+                const candidates = preferBelow ? [below, above] : [above, below]
+                if (notice) candidates.push(root.y + notice.y - surfaceHeight - 6, root.y + notice.y + notice.height + 6)
+                for (const y of candidates) {
+                    if (y < area.y + 8 || y + surfaceHeight > area.y + area.height - 8) continue
+                    if (y < taskWindow.y + taskWindow.height && y + surfaceHeight > taskWindow.y) continue
+                    if (notice && y < root.y + notice.y + notice.height && y + surfaceHeight > root.y + notice.y) continue
+                    return { y: Math.round(y), blocked: false }
+                }
+                return { y: Math.round(Math.max(area.y + 8, above)), blocked: true }
+            }
+            function focusTimerInput() {
+                const window = taskWindow
+                if (window) window.requestActivate()
+                taskInput.forceActiveFocus(Qt.PopupFocusReason)
+                Qt.inputMethod.update(Qt.ImQueryAll)
+            }
+            function chooseProject(identifier) {
+                const result = root.pet.projectEntry.select(identifier)
+                if (!result.ok) { error = result.error; return }
+                if (!projectMode) globalDraft = taskInput.text
+                projectMode = true
+                taskInput.text = result.text
+                error = ""
+                projectMenu.close()
+                focusTimerInput()
+            }
+            function projectChoices(command) {
+                if (!desiredOpen) return
+                if (projectMode) root.pet.projectEntry.setBody(taskInput.text)
+                else root.pet.projectEntry.leaveProject()
+                const result = root.pet.projectEntry.openCommand(command, targetId)
+                if (!result.ok) { error = result.error; return }
+                projectMenu.open()
+            }
+            function useDefaultTarget() {
+                if (!projectMode) { projectMenu.close(); focusTimerInput(); return }
+                if (projectMode) root.pet.projectEntry.setBody(taskInput.text)
+                root.pet.projectEntry.leaveProject()
+                projectMode = false
+                taskInput.text = globalDraft
+                projectMenu.close()
+                focusTimerInput()
+            }
             function submit() {
-                if (sending || !taskInput.text.trim().length) return
+                if (!desiredOpen || sending || !taskInput.text.trim().length) return
                 Qt.inputMethod.commit()
                 if (taskInput.inputMethodComposing) return
+                if (timerMode) {
+                    const answer = root.pet.taskSchedule.answer(taskInput.text)
+                    if (answer.ok) taskInput.text = answer.closed ? timerDraft : root.pet.taskSchedule.state.answer
+                    taskInput.forceActiveFocus()
+                    return
+                }
+                if (/^\/项目(?:\s|$)/.test(taskInput.text.trim())) {
+                    if (!taskComposer.desiredOpen) return
+                    projectChoices(taskInput.text)
+                    return
+                }
+                if (/^\/定时任务(?:\s|$)/.test(taskInput.text.trim())) {
+                    if (!taskComposer.desiredOpen) return
+                    const prepared = root.pet.taskSchedule.openCommand(taskInput.text, targetId)
+                    if (prepared.ok) {
+                        if (projectMode && projectState.selected) root.pet.taskSchedule.selectOwner(projectState.selected)
+                        timerDraft = taskInput.text; taskInput.text = root.pet.taskSchedule.state.answer; taskInput.forceActiveFocus()
+                    }
+                    else { error = prepared.error; taskInput.forceActiveFocus() }
+                    return
+                }
+                const reminderCommand = taskInput.text.match(/^\s*\/提醒(?:\s|$)/)
+                if (reminderCommand) {
+                    const result = root.pet.openReminderDraft(targetId, taskInput.text.slice(reminderCommand[0].length))
+                    if (!result.ok) { error = I18n.t(result.error); taskInput.forceActiveFocus(); return }
+                    if (projectMode) root.pet.projectEntry.setBody(taskInput.text)
+                    close()
+                    return
+                }
                 sending = true
-                const result = root.pet.sendTask(taskInput.text, targetId)
+                if (projectMode && !desiredOpen) { sending = false; return }
+                const result = projectMode ? root.pet.projectEntry.submitText(taskInput.text, targetId) : root.pet.sendTask(taskInput.text, targetId)
                 sending = false
                 if (result.ok) { taskInput.clear(); close() }
                 else { error = I18n.t(result.error); taskInput.forceActiveFocus() }
@@ -335,7 +503,7 @@ Window {
                 enabled:taskComposer.desiredOpen && !taskComposer.notificationBlocked
                 ScrollView {
                     id: taskScroll
-                    anchors.left:parent.left;anchors.right:taskDesktop.left
+                    anchors.left:parent.left;anchors.right:taskCommands.left
                     anchors.leftMargin:6*Theme.fontScale;anchors.rightMargin:5*Theme.fontScale;anchors.verticalCenter:parent.verticalCenter
                     readonly property real singleLineHeight: Theme.control(28)
                     readonly property real verticalInset: Math.max(0, (singleLineHeight - taskFont.height) / 2)
@@ -346,19 +514,29 @@ Window {
                     FontMetrics { id: taskFont; font: taskInput.font }
                     ChatInput {
                         id: taskInput; objectName: "desktopPetTaskInput"
-                        leftPadding: 9*Theme.fontScale; rightPadding: 8*Theme.fontScale
+                        leftPadding: projectTarget.visible ? projectTarget.width + 14 * Theme.fontScale : 9 * Theme.fontScale
+                        rightPadding: 8 * Theme.fontScale
                         topPadding: taskScroll.verticalInset; bottomPadding: taskScroll.verticalInset
                         font.family: Theme.fontFamily; font.pixelSize: Theme.font(13, true)
                         color: Theme.ink; wrapMode: TextArea.Wrap; selectByMouse: true
                         background: null
                         Accessible.name: I18n.t("给悬浮小助手派活")
-                        Accessible.description: taskComposer.error
+                        Accessible.description: taskComposer.timerMode ? taskComposer.timerState.question.prompt : taskComposer.error
+                        placeholderText: taskComposer.timerMode ? "输入回答…" : ""
                         onTextChanged: taskComposer.error = ""
+                        onTextEdited: {
+                            if (taskComposer.timerMode) root.pet.taskSchedule.setAnswer(text)
+                            else if (taskComposer.projectMode) root.pet.projectEntry.setBody(text)
+                        }
                         KeyNavigation.priority: KeyNavigation.BeforeItem
                         KeyNavigation.tab: taskDesktop
                         Keys.onEscapePressed: event => {
                             if (inputMethodComposing) { Qt.inputMethod.reset(); event.accepted = true }
-                            else event.accepted = false
+                            else if (taskComposer.timerMode) {
+                                root.pet.taskSchedule.close()
+                                text = taskComposer.timerDraft
+                                event.accepted = true
+                            } else event.accepted = false
                         }
                         onSubmitted: taskComposer.submit()
                     }
@@ -368,6 +546,49 @@ Window {
                         Rectangle {x:8;y:1;width:parent.width-16;height:2;radius:1;gradient:Gradient {GradientStop {position:0;color:Theme.dark?"#40000000":"#20000000"} GradientStop {position:1;color:"transparent"}}}
                         Rectangle {x:5;y:parent.height-1;width:parent.width-10;height:1;color:Theme.dark?"#20ffffff":"#e0ffffff"}
                     }
+                }
+                Button {
+                    id: projectTarget; objectName: "desktopPetProjectTarget"
+                    visible: taskComposer.projectMode && !taskComposer.timerMode
+                    x: taskScroll.x + 6 * Theme.fontScale
+                    anchors.verticalCenter: taskScroll.verticalCenter
+                    width: Math.min(Theme.control(110), taskInput.width * .4)
+                    height: Theme.control(22)
+                    padding: 6
+                    hoverEnabled: true
+                    text: taskComposer.projectState.label
+                    Accessible.name: "选择项目会话：" + text
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    // A quiet inline target, not a second grey input control.
+                    background: Rectangle {
+                        radius: height / 2
+                        color: projectTarget.down ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, .14)
+                            : projectTarget.hovered ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, .07) : "transparent"
+                        border.width: projectTarget.visualFocus ? 1 : 0
+                        border.color: Theme.accent
+                    }
+                    contentItem: Item {
+                        Glyph { id: targetFolder; name: "folder"; width: 13; height: 13; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; color: Theme.accent }
+                        Text {
+                            anchors.left: targetFolder.right; anchors.leftMargin: 5
+                            anchors.right: targetChevron.left; anchors.rightMargin: 3
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: projectTarget.text; elide: Text.ElideRight
+                            color: Theme.accent; font.pixelSize: Theme.font(11, visible)
+                        }
+                        Glyph { id: targetChevron; name: "chevron-down"; width: 10; height: 10; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; color: Theme.accent; opacity: .65 }
+                    }
+                    onClicked: taskComposer.projectChoices("/项目")
+                    ToolTip.visible: hovered; ToolTip.text: taskComposer.projectState.label + "\n" + taskComposer.projectState.detail
+                }
+                Button {
+                    id: taskCommands; objectName: "desktopPetCommands"
+                    anchors.right: taskDesktop.left; anchors.rightMargin: Theme.control(4)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.control(24); height: Theme.control(24)
+                    text: "/"; enabled: !taskComposer.timerMode && !taskInput.inputMethodComposing
+                    Accessible.name: I18n.t("选择桌宠入口（仅准备，不执行）")
+                    onClicked: taskComposer.showCommands()
                 }
                 ComposerButton {
                     id:taskDesktop;objectName:"desktopPetTaskDesktop"
@@ -382,6 +603,66 @@ Window {
                     enabled:taskInput.text.trim().length>0 && !taskComposer.sending
                     onClicked:taskComposer.submit()
                 }
+            }
+            PetTimerPrompt {
+                id: timerPrompt
+                schedule: root.pet.taskSchedule
+                composer: taskComposer
+                onAnswered: { taskInput.text = root.pet.taskSchedule.state.answer; taskComposer.focusTimerInput() }
+                onDismissed: { taskInput.text = taskComposer.timerDraft; taskComposer.focusTimerInput() }
+            }
+            FloatingMenu {
+                id: commandMenu; objectName: "desktopPetCommandMenu"
+                parent: taskComposer.contentItem
+                popupType: Popup.Window; constrainToWindow: false
+                width: Math.min(340, root.screen.width - 24)
+                height: Math.min(implicitHeight, 320, root.screen.height - 32)
+                readonly property var placement: taskComposer.auxiliaryPlacement(height, true)
+                x: 0; y: placement.y - taskWindow.y
+                onVisibleChanged: if (visible && placement.blocked) close()
+                onClosed: if (taskComposer.desiredOpen) taskComposer.focusTimerInput()
+                ContextAction { objectName: "desktopPetCommandHeader"; text: I18n.t("选择入口，只填入命令，不执行"); enabled: false }
+                Repeater {
+                    model: taskComposer.commandQuery.entries || []
+                    ContextAction {
+                        required property var modelData
+                        objectName: "desktopPetCommand_" + modelData.id
+                        text: I18n.t(modelData.title) + (modelData.enabled ? "" : " · " + I18n.t(modelData.reason))
+                        enabled: modelData.enabled
+                        onTriggered: taskComposer.chooseCommand(modelData.id)
+                    }
+                }
+            }
+            FloatingMenu {
+                id: projectMenu; objectName: "desktopPetProjectMenu"
+                parent: taskComposer.contentItem
+                popupType: Popup.Window; constrainToWindow: false
+                width: Math.min(340, root.screen.width - 24)
+                height: Math.min(implicitHeight, 320, root.screen.height - 32)
+                readonly property var placement: taskComposer.auxiliaryPlacement(height, true)
+                x: 0; y: placement.y - taskWindow.y
+                function closeIfBlocked() {
+                    Qt.callLater(function() { if (visible && placement.blocked) taskComposer.close() })
+                }
+                onPlacementChanged: closeIfBlocked()
+                onVisibleChanged: if (visible) closeIfBlocked()
+                onClosed: if (taskComposer.desiredOpen) taskComposer.focusTimerInput()
+                ContextAction { objectName: "desktopPetProjectDefault"; text: "默认 · 悬浮小助手"; onTriggered: taskComposer.useDefaultTarget() }
+                ContextAction { text: "暂无已有项目会话，请在 Desktop 准备"; visible: !taskComposer.projectState.options.length; enabled: false }
+                Repeater {
+                    model: taskComposer.projectState.options
+                    ContextAction {
+                        required property var modelData
+                        objectName: "desktopPetProject_" + modelData.id
+                        text: modelData.name; implicitWidth: 320
+                        checkable: true; checked: taskComposer.projectMode && taskComposer.projectState.selected === modelData.id
+                        onTriggered: taskComposer.chooseProject(modelData.id)
+                        ToolTip.visible: hovered; ToolTip.text: modelData.detail
+                    }
+                }
+                MenuSeparator {}
+                ContextAction { text: taskComposer.projectState.submission.id ? "打开 Desktop · 上次发送会话" : "打开 Desktop 对应会话"; onTriggered: root.pet.projectEntry.openDesktop() }
+                ContextAction { objectName: "desktopPetProjectAcknowledge"; text: "已核对上次结果，允许新发送"; visible: !!taskComposer.projectState.submission.id; onTriggered: { root.pet.projectEntry.acknowledge(); taskComposer.error = "" } }
             }
             ToolTip {
                 parent: taskComposer.contentItem
