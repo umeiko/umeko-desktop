@@ -2018,6 +2018,64 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             home = Path.home()
             return str(home.resolve()) if home.is_dir() else ''
 
+    @Slot(result=str)
+    def projectPickerDefaultPath(self):
+        active = next((row for row in self.store.data['projects']
+                       if row['id'] == self.store.data.get('activeProject')
+                       and not row.get('archived') and not row.get('remote')), None)
+        if active and active.get('path') and Path(active['path']).is_dir():
+            return active['path']
+        return str(self.store.default_workspace)
+
+    @Slot(str, bool, result=str)
+    def selectLocalProjectDirectory(self, raw, create):
+        from stat import S_ISDIR
+
+        if self._cowork.active or self._view.cowork:
+            return 'unavailable'
+        raw = raw.strip()
+        if not raw or '\x00' in raw:
+            return 'invalid'
+        address = QUrl(raw)
+        if address.scheme().lower() == 'file' and (not address.isValid() or not address.isLocalFile()):
+            return 'invalid'
+        value = address.toLocalFile() if address.isLocalFile() else raw
+        if not value or '\x00' in value:
+            return 'invalid'
+        path = Path(value)
+        if not path.is_absolute():
+            return 'invalid'
+        try:
+            try:
+                mode = path.stat().st_mode
+            except FileNotFoundError:
+                if path.is_symlink():
+                    return 'not_directory'
+                try:
+                    parent_mode = path.parent.stat().st_mode
+                except (FileNotFoundError, NotADirectoryError):
+                    return 'missing_parent'
+                if not S_ISDIR(parent_mode):
+                    return 'missing_parent'
+                if not create:
+                    return 'missing'
+                try:
+                    # Only the one explicitly confirmed leaf is created. A
+                    # concurrent replacement is not a reason to overwrite it.
+                    path.mkdir()
+                except FileExistsError:
+                    return 'changed'
+                mode = path.stat().st_mode
+            if not S_ISDIR(mode):
+                return 'not_directory'
+            return 'selected' if self.setWorkspace(str(path)) else 'changed'
+        except PermissionError:
+            return 'permission'
+        except NotADirectoryError:
+            return 'not_directory'
+        except (OSError, ValueError, RuntimeError):
+            return 'unusable'
+
     @Slot(str, result=bool)
     def setWorkspace(self, url):
         if self._cowork.active and not self._view.cowork:
