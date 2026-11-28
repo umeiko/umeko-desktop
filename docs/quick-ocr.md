@@ -10,9 +10,12 @@ A ready environment is reused silently on later requests.
 
 ## Approved Python package source
 
-Use an installed Python 3.12 (on Windows, the Python launcher also works).
-If not found, the skill can use an already installed, approved `uv` to
-find Python 3.12 offline. It does not download Python. Setup uses the app's normal tool approval and honors standard pip
+The skill tries the existing workspace interpreter first. It can reuse a
+working environment even if its Python is not on PATH or registered with
+the Windows launcher. To set up a fresh environment, use an installed
+Python 3.12 or an already installed, approved `uv` to find it offline.
+It does not download Python. Setup uses the app's normal tool approval
+and honors standard pip
 configuration, including `PIP_INDEX_URL` or `pip.ini`/`pip.conf`,
 `HTTPS_PROXY`/`PIP_PROXY` and administrator-approved certificates
 such as `PIP_CERT`. Configure these for the account/environment that starts

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from subprocess import CompletedProcess, run
+import shutil
 import sys
 import tempfile
 import unittest
@@ -91,6 +92,30 @@ class TestSetup(unittest.TestCase):
                      capture_output=True, encoding="utf-8", check=True)
         self.assertEqual(json.loads(result.stdout), {"ok": True, "stage": "needs_setup"})
         self.assertFalse((self.root / ".umeko").exists())
+
+    @unittest.skipUnless(os.name == "posix" and sys.version_info[:2] == (3, 12),
+                         "POSIX workspace interpreter needs Python 3.12")
+    def test_skill_probes_ready_workspace_without_python_on_path(self):
+        shell = Path("/bin/sh")
+        if not shell.is_file():
+            self.skipTest("requires POSIX shell")
+        self.make_source()
+        with self.check_stub():
+            python, _ = ocr.prepare(str(self.folder), str(self.lock))
+            probe_scripts = self.root / "skill" / "scripts"
+            probe_scripts.mkdir(parents=True)
+            shutil.copyfile(SETUP, probe_scripts / "setup_ocr.py")
+            shutil.copyfile(ocr.RECOGNIZE, probe_scripts / "recognize.py")
+        skill = SETUP.parents[1] / "SKILL.md"
+        first_posix_block = skill.read_text(encoding="utf-8").split("```sh\n", 1)[1].split("```", 1)[0]
+        empty_path = self.root / "no system python"
+        empty_path.mkdir()
+        result = run([str(shell), "-c", first_posix_block], capture_output=True,
+                     encoding="utf-8", check=True,
+                     env={**os.environ, "PATH": str(empty_path),
+                          "setup_script": str(probe_scripts / "setup_ocr.py")})
+        self.assertEqual(json.loads(result.stdout),
+                         {"ok": True, "stage": "ready", "python": str(python), "reused": True})
 
     @unittest.skipUnless(sys.version_info[:2] == (3, 12), "setup requires Python 3.12")
     def test_real_pip_offline_and_reuse_before_invalid_profile(self):

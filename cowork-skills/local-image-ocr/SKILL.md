@@ -18,17 +18,46 @@ Only after receiving an image, resolve `scripts/setup_ocr.py` and
 Cowork working directory. Use bash on Linux/macOS and PowerShell on Windows,
 and escape and quote absolute paths for the active shell.
 
+First try the interpreter in an existing workspace OCR environment.
+Do not look for system Python or `uv` if this command returns a readiness
+result. In the examples, set `setup_script` / `$setupScript` to the absolute
+path of the skill's `scripts/setup_ocr.py`.
+
+Linux/macOS:
+
 ```sh
-python3.12 "<absolute skill directory>/scripts/setup_ocr.py" --check-only
+workspace_python="$PWD/.umeko/quick-ocr/bin/python"
+if [ -x "$workspace_python" ] && [ -f "$PWD/.umeko/quick-ocr/pyvenv.cfg" ] &&
+   [ ! -L "$PWD/.umeko" ] && [ ! -L "$PWD/.umeko/quick-ocr" ] &&
+   [ ! -L "$PWD/.umeko/quick-ocr/bin" ] && [ ! -L "$PWD/.umeko/quick-ocr/pyvenv.cfg" ]; then
+    "$workspace_python" -I -B "$setup_script" --check-only
+fi
 ```
 
-On Windows use `py -3.12 "<absolute skill directory>/scripts/setup_ocr.py" --check-only`
-or an installed Python 3.12 executable. If Python 3.12 is not found and
-approved `uv` is already installed, use
+Windows PowerShell:
+
+```powershell
+$venv = Join-Path $PWD '.umeko/quick-ocr'
+$workspacePython = Join-Path $venv 'Scripts/python.exe'
+$cfg = Join-Path $venv 'pyvenv.cfg'
+if ((Test-Path -LiteralPath $workspacePython -PathType Leaf) -and
+    (Test-Path -LiteralPath $cfg -PathType Leaf)) {
+    $items = Get-Item -LiteralPath @((Join-Path $PWD '.umeko'), $venv, (Join-Path $venv 'Scripts'), $workspacePython, $cfg) -Force
+    if (-not ($items | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint })) {
+        & $workspacePython -I -B $setupScript --check-only
+    }
+}
+```
+
+Only if the workspace interpreter is absent or cannot start, try
+`python3.12` (Linux/macOS), `py -3.12` (Windows), or a known absolute
+Python 3.12 path. If Python 3.12 is not found and approved `uv` is already
+installed, use
 `uv python find --offline --no-python-downloads --no-config --no-project 3.12`.
-Run the helper with the returned local interpreter; if discovery fails,
-report that Python 3.12 is required. Do not download Python or change global
-configuration. Follow the platform's normal tool approval.
+Run the same readiness check with the available interpreter. If no
+interpreter can start, report that Python 3.12 is required. Do not download
+Python or change global configuration. Follow the platform's normal tool
+approval.
 
 Read the result before proceeding:
 - If the stage is `ready`, continue silently to text extraction using the
