@@ -81,7 +81,7 @@ BUILTINS = [
            ('read_pdf_text', 'read', 'write', 'bash', 'powershell', 'submit_to_chatbox'), ('pdf-paper-reading',), 'files'),
     recipe('ocr', 'eye', 'amber', ('快速 OCR', 'Quick OCR'),
            ('从截图或照片中提取可复制的文字。', 'Extract copyable text from screenshots and photos.'),
-           'For an attached image, follow the local-image-ocr Skill. Prepare or reuse a local OCR environment as needed, then transcribe the original image in this conversation. Pass image paths only to local OCR commands. If there is no image, ask for one before setting up OCR.',
+           'For an attached image, follow the local-image-ocr Skill and run its read-only readiness check. If setup is needed, first tell the user in chat to wait while local OCR components are prepared and that no re-upload is needed, then run setup. If ready, proceed silently. Transcribe the same original image in this conversation. Pass image paths only to local OCR commands. If there is no image, ask for one without running setup.',
            [('提取这张图里的文字', 'Extract the text from this image'), ('把截图里的表格整理成 Markdown', 'Turn the table in this screenshot into Markdown')],
            ('read', 'bash', 'powershell'), ('local-image-ocr',), 'files', image_paths_only=True),
     recipe('knowledge', 'layers', 'teal', ('知识库洞察', 'Knowledge insights'),
