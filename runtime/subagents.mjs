@@ -9,6 +9,10 @@ import { homedir } from "node:os";
 import { createInputQueue } from "./input-queue.mjs";
 
 const channels = ["created", "started", "resuming", "completed", "failed", "resumed", "update", "steered", "compacted"];
+const manualCompactionSkip = message => {
+  const text = String(message || "").replace(/^Compaction failed: /, "");
+  return text === "Already compacted" ? "already-compacted" : text === "Nothing to compact (session too small)" ? "too-short" : "";
+};
 const active = new Set(["queued", "running"]);
 const textOf = content => (content || []).filter(item => item.type === "text").map(item => item.text).join("\n");
 const sessionHook = Symbol.for("umeko:subagent-session");
@@ -158,7 +162,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
   const rows = new Map();
   const parentRuns = new Map();
   const sessions = new Map(), contexts = new Map(), restoring = new Map();
-  const pendingSessions = new Set(), observed = new Set();
+  const pendingSessions = new Set(), observed = new Set(), observedSessions = new WeakSet();
   const compacting = new Set(), loadingChildren = new Map(), restoredChildren = new Set();
   let api, getService, timer, unbind = [], watching = "", hook, generation = 0, resumeTools;
 
@@ -205,10 +209,18 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     try { return await work; } finally { if(loadingChildren.get(id)===work)loadingChildren.delete(id); }
   }
   function observe(session, options = {}, explicitId) {
-    let id = explicitId || calls.getStore()?.agentId;
-    if(id && sessions.get(id)?.session === session)return;
-    const identify = () => id ||= getService?.()?.listAgents?.().find(row => row.outputFile === session.sessionManager.getSessionFile())?.id
-      || [...rows.values()].find(row => row.tool.subagent.outputFile === session.sessionManager.getSessionFile())?.tool.subagent.id;
+    if (observedSessions.has(session)) return;
+    observedSessions.add(session);
+    let id = explicitId;
+    // Progress callbacks can run under a sibling's async tool scope. The
+    // transcript belongs to this session regardless of the current scope.
+    const identify = () => {
+      if (id) return id;
+      const file = session.sessionManager.getSessionFile();
+      if (!file) return "";
+      return id = getService?.()?.listAgents?.().find(row => row.outputFile === file)?.id
+        || [...rows.values()].find(row => row.tool.subagent.outputFile === file)?.tool.subagent.id || "";
+    };
     let prompting=false, compaction, compactionRow;
     const queue=createInputQueue({getSession:()=>session,isRunning:()=>prompting || !session.isIdle,
       onQueue:(_steering,_followUp,items)=>{if (identify()) emit({type:"subagent_queue",id,items});},
@@ -246,7 +258,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     const receipt = value => {
       const entryId=session.sessionManager.appendCustomEntry("umeko-compaction",value);
       compactionRow={role:"assistant",text:"",customType:"umeko-compaction",entryId,timestamp:Date.now(),compaction:{...value}};
-      if(watching===id)emit({type:"subagent_event",id,event:{type:"compaction_event",entryId,timestamp:Date.now(),...value}});
+      if(id && watching===id)emit({type:"subagent_event",id,event:{type:"compaction_event",entryId,timestamp:Date.now(),...value}});
     };
     const startCompaction = reason => {
       compaction={version:2,eventId:crypto.randomUUID(),state:"running",mode:reason==="manual"?"manual":"auto",before:session.getContextUsage()?.tokens ?? null,after:null,afterEstimated:true,summary:"",error:""};
@@ -255,16 +267,18 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     const finishCompaction = event => {
       if(!compaction)startCompaction(event.reason);
       const success=!!event.result && !event.aborted;
-      receipt({...compaction,state:success?"success":"failure",before:event.result?.tokensBefore ?? compaction.before,
-        after:event.result?.estimatedTokensAfter ?? null,summary:success?event.result.summary || "":"",error:success?"":event.errorMessage || (event.aborted?"Compaction cancelled":"Compaction failed")});
+      const skipReason = compaction.mode === "manual" && !event.result && !event.aborted ? manualCompactionSkip(event.errorMessage) : "";
+      receipt({...compaction,state:success?"success":skipReason?"skipped":"failure",...(skipReason?{skipReason}:{}),
+        before:event.result?.tokensBefore ?? compaction.before,after:event.result?.estimatedTokensAfter ?? null,
+        summary:success?event.result.summary || "":"",error:success||skipReason?"":event.errorMessage || (event.aborted?"Compaction cancelled":"Compaction failed")});
       compaction=undefined;
     };
     const unsubscribe = session.subscribe(event => {
+      if(event.type==="compaction_start")startCompaction(event.reason);
+      if(event.type==="compaction_end")finishCompaction(event);
       attach();
       if (!id) return;
       if (event.type==="queue_update") queue.sync(event.steering,event.followUp);
-      if(event.type==="compaction_start")startCompaction(event.reason);
-      if(event.type==="compaction_end")finishCompaction(event);
       if (["message_end","agent_end","compaction_start","compaction_end"].includes(event.type)) publishUsage(id);
       const projected = childEvent(event);
       if (projected && watching === id) emit({type:"subagent_event",id,event:projected});
@@ -277,7 +291,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     let cleaned=false;
     const cleanup=()=>{
       if (cleaned) return;
-      cleaned=true; observed.delete(cleanup);
+      cleaned=true; observed.delete(cleanup); observedSessions.delete(session); pendingSessions.delete(attach);
       unsubscribe(); queue.cancel();
       if (session.prompt===prompt) session.prompt=nativePrompt;
     };
@@ -345,7 +359,10 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
           session=await childSession(id);
           if (session.isStreaming || session.isCompacting) throw new Error("子代理正在工作，请稍后压缩上下文。");
           await session.compact();reply(true);publishContext(id);
-        } catch(error) {sessions.get(id)?.failCompaction(error);publishContext(id);throw error;} finally {compacting.delete(id);publishUsage(id);}
+        } catch(error) {
+          if (manualCompactionSkip(error.message)) { reply(true); publishContext(id); return; }
+          sessions.get(id)?.failCompaction(error);publishContext(id);throw error;
+        } finally {compacting.delete(id);publishUsage(id);}
         return;
       }
       if (action !== "send") throw new Error("未知的子代理操作。");

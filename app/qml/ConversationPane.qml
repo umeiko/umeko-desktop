@@ -1345,7 +1345,7 @@ Item {
                             objectName: "compactionEvent_" + messageRow.index
                             readonly property var record: modelData.compaction || ({})
                             readonly property string eventState: record.state || "success"
-                            readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : I18n.t("上下文已压缩")
+                            readonly property string heading: eventState === "running" ? I18n.t("正在压缩上下文") : eventState === "failure" ? I18n.t("上下文压缩失败") : eventState === "skipped" ? I18n.t("无需压缩上下文") : I18n.t("上下文已压缩")
                             property bool expanded: false
                             spacing: 6
                             onExpandedChanged: if (!expanded)
@@ -1409,6 +1409,10 @@ Item {
                                             lines.push(I18n.t("压缩前：") + detail.before + " tokens");
                                         if (typeof detail.after === "number")
                                             lines.push(I18n.t("压缩后：") + detail.after + " tokens");
+                                        if (detail.skipReason === "too-short")
+                                            lines.push(I18n.t("当前会话内容还不需要压缩"));
+                                        else if (detail.skipReason === "already-compacted")
+                                            lines.push(I18n.t("当前上下文已压缩，无需重复压缩"));
                                         if (detail.summary)
                                             lines.push("\n" + I18n.t("压缩摘要") + "\n" + detail.summary);
                                         if (detail.error)

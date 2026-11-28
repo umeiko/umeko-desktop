@@ -242,3 +242,30 @@ test("community child uses Umeko settings and native retry without changing save
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("child auto-compaction follows desktop policy in memory across native settings reload", async () => {
+  const { SettingsManager } = await import("../runtime/subagent-sdk.mjs");
+  const directory = mkdtempSync(join(tmpdir(), "umeko-child-compaction-"));
+  const agentDir = join(directory, "agent"); mkdirSync(agentDir);
+  const file = join(agentDir, "settings.json");
+  const key = Symbol.for("umeko:subagent-compaction-policy");
+  const previous = globalThis[key];
+  try {
+    for (const enabled of [true, false]) {
+      globalThis[key] = () => enabled;
+      const first = JSON.stringify({ compaction: { enabled: !enabled, reserveTokens: 12000, keepRecentTokens: 256 } });
+      writeFileSync(file, first);
+      const settings = SettingsManager.create(directory, agentDir, { projectTrusted: true });
+      assert.deepEqual(settings.getCompactionSettings(), { enabled, reserveTokens: 12000, keepRecentTokens: 256 });
+      assert.equal(readFileSync(file, "utf8"), first);
+      const next = JSON.stringify({ compaction: { enabled: !enabled, reserveTokens: 15000, keepRecentTokens: 512 } });
+      writeFileSync(file, next);
+      await settings.reload();
+      assert.deepEqual(settings.getCompactionSettings(), { enabled, reserveTokens: 15000, keepRecentTokens: 512 });
+      assert.equal(readFileSync(file, "utf8"), next);
+    }
+  } finally {
+    if (previous === undefined) delete globalThis[key]; else globalThis[key] = previous;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

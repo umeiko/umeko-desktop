@@ -338,6 +338,8 @@ globalThis[Symbol.for("umeko:tool-permission-host")] = { getPolicy: () => permis
 
 globalThis[Symbol.for("umeko:tool-visibility-host")] = { getBlockedTools: () => blockedToolNames(config?.blockedTools) };
 globalThis[Symbol.for("umeko:skill-policy-host")] = { enabled: () => config?.skillsEnabled !== false };
+const autoCompactionEnabled = input => input?.agent?.autoCompaction !== false;
+globalThis[Symbol.for("umeko:subagent-compaction-policy")] = () => autoCompactionEnabled(config);
 
 async function bindSession(session) {
   unsubscribe?.();
@@ -725,7 +727,9 @@ async function restoreSubagentSession(child, context, customTools) {
     "完成任务后，如有需要，请使用 notify_parent 工具向主智能体简要汇报结果。", SUBAGENT_COMPLETION_HINT);
   const native = await prepareNativeSettings(Pi, {cwd:manager.getCwd(),agentDir:config.agentDir,agent:config.agent});
   const settings = await sessionResourceSettings(Pi, {...config,cwd:manager.getCwd()}, native);
-  const policy = Pi.SettingsManager.inMemory({...settings.getSettings(),httpIdleTimeoutMs:GATEWAY_HTTP_IDLE_TIMEOUT_MS,retry:{...NETWORK_RETRY,maxRetries:streamMaxRetriesFor(model?.id),provider:{maxRetries:0}},cacheWarming:"off"});
+  const restoredSettings = settings.getSettings();
+  const policy = Pi.SettingsManager.inMemory({...restoredSettings,httpIdleTimeoutMs:GATEWAY_HTTP_IDLE_TIMEOUT_MS,retry:{...NETWORK_RETRY,maxRetries:streamMaxRetriesFor(model?.id),provider:{maxRetries:0}},cacheWarming:"off",
+    compaction:{...restoredSettings.compaction,enabled:autoCompactionEnabled(config)}});
   // New children persist their exact resolved prompt and allowlist. Older
   // transcripts use the standard read-only policy for Explore/Plan.
   const readonly = ["Explore","Plan"].includes(child.type);
@@ -842,7 +846,7 @@ async function init(input) {
       retry: { ...nativeSettings.retry, ...NETWORK_RETRY, maxRetries: streamMaxRetriesFor(selectedModel?.id || input.model), provider: { ...nativeSettings.retry?.provider, maxRetries: 0 } },
       defaultTools: [...new Set([...nativeTools, ...(remoteWorkspaceEnabled ? remoteTools : []), ...(settingsManager.getDefaultTools() || [])])],
       codemode: { ...nativeSettings.codemode, mode: "on" },
-      cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: input.agent?.autoCompaction !== false },
+      cacheWarming: "off", compaction: { ...nativeSettings.compaction, enabled: autoCompactionEnabled(input) },
     }, { projectTrusted: !input.agent?.safeMode });
     const canRunPiCommand = () => piCommandsEnabled(input, nativeManager);
     const desktopControlPrompt = input.cowork
