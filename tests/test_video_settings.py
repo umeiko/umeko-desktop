@@ -99,6 +99,7 @@ class VideoSettingsTests(unittest.TestCase):
                     var kind = {json.dumps(kind)}, providerId = '', modelId = '', formatValue = '', imagePreset = null;
                     var saved = {json.dumps(settings)};
                     var size = {{}}, quality = {{}}, count = {{}}, voice = {{}}, speed = {{}};
+                    var voiceValue = "", voiceChoices = []; // Legacy speech provider has no catalog.
                     var videoSize = {{}}, seconds = {{}};
                     var Qt = {{callLater: function() {{}}}}, syncPickers = function() {{}};
                 """
