@@ -2,14 +2,14 @@ import { closeSync, constants, existsSync, lstatSync, openSync, readFileSync, re
 import { copyFile, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { basename, dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const helper = fileURLToPath(new URL('./bin/windows-sandbox/umeko-sandbox.exe', import.meta.url));
 const gitFiles = ['bin/bash.exe', 'usr/bin/bash.exe', 'usr/bin/msys-2.0.dll', 'cmd/git.exe', 'ucrt64/bin/git.exe', 'usr/bin/rg.exe'];
 
 function hasGitBash(policy) {
-  if (!policy.gitReady || !policy.gitRoot || !policy.archive || !existsSync(policy.archive)) return false;
+  if (!policy.gitReady || !policy.gitRoot) return false;
   try {
     const lengths = readFileSync(join(policy.gitRoot, '.ready'), 'ascii').trim().split('\n');
     const header = Buffer.alloc(2);
@@ -86,22 +86,24 @@ function includesPath(root, target) {
   return suffix !== '..' && !suffix.startsWith('..\\') && !suffix.startsWith('../') && !isAbsolute(suffix);
 }
 
-// Follow Codex's shell detection approach: select an actual shell executable
-// by type; preserve an explicit user choice. See rust-v0.172.0 shell_detect.rs.
+export function ordinaryGitBash(policy, getShellConfig, platform = process.platform) {
+  if (platform !== 'win32' || policy?.enabled || !policy?.preferGitBash) return undefined;
+  if (!policy.ordinaryBash || !existsSync(policy.ordinaryBash)) {
+    throw new Error('Git Bash from Git for Windows is unavailable. Add it to PATH or set the full bash.exe path in Umeko Desktop settings.');
+  }
+  return getShellConfig(policy.ordinaryBash);
+}
+
 export async function resolveLocalBash({ shellPath, getShellConfig, policy, prepareBundle, signal,
   platform = process.platform }) {
-  if (platform !== 'win32' || shellPath || !policy?.bundledGitBash) return getShellConfig(shellPath);
-  let discovered;
-  try { discovered = getShellConfig(); } catch { /* A packaged copy is available. */ }
-  if (discovered && !discovered.commandTransport) {
-    const parent = dirname(dirname(discovered.shell));
-    if ([parent, dirname(parent)].some(root =>
-      existsSync(join(root, 'usr', 'bin', 'msys-2.0.dll')) && existsSync(join(root, 'cmd', 'git.exe')))) {
-      return discovered;
+  if (platform === 'win32' && policy?.enabled) {
+    const { policy: prepared } = await prepareBundle(signal);
+    if (prepared?.enabled && hasGitBash(prepared)) {
+      return getShellConfig(join(prepared.gitRoot, 'usr', 'bin', 'bash.exe'));
     }
+    policy = prepared;
   }
-  const { policy: prepared } = await prepareBundle(signal);
-  return getShellConfig(join(prepared.gitRoot, 'usr', 'bin', 'bash.exe'));
+  return ordinaryGitBash(policy, getShellConfig, platform) || getShellConfig(shellPath);
 }
 
 const bashHints = 'Use the bash tool for Unix commands and pipelines on Windows, including grep, tail, head, sed, cat, wc and find. Prefer the grep tool or rg to search file contents.';

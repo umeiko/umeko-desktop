@@ -2,6 +2,7 @@
 import json
 import logging
 import math
+import sys
 import urllib.parse
 from pathlib import Path
 from PySide6.QtCore import Slot, QUrl
@@ -115,7 +116,12 @@ class PreferencesMixin:
         from .webview import configuration
         old = self.store.data['desktop']
         try:
-            value = normalize({**old, **validate_patch(json.loads(raw))})
+            patch = validate_patch(json.loads(raw))
+            value = normalize({**old, **patch})
+            if sys.platform == 'win32' and value['preferGitBash'] and {'preferGitBash', 'gitBashPath'} & patch.keys():
+                from .git_for_windows import find_git_bash
+                if not find_git_bash(value['gitBashPath']):
+                    raise ValueError('找不到 Git for Windows 的 bash.exe。请将 Git Bash 加入 PATH，或填写 bash.exe 的完整路径。')
             if value == old: return True
             self.store.data['desktop'] = value
             self.store.save()
@@ -132,6 +138,8 @@ class PreferencesMixin:
                         pool.write(record, {'type':'desktop_settings', 'webview':policy})
         if old['remoteWorkspaceEnabled'] != value['remoteWorkspaceEnabled']:
             self._remote_workspace_tools_changed()
+        if sys.platform == 'win32' and any(value[key] != old[key] for key in ('preferGitBash', 'gitBashPath')):
+            self.windowsSandbox.publish()
         self.desktopSettingsChanged.emit()
         if old['webDisplay'] != value['webDisplay'] and value['webDisplay'] == 'embedded' and configuration().get('disabled'):
             self.toast.emit('重启 Umeko 后可使用内置网页预览')

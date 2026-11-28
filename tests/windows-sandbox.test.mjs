@@ -125,20 +125,22 @@ function preparationFixture(t) {
   return { preparation, gitRoot, ready, update, requests: () => requests };
 }
 
-test('Windows uses packaged Bash if discovery finds another shell or no shell', async t => {
+test('ordinary Windows Bash honors Git for Windows while sandbox Bash prepares its component', async t => {
   const { policy } = fixture(t);
-  const gitRoot = join(policy.home, 'git');
+  const { preparation, gitRoot, ready } = preparationFixture(t);
   const packaged = join(gitRoot, 'usr', 'bin', 'bash.exe');
   const external = join(policy.home, 'other', 'bash.exe');
-  const prepareBundle = async () => ({ policy: { gitRoot } });
-  for (const getShellConfig of [
-    shell => shell ? { shell } : { shell: external },
-    shell => { if (!shell) throw new Error('No bash'); return { shell }; },
-  ]) {
-    const options = { platform: 'win32', getShellConfig, policy: { bundledGitBash: true }, prepareBundle };
-    assert.equal((await resolveLocalBash(options)).shell, packaged);
-    assert.equal((await resolveLocalBash({ ...options, shellPath: external })).shell, external);
-  }
+  mkdirSync(join(external, '..'), { recursive: true });
+  writeFileSync(external, 'fixture; never executed');
+  const getShellConfig = shell => ({ shell: shell || 'default' });
+  const settings = { preferGitBash: true, ordinaryBash: external };
+  const options = { platform: 'win32', getShellConfig, policy: settings, shellPath: 'pi-default' };
+  assert.equal((await resolveLocalBash(options)).shell, external);
+  assert.equal((await resolveLocalBash({ ...options, policy: {} })).shell, 'pi-default');
+  await assert.rejects(resolveLocalBash({ ...options, policy: { preferGitBash: true } }), /Git for Windows/);
+  ready(1);
+  const sandboxPolicy = { ...settings, ...policy };
+  assert.equal((await resolveLocalBash({ ...options, policy: sandboxPolicy, prepareBundle: preparation.wait })).shell, packaged);
   const input = { ...fixture(t), file: external, policy: { ...policy, gitRoot } };
   const launch = sandboxCommand(input, { platform: 'win32' });
   assert.equal(launch.level, 'elevated');

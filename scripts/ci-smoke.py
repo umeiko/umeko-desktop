@@ -197,6 +197,15 @@ def main():
         executable = output / ("Umeko/Umeko.exe" if sys.platform == "win32" else "Umeko/Umeko")
         resources = output / "Umeko/_internal"
     if not executable.is_file(): raise RuntimeError("Packaged executable is missing")
+    if sys.platform == 'win32':
+        qt = resources / 'PySide6'
+        if list(qt.glob('Qt6WebEngine*.dll')) or (qt / 'qml/QtWebEngine').exists():
+            raise RuntimeError('Windows package unexpectedly contains Qt WebEngine')
+        if not (qt / 'QtMultimedia.pyd').is_file() or not (qt / 'Qt6Multimedia.dll').is_file():
+            raise RuntimeError('Packaged audio playback is missing Qt Multimedia')
+        sandbox = resources / f'runtime/releases/{RELEASE_NAME}/bin/windows-sandbox'
+        if any(sandbox.glob('git-bash-*.tar.xz')) or (sandbox / 'git').exists():
+            raise RuntimeError('Windows package unexpectedly contains the Git Bash component')
     for identifier in WITHHELD_BUILTIN_WIDGETS:
         if (resources/'umeko-plugins'/identifier).exists():
             raise RuntimeError('Withheld Widget was bundled: ' + identifier)

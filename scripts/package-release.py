@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app.project_info import VERSION
+from app.sandbox_git_bash import COMPONENT_MANIFEST, component_metadata
 from macos_dmg import create_dmg
 from package_size import write_report, markdown
 
@@ -37,6 +38,12 @@ def main():
         archive = Path(str(base) + ".zip")
         subprocess.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(ROOT / "dist/Umeko.app"), str(archive)], check=True)
     elif sys.platform == "win32":
+        manifest = ROOT / "dist/Umeko/_internal/runtime" / COMPONENT_MANIFEST
+        if manifest.is_file():
+            component = component_metadata(manifest)
+            for name in (component["name"], component["name"] + ".sha256"):
+                shutil.copy2(ROOT / "build/sandbox-git-component" / name, output / name)
+            report["gitBash"] = component
         archive = Path(shutil.make_archive(str(base), "zip", root_dir=ROOT / "dist", base_dir="Umeko"))
     else:
         archive = Path(str(base) + ".tar.gz")

@@ -53,6 +53,19 @@ def checked_asset(folder, name, expected_hash, expected_size=None):
     return [path, checksum]
 
 
+def checked_git_bash(folder, report):
+    component = report.get('gitBash')
+    if component is None:
+        return []
+    digest = component['sha256']
+    name = component['name']
+    require(report['platform'] == 'windows-x64' and re.fullmatch(r'[0-9a-f]{64}', digest)
+            and re.fullmatch(r'git-bash-\d+\.\d+\.\d+-r\d+-' + digest[:12] + r'\.tar\.xz', name)
+            and type(component['size']) is int and component['size'] > 0,
+            'Invalid Windows sandbox Git Bash component')
+    return checked_asset(folder, name, digest, component['size'])
+
+
 def collect_assets(incoming, output, platforms, commit):
     require(bool(platforms) and len(platforms) == len(set(platforms))
             and set(platforms) <= PLATFORMS.keys(), 'Invalid selected platforms')
@@ -81,6 +94,7 @@ def collect_assets(incoming, output, platforms, commit):
         require(report['archive'] == f'Umeko-{version}-{platform}-{commit[:7]}{suffix}',
                 'Unexpected archive name')
         assets = checked_asset(folder, report['archive'], report['sha256'])
+        assets += checked_git_bash(folder, report)
         if platform.startswith('macos-'):
             disk = report['diskImage']
             require(disk['name'] == report['archive'].removesuffix('.zip') + '.dmg',

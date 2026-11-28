@@ -1,15 +1,52 @@
 """Materialize the Git Bash bundle in the desktop profile on first use."""
 from __future__ import annotations
 
+import hashlib
+import json
 import lzma
 from pathlib import Path, PureWindowsPath
+import re
 import shutil
 import tarfile
 from uuid import uuid4
 
 ARCHIVE_NAME = "git-bash-2.56.1-r5.tar.xz"
 VERSION = ARCHIVE_NAME.removesuffix(".tar.xz")
+COMPONENT_MANIFEST = "windows-sandbox-git-bash.json"
 REQUIRED_FILES = ("bin/bash.exe", "usr/bin/bash.exe", "usr/bin/msys-2.0.dll", "cmd/git.exe", "ucrt64/bin/git.exe", "usr/bin/rg.exe")
+
+
+def component_metadata(path):
+    record = json.loads(Path(path).read_text(encoding="utf-8"))
+    sha256 = record.get("sha256", "") if isinstance(record, dict) else ""
+    if (not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256)
+            or record.get("name") != f"{VERSION}-{sha256[:12]}.tar.xz"
+            or type(record.get("size")) is not int or not 0 < record["size"] <= 512 * 1024**2):
+        raise ValueError("Invalid Windows Git Bash component metadata")
+    return record
+
+
+def component_archive(manifest, directory, progress):
+    from .project_info import PROJECT_URL, VERSION as APP_VERSION
+    from .update_download import download_asset
+
+    component = component_metadata(manifest)
+    cached = directory / component["name"]
+    if _reparse(directory) or _reparse(cached):
+        raise PermissionError("Git Bash download cache must be an ordinary path")
+    if cached.is_file() and cached.stat().st_size == component["size"]:
+        with cached.open("rb") as source:
+            if hashlib.file_digest(source, "sha256").hexdigest() == component["sha256"]:
+                return cached
+    for tag in (f"v{APP_VERSION}", "preview"):
+        try:
+            return Path(download_asset(
+                {**component, "url": f"{PROJECT_URL}/releases/download/{tag}/{component['name']}"},
+                directory, lambda status: progress(round(status.get("progress", 0) * 49)), lambda: False,
+            ))
+        except (OSError, ValueError) as error:
+            last_error = error
+    raise ValueError("Could not download the Windows sandbox Git Bash component") from last_error
 
 
 def _reparse(path):
