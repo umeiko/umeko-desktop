@@ -32,6 +32,8 @@ Popup {
         autocompleteTimer.stop()
     }
     property bool newConversation: false
+    property string localProjectStatus: ""
+    property string pendingLocalProjectPath: ""
     property var hostChoices: []
     property string selectedEnvName: ""
     property string selectedHost: ""
@@ -100,7 +102,10 @@ Popup {
         mkdirName = ""
         browserError = ""
         autocompleteVisible = false
-        localPathInput.text = typeof backend.defaultWorkspace === "function" ? backend.defaultWorkspace() : ""
+        const defaultPath = root.newConversation ? backend.defaultWorkspace : backend.projectPickerDefaultPath
+        localPathInput.text = typeof defaultPath === "function" ? (root.newConversation ? backend.defaultWorkspace() : backend.projectPickerDefaultPath()) : ""
+        localProjectStatus = ""
+        pendingLocalProjectPath = ""
         if (allowRemote) {
             backend.refreshSshConfigHosts()
             rebuildHostChoices()
@@ -129,6 +134,36 @@ Popup {
 
     function chooseLocalUrl(url) {
         if (backend.setWorkspace(url)) finishSelection()
+    }
+
+    function localProjectText(code) {
+        const english = backend.language === "en"
+        switch (code) {
+        case "missing": return english ? "This directory does not exist." : "目录不存在。"
+        case "invalid": return english ? "Enter a valid absolute local path." : "请输入有效的本机绝对路径。"
+        case "not_directory": return english ? "The path is not a directory." : "该路径不是目录。"
+        case "missing_parent": return english ? "Choose an existing parent directory." : "请使用已有的父目录。"
+        case "permission": return english ? "Permission denied. Choose a writable directory." : "权限不足，请选择有写入权限的目录。"
+        case "changed": return english ? "The path changed. Check it and try again." : "路径已发生变化，请确认后重试。"
+        default: return english ? "This path is unavailable. Check it and try again." : "该路径不可用，请检查后重试。"
+        }
+    }
+
+    function chooseTypedLocal(create) {
+        const value = localPathInput.text.trim()
+        if (!value) return
+        if (root.newConversation) {
+            root.chooseLocalUrl(value)
+            return
+        }
+        if (create && value !== pendingLocalProjectPath) return
+        const result = backend.selectLocalProjectDirectory(value, create)
+        if (result === "selected") {
+            root.finishSelection()
+            return
+        }
+        localProjectStatus = result
+        pendingLocalProjectPath = result === "missing" || (create && result === "permission") ? value : ""
     }
 
     function rebuildHostChoices() {
@@ -734,7 +769,12 @@ Popup {
                             color: Theme.bg
                             border.color: localPathInput.activeFocus ? Theme.accent : Theme.line
                         }
-                        Keys.onReturnPressed: if (text.trim()) root.chooseLocalUrl(text.trim())
+                        onTextChanged: {
+                            root.localProjectStatus = ""
+                            root.pendingLocalProjectPath = ""
+                        }
+                        Keys.onReturnPressed: if (text.trim()) root.chooseTypedLocal(false)
+                        Keys.onEnterPressed: if (text.trim()) root.chooseTypedLocal(false)
                     }
                     Button {
                         objectName: "localBrowseButton"
@@ -762,11 +802,31 @@ Popup {
                     }
                 }
 
+                Text {
+                    objectName: "localProjectStatus"
+                    Layout.fillWidth: true
+                    visible: root.localProjectStatus.length > 0
+                    text: visible ? root.localProjectText(root.localProjectStatus) : ""
+                    color: root.localProjectStatus === "missing" ? Theme.muted : Theme.danger
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.font(12)
+                    wrapMode: Text.Wrap
+                    textFormat: Text.PlainText
+                }
                 RowLayout {
                     Layout.fillWidth: true
                     Item { Layout.fillWidth: true }
+                    ActionButton {
+                        objectName: "localCreateProjectButton"
+                        visible: !root.newConversation && root.pendingLocalProjectPath.length > 0
+                        enabled: visible
+                        text: backend.language === "en" ? "Create folder and project" : "创建目录并新建项目"
+                        primary: true
+                        onClicked: root.chooseTypedLocal(true)
+                    }
                     Button {
                         objectName: "localChooseButton"
+                        visible: root.pendingLocalProjectPath.length === 0
                         enabled: localPathInput.text.trim().length > 0
                         implicitHeight: Theme.control(36)
                         leftPadding: 16; rightPadding: 16
@@ -786,7 +846,7 @@ Popup {
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
-                        onClicked: root.chooseLocalUrl(localPathInput.text.trim())
+                        onClicked: root.chooseTypedLocal(false)
                     }
                 }
             }
