@@ -499,6 +499,7 @@ var strings = {
   "数量": "Count",
   "供应商默认": "Provider default",
   "输出格式": "Output format",
+  "音色": "Voice",
   "音色 ID": "Voice ID",
   "语速": "Speed",
   "时长（秒）": "Duration (seconds)",

@@ -184,7 +184,8 @@ class ImageProvidersMixin:
             rows.append({'id': identifier, 'api': provider['api'], 'presetId': provider.get('presetId', ''),
                          'name': provider['name'], 'accountLabel': provider.get('accountLabel', ''),
                          'hasKey': bool(provider.get('key')), 'baseUrl': provider.get('baseUrl', ''),
-                         'kinds': kinds, 'models': models, 'model': (models[kinds[0]] or [''])[0]})
+                         'kinds': kinds, 'models': models, 'model': (models[kinds[0]] or [''])[0],
+                         'speechVoices': provider.get('speechVoices', {}) if provider['api'] == 'plugin' else {}})
         return rows
 
     @Slot(str, str, result=bool)

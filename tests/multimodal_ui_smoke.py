@@ -238,6 +238,40 @@ def run():
             click('saveMultimodalSettings')
             assert backend.store.data['multimodal']['speech']['voice'] == 'test-voice'
             assert Store(Path(profile)).data['multimodal'] == backend.store.data['multimodal']
+            # A provider catalog exposes the original asset IDs even when friendly names exist.
+            speech = dict(backend.store.data['multimodal']['speech'])
+            fixture = {'id': 'test-voice-catalog', 'name': 'Voice catalog', 'api': 'plugin',
+                       'key': '', 'baseUrl': '', 'models': [], 'generationCapabilities': ['speech'],
+                       'generationOnly': True, 'generationModels': ['local-voice'],
+                       'speechVoices': {'local-voice': [
+                           {'id': 'female', 'name': 'Female narrator', 'nameZh': '女声旁白'},
+                           {'id': 'male', 'name': 'Male narrator', 'nameZh': '男声旁白'}]}}
+            backend.store.data['providers'].append(fixture)
+            backend.setLanguage('zh')
+            backend.changed.emit()
+            until(lambda: picker.property('count') == 3, lambda: str(warnings))
+            assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 2))
+            assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 1))
+            assert find(window, 'speechGenerationVoice').property('text') == 'test-voice', (
+                'Returning to the saved provider must restore its saved manual voice')
+            click('saveMultimodalSettings')
+            assert Store(Path(profile)).data['multimodal']['speech'] == speech
+            assert QMetaObject.invokeMethod(picker, 'activated', Q_ARG(int, 2))
+            voice_picker = find(window, 'speechGenerationVoicePicker')
+            until(lambda: voice_picker.isVisible() and voice_picker.property('count') == 3, lambda: str(warnings))
+            assert not find(window, 'speechGenerationVoice').isVisible()
+            assert QMetaObject.invokeMethod(voice_picker, 'activated', Q_ARG(int, 2))
+            until(lambda: voice_picker.property('displayText') == 'male', lambda: str(warnings))
+            click('saveMultimodalSettings')
+            assert Store(Path(profile)).data['multimodal']['speech']['voice'] == 'male'
+            backend.setLanguage('en')
+            until(lambda: voice_picker.property('displayText') == 'male', lambda: str(warnings))
+            if '--voice-picker-screenshot' in sys.argv:
+                screenshot(window, Path(profile).parent / 'tts-voice-picker.png')
+            assert backend.saveMultimodalSettings(json.dumps({'speech': speech}))
+            backend.store.data['providers'].remove(fixture)
+            backend.store.save()
+            backend.changed.emit()
             click('backMultimodalSettings')
             click('backMultimodalSettings')
             assert find(window, 'apiProvidersSection').isVisible()

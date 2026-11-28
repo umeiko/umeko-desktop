@@ -168,7 +168,8 @@ class ProviderPlugins(QObject):
         return {"id": uuid.uuid4().hex, "api": "plugin", "name": manifest["name"],
                 "pluginId": manifest["id"], "pluginVersion": manifest["version"],
                 "key": "", "baseUrl": "", "models": [],
-                "generationCapabilities": list(manifest.get('generationCapabilities', []))}
+                "generationCapabilities": list(manifest.get('generationCapabilities', [])),
+                **({"speechVoices": manifest["speechVoices"]} if "speechVoices" in manifest else {})}
 
     @Slot(str, str, result=bool)
     def addAccount(self, plugin_id, version):
