@@ -1,6 +1,7 @@
 """One group conversation for ordinary Pi sessions."""
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from contextlib import closing, contextmanager
+from contextvars import ContextVar
 import json
 import shutil
 import sqlite3
@@ -12,16 +13,34 @@ from PySide6.QtCore import QObject, Property, QTimer, Signal, Slot
 from .group_chat import GroupChat
 
 
+_WRITE_METHODS = frozenset({
+    'groupChatSend', 'groupChatPoke', 'groupChatClear',
+    'groupChatAddMember', 'groupChatRenameMember', 'groupChatRemoveMember',
+})
+_LOCK_TIMEOUT = 1
+_NONBLOCKING_WRITE = ContextVar('workspace_group_nonblocking_write', default=False)
+
+
+def _database_busy(error):
+    # Clear-history errors wrap the SQLite failure for display to the user.
+    cause = error.__cause__ or error
+    if not isinstance(cause, sqlite3.OperationalError):
+        return False
+    code = getattr(cause, 'sqlite_errorcode', None)
+    return str(cause) == 'database is locked' if code is None else (code & 0xff) == sqlite3.SQLITE_BUSY
+
+
 class WorkspaceGroupChat(GroupChat):
     def append(self, store, author, recipient, text, files=(), **options):
         name = self.bus.agents.get(author[6:], {}).get('name', '') if author.startswith('agent:') else ''
-        return super().append(store, author, recipient, text, files, author_name=name, **options)
+        return super().append(store, author, recipient, text, files, author_name=name,
+                              exclusive=_NONBLOCKING_WRITE.get(), **options)
 
     def enqueue(self, member, message, chain):
         self.bus.enqueue(member['targetId'][6:], message, chain)
 
     def clear_history(self, store):
-        result = super().clear_history(store)
+        result = super().clear_history(store, exclusive=_NONBLOCKING_WRITE.get())
         self.bus.outbox.clear()
         self.bus.turns.clear()
         self.bus.generation += 1
@@ -39,6 +58,7 @@ class SessionGroup(QObject):
         self.database = self.root / 'group.sqlite3'
         self.aliases = {}
         self.outbox = OrderedDict()
+        self._ui_writes = deque()
         self.turns = {}
         self.reload_pending = set()
         self.generation = 0
@@ -60,7 +80,8 @@ class SessionGroup(QObject):
 
     @contextmanager
     def connection(self):
-        with closing(sqlite3.connect(self.database, timeout=1)) as db:
+        timeout = 0 if _NONBLOCKING_WRITE.get() else _LOCK_TIMEOUT
+        with closing(sqlite3.connect(self.database, timeout=timeout)) as db:
             db.row_factory = sqlite3.Row
             with db:
                 yield db
@@ -175,22 +196,52 @@ class SessionGroup(QObject):
     @Slot(str, str, result=str)
     def call(self, method, raw):
         identifier = uuid.uuid4().hex
+        write = method in _WRITE_METHODS
+        deadline = None
 
         def respond(value):
             self.response.emit(identifier, value)
 
         def invoke():
+            nonlocal deadline
+            if self.b._closing:
+                return
+            if write and deadline is None:
+                deadline = time.monotonic() + _LOCK_TIMEOUT
+            token = _NONBLOCKING_WRITE.set(True) if write else None
+            result = None
             try:
                 args = json.loads(raw)
                 if not isinstance(args, dict):
                     raise ValueError('无效的群聊参数')
+                if method == 'groupChatSend' and args.get('files'):
+                    # Avoid copying files into the archive on each retry.
+                    with self.storage().connection() as db:
+                        db.execute('BEGIN EXCLUSIVE')
+                        db.rollback()
                 value = self.handle(method, args, respond)
                 if value is not None:
-                    respond({'ok': True, 'result': value})
+                    result = {'ok': True, 'result': value}
             except (OSError, ValueError, sqlite3.Error) as error:
-                respond({'ok': False, 'error': str(error)})
+                if write and _database_busy(error) and time.monotonic() < deadline:
+                    QTimer.singleShot(25, self, invoke)
+                    return
+                result = {'ok': False, 'error': str(error)}
+            finally:
+                if token is not None:
+                    _NONBLOCKING_WRITE.reset(token)
+            if write:
+                self._ui_writes.popleft()
+                if self._ui_writes:
+                    QTimer.singleShot(0, self, self._ui_writes[0])
+            if result is not None:
+                respond(result)
 
-        QTimer.singleShot(0, self, invoke)
+        if write:
+            # Keep user writes ordered while the current request retries.
+            self._ui_writes.append(invoke)
+        if not write or len(self._ui_writes) == 1:
+            QTimer.singleShot(0, self, invoke)
         return identifier
 
     def handle(self, method, args, respond):
@@ -225,6 +276,7 @@ class SessionGroup(QObject):
         if self.b._closing:
             self.outbox.clear()
         sessions = self.sessions() if self.outbox else {}
+        started_turn = False
         for key, item in list(self.outbox.items()):
             identifier = item['target']
             row = sessions.get(identifier)
@@ -232,6 +284,10 @@ class SessionGroup(QObject):
                 self.outbox.pop(key, None)
                 continue
             record = self.b._pool.find(identifier)
+            # Starting several Pi turns in one timer callback blocks the GUI.
+            # Active turns can still receive steering while other turns wait.
+            if started_turn and (record is None or not record.busy):
+                continue
             if record and (record.approval or (record.busy and (not record.ready or record.stale))):
                 continue
             if record is None:
@@ -257,6 +313,7 @@ class SessionGroup(QObject):
                 accepted = True
             else:
                 accepted = self.b._command_pi('widget-notify', record, notification=update)
+                started_turn = accepted
             if accepted:
                 self.outbox.pop(key, None)
                 turn = self.turns.setdefault(record.key, {'chain': item['chain'], 'files': set()})

@@ -12,6 +12,8 @@ Rectangle {
     required property var agents
     required property bool active
     required property bool collaborationEnabled
+    readonly property bool pollingActive: active && visible && collaborationEnabled && !!root.Window.window
+        && root.Window.window.visibility !== Window.Hidden && root.Window.window.visibility !== Window.Minimized
     property var sessionCandidates: null
     readonly property bool managesSessions: sessionCandidates !== null
     property var managedMember: null
@@ -27,6 +29,7 @@ Rectangle {
     property var contextFile: null
     property var quotedMessage: null
     property bool reading: false
+    property bool refreshQueued: false
     property bool sending: false
     property bool clearing: false
     property bool hasOlder: false
@@ -158,10 +161,19 @@ Rectangle {
         return true
     }
     function refresh(older) {
-        if (reading || clearing) return
+        if (!pollingActive || reading || clearing) return
+        if (!older) refreshQueued = false
         const after = !older && messages.length ? messages[messages.length-1].id : 0
         const before = older && messages.length ? messages[0].id : 0
         reading = request("groupChatHistory", {after, before})
+    }
+    function refreshSoon() {
+        if (!pollingActive) return
+        if (reading || clearing) refreshQueued = true
+        else refresh()
+    }
+    function refreshIfQueued() {
+        if (refreshQueued) refresh()
     }
     function search(older) {
         if (!searchQuery || searchReading || clearing) return
@@ -209,8 +221,7 @@ Rectangle {
         return Qt.formatDateTime(current, "MM-dd HH:mm")
     }
     onActiveChanged: {
-        if (active && collaborationEnabled) refresh()
-        else {
+        if (!active) {
             mentionPopup.close()
             avatarMenu.close()
             messageMenu.close()
@@ -222,8 +233,8 @@ Rectangle {
             renameMember.close()
         }
     }
-    onCollaborationEnabledChanged: if (active && collaborationEnabled) refresh()
-    Timer { interval: 900; repeat: true; running: root.active && root.collaborationEnabled; onTriggered: root.refresh() }
+    onPollingActiveChanged: if (pollingActive) refreshSoon()
+    Timer { interval: 900; repeat: true; running: root.pollingActive; onTriggered: root.refresh() }
     Timer { id: searchDelay; interval: 260; onTriggered: root.search() }
     Connections {
         target: root.sdk
@@ -234,13 +245,15 @@ Rectangle {
             delete rest[id]
             root.pending = rest
             const method = entry.method
+            if (method === "groupChatHistory") root.reading = false
+            if (method === "groupChatClear") root.clearing = false
+            if ((method === "groupChatHistory" || method === "groupChatClear") && root.refreshQueued)
+                Qt.callLater(root.refreshIfQueued)
             if ((method === "groupChatHistory" || method === "groupChatSearch")
                     && entry.historyGeneration !== root.historyGeneration) return
             if (method === "groupChatSearch" && entry.searchGeneration !== root.searchGeneration) return
-            if (method === "groupChatHistory") root.reading = false
             if (method === "groupChatSearch") root.searchReading = false
             if (method === "groupChatSend") root.sending = false
-            if (method === "groupChatClear") root.clearing = false
             if (method === "groupChatAddMember") memberPicker.submitting = false
             if (!value.ok) {
                 const message = value.error || root.tr("操作失败", "Operation failed")
@@ -257,10 +270,10 @@ Rectangle {
                 root.recipient = "all"
                 root.quotedMessage = null
                 composer.clear()
-                root.refresh()
+                root.refreshSoon()
             } else if (method === "groupChatPoke") {
                 root.error = ""
-                root.refresh()
+                root.refreshSoon()
             } else if (method === "groupChatAddMember") {
                 root.error = ""
                 if (root.active && memberPicker.opened) {
@@ -276,7 +289,6 @@ Rectangle {
             } else if (method === "groupChatClear") {
                 root.error = ""
                 root.historyGeneration++
-                root.reading = false
                 root.hasOlder = false
                 root.messages = []
                 historyModel.clear()
@@ -285,7 +297,7 @@ Rectangle {
                 root.quotedMessage = null
                 root.searchMode = false
                 searchField.clear()
-                root.refresh()
+                root.refreshSoon()
             }
         }
     }

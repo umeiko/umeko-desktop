@@ -3016,6 +3016,9 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     def _on_job_done(self, name, result):
         if self._closing:
             return
+        if name.startswith('group-chat:'):
+            # GroupChat delivers its own results without changing desktop settings.
+            return
         if name == 'session-files':
             self._session_files.complete(result)
             return
