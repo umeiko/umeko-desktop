@@ -110,10 +110,8 @@ def test():
                 assert backend._view is a and first.name in placeholder(),placeholder()
                 click('sidebarRow_'+ident,x=70)
                 wait(lambda:backend._view.workspace==str(second) and backend._view is not a,'B row selects its own draft')
-                QTest.qWait(350)
                 b=backend._view
-                expected=first.name if os.getenv('UMEKO_284_BASELINE')=='1' else second.name
-                assert expected in placeholder(),(expected,placeholder(),backend.workspaceName)
+                wait(lambda:second.name in placeholder(),'composer shows B after selecting the project row')
                 assert backend.workspaceName==second.name and backend.store.data['activeProject']==ident
                 if path:=os.getenv('UMEKO_284_SCREEN'):
                     assert window.grabWindow().save(path)
@@ -124,7 +122,7 @@ def test():
                 click('openCoworkButton');wait(lambda:backend.cowork.active,'enter Cowork')
                 click('openCoworkButton');wait(lambda:not backend.cowork.active and backend._view is b,'restore B from Cowork')
                 assert second.name in placeholder(),placeholder()
-                print('SIDEBAR_PROJECT_WORKSPACE_UI_OK: fold unchanged; row body selects B; actual Pi read from B; Cowork round trip; initial placeholder '+expected)
+                print('SIDEBAR_PROJECT_WORKSPACE_UI_OK: project selection updates the composer and Pi workspace, with fold and Cowork navigation verified')
             finally:
                 window.hide(); backend.close(); app.quit()
     finally:

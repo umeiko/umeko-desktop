@@ -50,6 +50,7 @@ smokes=(
   tests/cowork_widgets_ui_smoke.py
   tests/cowork_creation_ui_smoke.py
   tests/session_workspace_ui_smoke.py
+  tests/sidebar_project_workspace_ui_smoke.py
   tests/global_agents_ui_smoke.py
   tests/global_group_chat_ui_smoke.py
   tests/workspace_group_chat_ui_smoke.py
