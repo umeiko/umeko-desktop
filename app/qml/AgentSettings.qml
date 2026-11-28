@@ -18,13 +18,18 @@ Column {
         }
         if (error === "git-bash-archive-missing") {
             return english
-                ? "This Umeko installation is incomplete because the Git Bash archive is missing. Download Umeko again."
-                : "Umeko 安装包不完整，缺少 Git Bash 归档。请重新下载 Umeko。"
+                ? "The sandbox Git Bash component is unavailable for this build. Use PowerShell."
+                : "当前构建没有可用的沙箱 Git Bash 组件。可以使用 PowerShell。"
         }
         if (error === "git-bash-archive-invalid") {
             return english
-                ? "The Git Bash archive in this Umeko installation is damaged. Download Umeko again."
-                : "Umeko 安装包中的 Git Bash 归档已损坏。请重新下载 Umeko。"
+                ? "The sandbox Git Bash archive is damaged. Use PowerShell or try again."
+                : "沙箱 Git Bash 组件已损坏。可以使用 PowerShell 或重试。"
+        }
+        if (error === "git-bash-download-failed") {
+            return english
+                ? "Could not download sandbox Git Bash. Check your network and retry, or use PowerShell."
+                : "沙箱 Git Bash 下载失败。请检查网络后重试，或直接使用 PowerShell。"
         }
         const knownErrors = [
             "Windows 沙箱组件缺失。请重新安装完整的 Windows 版本。",

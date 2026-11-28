@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts import release_downloads, release_platforms, release_retention
+from scripts import preview_release, release_downloads, release_platforms, release_retention
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMIT = 'a' * 40
@@ -146,7 +146,7 @@ class WindowsPublishTests(unittest.TestCase):
              patch.dict(os.environ, GITHUB_REPOSITORY='umeiko/umeko-desktop', RELEASE_BUILD_RUN='777',
                         RELEASE_TAG='v0.7.0', RELEASE_PLATFORM_MODE='windows',
                         GITHUB_STEP_SUMMARY=str(self.root / 'summary.md')), \
-             patch.dict(sys.modules, release_downloads=release_downloads,
+             patch.dict(sys.modules, release_downloads=release_downloads, preview_release=preview_release,
                         release_platforms=release_platforms, release_retention=release_retention), \
              patch.object(subprocess, 'check_output', self.check_output), \
              patch.object(subprocess, 'run', self.upload), \
@@ -164,6 +164,20 @@ class WindowsPublishTests(unittest.TestCase):
         self.assertEqual(refresh.call_args.kwargs['platforms'], {'windows-x64'})
         prune.assert_not_called()
         self.assertIn('All 6 server-side asset digests verified', (self.root / 'summary.md').read_text())
+
+    def test_windows_sandbox_component_publishes_as_a_separate_asset(self):
+        data = b'fixture archive'
+        digest = hashlib.sha256(data).hexdigest()
+        name = f'git-bash-2.56.1-r5-{digest[:12]}.tar.xz'
+        self.report['gitBash'] = dict(name=name, size=len(data), sha256=digest)
+        self.metadata.write_text(json.dumps(self.report))
+        self.metadata.with_name(name).write_bytes(data)
+        self.metadata.with_name(name + '.sha256').write_text(f'{digest}  {name}\n')
+        self.publish()
+        names = {asset['name'] for asset in self.release['assets']}
+        self.assertEqual(len(names), 8)
+        self.assertIn(name, names)
+        self.assertIn(name + '.sha256', names)
 
     def test_failed_build_or_wrong_version_or_failed_gui_cannot_create_a_release(self):
         for field, value in (('version', '0.6.9'), ('gui', 'failed'), ('checks', 'failure')):

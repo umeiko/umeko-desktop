@@ -7,7 +7,7 @@ from .platform_support import data_directory, legacy_data_directory
 
 DEFAULTS = {'autoOpenSubmissions': True, 'webDisplay': 'embedded', 'chatWidthHints': True,
             'coworkEnabled': False, 'teamCollaborationEnabled': False, 'remoteWorkspaceEnabled': False,
-            'disableDxgiVblankThread': False}
+            'disableDxgiVblankThread': False, 'preferGitBash': False, 'gitBashPath': ''}
 
 
 def normalize(value):
@@ -18,7 +18,9 @@ def normalize(value):
             'coworkEnabled': value.get('coworkEnabled') is True,
             'teamCollaborationEnabled': value.get('teamCollaborationEnabled') is True,
             'remoteWorkspaceEnabled': value.get('remoteWorkspaceEnabled') is True,
-            'disableDxgiVblankThread': value.get('disableDxgiVblankThread') is True}
+            'disableDxgiVblankThread': value.get('disableDxgiVblankThread') is True,
+            'preferGitBash': value.get('preferGitBash') is True,
+            'gitBashPath': value['gitBashPath'].strip() if isinstance(value.get('gitBashPath'), str) else ''}
 
 
 def validate_patch(value):
@@ -28,11 +30,13 @@ def validate_patch(value):
         raise ValueError('autoOpenSubmissions must be boolean')
     if 'chatWidthHints' in value and type(value['chatWidthHints']) is not bool:
         raise ValueError('chatWidthHints must be boolean')
-    for key in ('coworkEnabled', 'teamCollaborationEnabled', 'remoteWorkspaceEnabled', 'disableDxgiVblankThread'):
+    for key in ('coworkEnabled', 'teamCollaborationEnabled', 'remoteWorkspaceEnabled', 'disableDxgiVblankThread', 'preferGitBash'):
         if key in value and type(value[key]) is not bool:
             raise ValueError(key + ' must be boolean')
     if 'webDisplay' in value and value['webDisplay'] not in ('embedded', 'external'):
         raise ValueError('webDisplay must be embedded or external')
+    if 'gitBashPath' in value and (not isinstance(value['gitBashPath'], str) or '\0' in value['gitBashPath']):
+        raise ValueError('Invalid Git Bash path')
     return value
 
 

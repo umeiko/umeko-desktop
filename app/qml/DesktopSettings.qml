@@ -253,6 +253,52 @@ Column {
         }
     }
     SectionCard {
+        objectName: "desktopGitBashSettings"
+        visible: Qt.platform.os === "windows"
+        width: parent.width
+        ColumnLayout {
+            width: parent.width
+            spacing: 8
+            Text { text: I18n.t("Bash 工具"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold }
+            Switch {
+                id: preferGitBash
+                objectName: "preferGitBash"
+                text: I18n.t("普通 Bash 使用 Git for Windows")
+                checked: backend.desktopSettings.preferGitBash === true
+            }
+            Text {
+                visible: preferGitBash.checked
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: I18n.t("留空自动查找。也可输入 Git for Windows 的 bash.exe 完整路径。")
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                InputField {
+                    id: gitBashPath
+                    objectName: "gitBashPath"
+                    visible: preferGitBash.checked
+                    Layout.fillWidth: true
+                    text: backend.desktopSettings.gitBashPath || ""
+                    placeholderText: "C:\\Program Files\\Git\\bin\\bash.exe"
+                    Accessible.name: I18n.t("Git Bash 路径")
+                }
+                Item { visible: !preferGitBash.checked; Layout.fillWidth: true }
+                ActionButton {
+                    objectName: "saveGitBashSettings"
+                    text: I18n.t("保存")
+                    enabled: preferGitBash.checked !== backend.desktopSettings.preferGitBash
+                             || gitBashPath.text.trim() !== backend.desktopSettings.gitBashPath
+                    onClicked: backend.saveDesktopSettings(JSON.stringify({
+                        preferGitBash: preferGitBash.checked,
+                        gitBashPath: gitBashPath.text.trim()
+                    }))
+                }
+            }
+        }
+    }
+    SectionCard {
         width: parent.width
         RowLayout {
             width: parent.width

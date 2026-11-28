@@ -98,7 +98,7 @@ export async function createJobManager({ shellPath, cwd = process.cwd(), host, h
       (shellName === "powershell" ? getPowerShellConfig() : await getBashConfig(sessionShellPath, signal));
     if (commandTransport === "stdin") throw new Error("Command sessions require a shell that accepts the command as an argument");
     const id = randomUUID(), logPath = join(directory, `${id}.stdout.log`), errPath = join(directory, `${id}.stderr.log`);
-    const { policy, notice } = await waitForSandbox?.(signal, { report: true }) || {};
+    const { policy, notice } = await waitForSandbox?.(signal, { report: true, file: shell }) || {};
     if (disposed || signal?.aborted) throw new Error("aborted");
     const launch = sandboxCommand({ file: shell, args: [...args, command], cwd: workingDirectory, env, workspace, policy, stdinOpen });
     outputEncoding ??= process.platform === "win32" ? "auto" : "utf8";

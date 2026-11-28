@@ -12,22 +12,25 @@ from PySide6.QtCore import QObject, Property, QProcess, QTimer, Signal, Slot
 
 from .pi_runtime import RELEASE_NAME
 from .sandbox_git_bash import (
-    ARCHIVE_NAME, VERSION, clean_git_bash_cache, find_git_bash, git_bash_ready, recover_git_bash,
+    ARCHIVE_NAME, COMPONENT_MANIFEST, VERSION, clean_git_bash_cache, component_archive,
+    find_git_bash, git_bash_ready, recover_git_bash,
 )
 
 
 STORAGE_ERROR = "git-bash-storage-unwritable"
 ARCHIVE_MISSING = "git-bash-archive-missing"
 ARCHIVE_INVALID = "git-bash-archive-invalid"
-PREPARATION_ERRORS = (STORAGE_ERROR, ARCHIVE_MISSING, ARCHIVE_INVALID,)
+ARCHIVE_DOWNLOAD = "git-bash-download-failed"
+PREPARATION_ERRORS = (STORAGE_ERROR, ARCHIVE_MISSING, ARCHIVE_INVALID, ARCHIVE_DOWNLOAD)
 RETRY_INTERVALS_MS = (1000, 3000, 10000, 30000)
 MISSING_ERROR = "Windows 沙箱组件缺失。请重新安装完整的 Windows 版本。"
 SETUP_ERROR = "未完成管理员级隔离安装。请在 Windows 提示中允许安装，或稍后重试。"
 SAVE_ERROR = "无法保存沙箱设置。请检查用户数据目录是否可写，然后重试。"
 AGENT_BUSY = "另一个 Agent 正在执行任务。请等任务结束后再开启沙箱。"
 ERROR_MESSAGES = {
-    ARCHIVE_MISSING: "The Umeko installation is incomplete. Download and install Umeko again to restore Git Bash.",
-    ARCHIVE_INVALID: "The Umeko installation has a damaged Git Bash archive. Download and install Umeko again.",
+    ARCHIVE_MISSING: "The sandbox Git Bash component is unavailable for this build. Use the PowerShell tool.",
+    ARCHIVE_INVALID: "The sandbox Git Bash archive is damaged. Use PowerShell or try again.",
+    ARCHIVE_DOWNLOAD: "Could not download Git Bash for the Windows sandbox. Check the network and retry, or use PowerShell.",
     MISSING_ERROR: "Windows sandbox components are missing. Reinstall the complete Windows package.",
     SETUP_ERROR: "Administrator isolation setup did not finish. Allow installation at the Windows prompt or try again later.",
     SAVE_ERROR: "Could not save the sandbox settings. Check that your user data folder is writable, then try again.",
@@ -48,6 +51,7 @@ class WindowsSandbox(QObject):
         self.home = backend.store.directory / "windows-sandbox"
         self.temp = backend.store.directory / "windows-sandbox-temp"
         self.archive = self.launcher.with_name(ARCHIVE_NAME)
+        self.component = backend.root / "runtime" / COMPONENT_MANIFEST
         self.git_version = self.home / "git" / VERSION
         self.git = None
         self._supported = os.name == "nt"
@@ -66,15 +70,11 @@ class WindowsSandbox(QObject):
         self._prepared_before = False
         self._previous_git = None
         self._cleanup_on_startup = True
-        self._setup_pending = False
-        self._command_git_pending = False
         self._retry = None
         self._progress_changed.connect(self._set_progress)
         self._prepared.connect(self._finish_preparation)
         if self._supported and self.home.is_dir() and self.launcher.is_file():
             self._launch("status")
-        if self.state["enabled"]:
-            self._prepare()
 
     @Property("QVariantMap", notify=changed)
     def state(self):
@@ -106,10 +106,16 @@ class WindowsSandbox(QObject):
         state = self.state
         if not self._supported:
             return {"enabled": False}
+        desktop = self.backend.store.data.get("desktop", {})
+        prefer_git = desktop.get("preferGitBash") is True
+        ordinary_bash = ""
+        if prefer_git and not state["enabled"]:
+            from .git_for_windows import find_git_bash
+            ordinary_bash = find_git_bash(desktop.get("gitBashPath", "")) or ""
         return {"enabled": state["enabled"], "allowNetwork": state["allowNetwork"], "elevated": self._elevated,
-                "bundledGitBash": self.launcher.is_file() or self.archive.is_file(),
+                "preferGitBash": prefer_git, "ordinaryBash": ordinary_bash,
                 "launcher": str(self.launcher), "home": str(self.home), "temp": str(self.temp),
-                "archive": str(self.archive), "gitRoot": state["gitRoot"], "gitReady": bool(self.git),
+                "gitRoot": state["gitRoot"], "gitReady": bool(self.git),
                 "preparing": self._preparing, "progress": self._progress,
                 "preparationAttempt": self._preparation_attempt,
                 "preparationSeconds": self._preparation_seconds,
@@ -151,9 +157,7 @@ class WindowsSandbox(QObject):
             log.exception("Could not save the Windows sandbox settings")
             self._configuration_error(SAVE_ERROR)
         self._error = ""
-        if enabled:
-            self.prepare_for_command()
-        elif not self._setup_pending and not self._command_git_pending:
+        if not enabled:
             if self._retry is not None:
                 self._retry.stop()
             self._preparing = self._extracting
@@ -189,13 +193,18 @@ class WindowsSandbox(QObject):
             self._error = MISSING_ERROR
             self.changed.emit()
             return
-        self._setup_pending = True
-        self._prepare()
+        try:
+            # Provision the cache's inherited read/execute permissions before
+            # the first Bash request downloads or extracts anything.
+            self.git_version.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self._error = STORAGE_ERROR
+            self.changed.emit()
+            return
+        self._launch("setup")
 
-    def prepare_for_command(self, bundled_bash=False):
-        if bundled_bash and self._supported:
-            self._command_git_pending = True
-        if not (self.state["enabled"] or self._command_git_pending):
+    def prepare_for_command(self):
+        if not self.state["enabled"]:
             return
         if self._retry is not None:
             if self._retry.isActive() and self._preparing:
@@ -213,16 +222,12 @@ class WindowsSandbox(QObject):
     def _prepare(self):
         if self._extracting or not self._needs_git():
             return
-        if not self.archive.is_file() or (self.state["enabled"] and not self.launcher.is_file()):
-            self._finish_preparation(None, ARCHIVE_MISSING if not self.archive.is_file() else MISSING_ERROR)
+        if not self.launcher.is_file():
+            self._finish_preparation(None, MISSING_ERROR)
             return
         previous = self.git
         if previous is not None and git_bash_ready(previous):
             self._preparing = False
-            self._command_git_pending = False
-            if self._setup_pending:
-                self._setup_pending = False
-                self._launch("setup")
             self.publish()
             return
         self._previous_git = previous or self._previous_git
@@ -242,7 +247,20 @@ class WindowsSandbox(QObject):
                 git = find_git_bash(self.git_version)
                 reused = git is not None
                 if not reused:
-                    git = recover_git_bash(self.archive, self.git_version, self._progress_changed.emit, self._previous_git)
+                    archive = self.archive
+                    progress = self._progress_changed.emit
+                    if not archive.is_file():
+                        if not self.component.is_file():
+                            self._prepared.emit(None, ARCHIVE_MISSING)
+                            return
+                        try:
+                            archive = component_archive(self.component, self.home / "git-downloads", progress)
+                        except ValueError:
+                            log.exception("Could not download Windows sandbox Git Bash")
+                            self._prepared.emit(None, ARCHIVE_DOWNLOAD)
+                            return
+                        progress = lambda percent: self._progress_changed.emit(50 + percent // 2)
+                    git = recover_git_bash(archive, self.git_version, progress, self._previous_git)
                 if cleanup:
                     clean_git_bash_cache(self.git_version, keep=git)
             except (ValueError, EOFError, tarfile.TarError, lzma.LZMAError):
@@ -250,14 +268,14 @@ class WindowsSandbox(QObject):
                 self._prepared.emit(None, ARCHIVE_INVALID)
             except OSError:
                 log.exception("Could not prepare the Windows sandbox Git Bash bundle")
-                self._prepared.emit(None, STORAGE_ERROR if self.archive.is_file() else ARCHIVE_MISSING)
+                self._prepared.emit(None, STORAGE_ERROR)
             else:
                 self._prepared.emit((git, reused), "")
 
         Thread(target=extract, name="Umeko Git Bash preparation", daemon=True).start()
 
     def _needs_git(self):
-        return self.state["enabled"] or self._setup_pending or self._command_git_pending
+        return self.state["enabled"]
 
     @Slot(int)
     def _set_progress(self, progress):
@@ -271,7 +289,6 @@ class WindowsSandbox(QObject):
         self._preparation_attempt += 1
         if result:
             self.git, reused = result
-            self._command_git_pending = False
             self._previous_git = None
             self._preparation_first_use = not self._prepared_before
             self._prepared_before = True
@@ -282,9 +299,6 @@ class WindowsSandbox(QObject):
             self._archive_failed_once = False
             if self._error in PREPARATION_ERRORS:
                 self._error = ""
-            if self._setup_pending:
-                self._setup_pending = False
-                self._launch("setup")
         elif error == STORAGE_ERROR:
             self._failed_attempts += 1
             self._preparing = self._failed_attempts < 3 and self._needs_git()
@@ -299,8 +313,6 @@ class WindowsSandbox(QObject):
         else:
             self.git = None
             self._error = error
-            self._setup_pending = False
-            self._command_git_pending = False
             self._preparation_started = None
             self._archive_failed_once = False
         self.publish()

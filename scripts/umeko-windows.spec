@@ -76,6 +76,7 @@ analysis = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hidden_imports,
+    hookspath=[str(root / "scripts/pyinstaller-windows")],
 )
 modules = PYZ(analysis.pure)
 entry = dict(exclude_binaries=True, icon=str(root / "app/icons/app.ico"))
