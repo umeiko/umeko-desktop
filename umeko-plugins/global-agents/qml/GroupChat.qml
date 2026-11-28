@@ -73,7 +73,13 @@ Rectangle {
     radius: 14
 
     function tr(zh, en) { return sdk.language === "en" ? en : zh }
-    function agentById(id) { return agents.find(row => "agent:" + row.id === id) || ({}) }
+    readonly property var agentIndex: {
+        const index = {}
+        for (const agent of agents)
+            index["agent:" + agent.id] = agent
+        return index
+    }
+    function agentById(id) { return agentIndex[id] || ({}) }
     function displayName(id, fallback) {
         if (id === "user") return tr("我", "Me")
         if (id === "all") return tr("所有人", "Everyone")
