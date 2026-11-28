@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import fs, { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { prepareDocumentation, availableModels } from '../runtime/releases/coding-1.5.2/umeko-documents.mjs';
@@ -38,4 +39,30 @@ test('updated model lists replace stale entries and markup stays inside table ce
   assert.ok(text.includes('A\\|B provider'));
   prepareDocumentation({directory,models:[]});
   assert.match(readFileSync(join(directory,'delegate-subagents.md'),'utf8'),/尚无可用模型/);
+});
+
+test('concurrent agent startup tolerates a Windows sharing violation on generated docs', t => {
+  const directory = mkdtempSync(join(tmpdir(), 'umeko-docs-sharing-'));
+  const destination = join(directory, 'plugins.md');
+  const originalRename = fs.renameSync;
+  let attempts = 0;
+  const rename = t.mock.method(fs, 'renameSync', (source, target) => {
+    if (target !== destination) return originalRename(source, target);
+    attempts += 1;
+    if (attempts === 2) fs.copyFileSync(source, target);
+    throw Object.assign(new Error('Simulated Windows sharing violation'), { code: 'EPERM' });
+  });
+  syncBuiltinESMExports();
+  try {
+    prepareDocumentation({ directory });
+    assert.equal(readFileSync(destination, 'utf8'), readFileSync(new URL('../runtime/umeko-docs/plugins.md', import.meta.url), 'utf8'));
+    assert.equal(attempts, 2);
+    prepareDocumentation({ directory });
+    assert.equal(attempts, 2);
+    assert.ok(readdirSync(directory).every(name => name.endsWith('.md')));
+  } finally {
+    rename.mock.restore();
+    syncBuiltinESMExports();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
