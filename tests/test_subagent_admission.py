@@ -4,6 +4,32 @@ from app.subagent_admission import SubagentAdmission
 
 
 class SubagentAdmissionTests(unittest.TestCase):
+    def test_unlimited_default_and_disabling_a_limit_drains_the_queue(self):
+        replies = []
+
+        def send(owner, reply):
+            replies.append((reply['ticket'], reply['state']))
+            return True
+
+        broker = SubagentAdmission(send)
+        owner = object()
+        tickets = [str(uuid4()) for _ in range(25)]
+        for ticket in tickets:
+            broker.event(owner, {'action': 'acquire', 'ticket': ticket})
+        self.assertEqual(len(broker.active), 25)
+        self.assertFalse(broker.waiting)
+
+        broker.set_limit(1)
+        extra = [str(uuid4()), str(uuid4())]
+        for ticket in extra:
+            broker.event(owner, {'action': 'acquire', 'ticket': ticket})
+        self.assertEqual(list(broker.waiting), [(owner, ticket) for ticket in extra])
+
+        broker.set_limit(None)
+        self.assertEqual(replies[-2:], [(ticket, 'granted') for ticket in extra])
+        self.assertEqual(len(broker.active), 27)
+        self.assertFalse(broker.waiting)
+
     def test_desktop_fifo_survives_cancel_lower_and_worker_exit(self):
         delivered = []
 

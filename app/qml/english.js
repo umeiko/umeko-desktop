@@ -1,7 +1,9 @@
 .pragma library
 var strings = {
     "子智能体并发上限": "Subagent concurrency limit",
-    "整个桌面共享，范围 1–20。修改立即生效，不会停止正在运行的任务。": "Shared across the desktop, from 1 to 20. Changes take effect immediately without stopping running tasks.",
+    "限制子智能体并发": "Limit concurrent subagents",
+    "默认不限并发。设限后，超出的任务会排队，等有空位再运行。": "Concurrency is unlimited by default. With a limit, additional tasks wait in the queue for an available slot.",
+    "至少 1 个": "At least 1",
     "前台执行等待并发名额": "Foreground run waiting for a slot",
     "后台执行等待并发名额": "Background run waiting for a slot",
     "同会话补充已排队": "Follow-up queued for this session",

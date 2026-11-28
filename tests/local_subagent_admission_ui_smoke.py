@@ -28,8 +28,8 @@ def run(output):
                 latest = str(users[-1] if users else '')
                 child_context = any('notify_parent' in str(row.get('content', ''))
                                     for row in raw.get('messages', []) if row.get('role') in ('system', 'developer'))
-                child = re.search(r'CHILD_(?:[ADE][0-9]+|B|WARM|COLD)\b', latest) if child_context else None
-                job = re.search(r'PARENT_([ABCDE])\b', latest)
+                child = re.search(r'CHILD_(?:[ADEU][0-9]+|B|WARM|COLD)\b', latest) if child_context else None
+                job = re.search(r'PARENT_([ABCDEU])\b', latest)
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/event-stream')
                 self.end_headers()
@@ -45,9 +45,9 @@ def run(output):
                     begun.append(tag)
                     assert gate.wait(150), tag
                     emit({'content':'合成子执行完成 '+tag})
-                elif job and job[1] not in launched and job[1] in 'ABDE':
+                elif job and job[1] not in launched and job[1] in 'ABDEU':
                     group = job[1]; launched.add(group)
-                    tags=['CHILD_B'] if group=='B' else [f'CHILD_{group}{i}' for i in range({'A':11, 'D':5, 'E':8}[group])]
+                    tags=['CHILD_B'] if group=='B' else [f'CHILD_{group}{i}' for i in range({'A':11, 'D':5, 'E':8, 'U':11}[group])]
                     emit({'tool_calls':[{'index':i,'id':'call-'+tag,'type':'function','function':{
                         'name':'subagent','arguments':json.dumps({'prompt':tag,'subagent_type':'general-purpose',
                           'description':'合成并发任务 '+str(i+1),'run_in_background':group!='B'})}} for i,tag in enumerate(tags)]})
@@ -104,23 +104,48 @@ def run(output):
             def queued(rec):
                 return next((row for row in rec.subagents.values() if row['status']=='queued' and '并发名额' in row.get('activity','')),None)
             try:
-                assert backend.desktopSettings['subagentConcurrency']==10 and broker.limit==10
-                expression(window, 'settings(3)'); QTest.qWait(250)
-                click('openPiSettingsButton')
-                click('piFold_runtimeToggle')
-                if not find('desktopSubagentConcurrency'):
-                    click('piFold_contextToggle')
-                spin = wait(lambda:find('desktopSubagentConcurrency'), 'concurrency setting in Pi')
-                assert spin.property('value') == 10 and spin.property('from') == 1 and spin.property('to') == 20
+                assert backend.desktopSettings['subagentConcurrency'] is None and broker.limit is None
+                def open_limit_settings():
+                    expression(window, 'settings(3)')
+                    click('openUmekoDesktopSettingsButton')
+                    return wait(lambda: find('desktopSubagentLimitEnabled'), 'concurrency checkbox in Umeko Desktop')
+
+                checkbox = open_limit_settings()
+                assert not checkbox.property('checked') and not find('desktopSubagentConcurrency')
+                assert not find('desktopSubagentConcurrencyConfirm')
+                click('desktopSubagentLimitEnabled')
+                field = wait(lambda: find('desktopSubagentConcurrency'), 'limit input appears after checking')
+                button = wait(lambda: find('desktopSubagentConcurrencyConfirm'), 'limit confirmation appears after checking')
+                assert broker.limit is None
+                field.setProperty('text', '0')
+                assert not button.property('enabled') and broker.limit is None
+                field.setProperty('text', '1')
+                click('desktopSubagentConcurrencyConfirm')
+                wait(lambda: broker.limit == 1, 'confirm the minimum limit')
+                assert checkbox.property('checked') and find('desktopSubagentConcurrency') is field
                 screen('270-settings-zh.png')
-                spin.forceActiveFocus()
-                QTest.keyClick(window, Qt.Key_Up)
-                wait(lambda: broker.limit == 11, 'settings control immediately raises cap')
-                QTest.keyClick(window, Qt.Key_Down)
-                wait(lambda: broker.limit == 10, 'settings control immediately restores cap')
+                click('desktopSubagentLimitEnabled')
+                wait(lambda: not find('desktopSubagentConcurrency') and broker.limit is None, 'unchecking restores unlimited mode')
+                window.setProperty('page','chat')
+                u = parent('U')
+                wait(lambda: sum(tag.startswith('CHILD_U') for tag in begun) == 11,
+                     'unlimited mode starts all eleven native children')
+                assert not broker.waiting and not queued(u)
+                for tag in begun:
+                    if tag.startswith('CHILD_U'):
+                        gates[tag].set()
+                wait(lambda: not broker.active, 'unlimited batch completes')
+
+                open_limit_settings()
+                click('desktopSubagentLimitEnabled')
+                field = wait(lambda: find('desktopSubagentConcurrency'), 'limit input restored')
+                field.setProperty('text', '10')
+                assert broker.limit is None
+                click('desktopSubagentConcurrencyConfirm')
+                wait(lambda: broker.limit == 10, 'confirm limit of ten')
                 window.setProperty('page','chat')
                 a=parent('A')
-                wait(lambda:len([tag for tag in begun if tag.startswith('CHILD_A')])==10 and queued(a), 'Default admits exactly ten, leaves a native queued child')
+                wait(lambda:len([tag for tag in begun if tag.startswith('CHILD_A')])==10 and queued(a), 'The configured limit admits ten, leaving one native child queued')
                 assert sum(tag.startswith('CHILD_A') for tag in begun)==10 and len(broker.active)==10
                 row_a=queued(a); backend.subagents.open(row_a['id'])
                 wait(lambda:find('subagentAdmissionActivity') and not find('webPane').property('moving'),'queued label visible and pane settled')
@@ -246,7 +271,7 @@ def run(output):
                 assert cancelled['task'] not in begun
                 for gate in gates.values(): gate.set()
                 wait(lambda:not broker.active and not broker.waiting,'legacy-limit regression drains')
-                print('SUBAGENT_ADMISSION_QT_OK default10; cross-process FIFO; foreground mode preserved; queued cancel; lower/raise; independent parent; warm/cold; explicit legacy 3 plus independent 7; local queue cancel')
+                print('SUBAGENT_ADMISSION_QT_OK unlimited default; opt-in settings; cross-process FIFO; foreground mode preserved; queued cancel; warm/cold continuation')
             finally:
                 for gate in gates.values(): gate.set()
                 window.hide(); backend.close(); app.quit()

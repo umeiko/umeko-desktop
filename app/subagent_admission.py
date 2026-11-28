@@ -2,18 +2,17 @@
 from collections import OrderedDict
 from uuid import UUID
 
-DEFAULT_SUBAGENT_LIMIT = 10
 MAX_WAITERS = 256
 
 
 def valid_subagent_limit(value):
-    return type(value) is int and 1 <= value <= 20
+    return value is None or (type(value) is int and 1 <= value <= 2**53 - 1)
 
 
 class SubagentAdmission:
-    def __init__(self, send, limit=DEFAULT_SUBAGENT_LIMIT):
+    def __init__(self, send, limit=None):
         self._send = send
-        self.limit = limit if valid_subagent_limit(limit) else DEFAULT_SUBAGENT_LIMIT
+        self.limit = limit if valid_subagent_limit(limit) else None
         self.waiting = OrderedDict()
         self.active = set()
         self.closed = False
@@ -33,12 +32,12 @@ class SubagentAdmission:
 
     def set_limit(self, limit):
         if not valid_subagent_limit(limit):
-            raise ValueError("Subagent concurrency must be an integer from 1 to 20")
+            raise ValueError("Subagent concurrency must be unlimited or a positive safe integer")
         self.limit = limit
         self._drain()
 
     def _drain(self):
-        while not self.closed and self.waiting and len(self.active) < self.limit:
+        while not self.closed and self.waiting and (self.limit is None or len(self.active) < self.limit):
             (owner, ticket), _ = self.waiting.popitem(last=False)
             if self._reply(owner, ticket, "granted"):
                 self.active.add((owner, ticket))

@@ -69,6 +69,67 @@ Column {
     }
     TeamCollaborationSettings { width: parent.width }
     SectionCard {
+        id: subagentLimit
+        width: parent.width
+        readonly property var savedLimit: backend.desktopSettings.subagentConcurrency
+
+        function resetDraft() {
+            const limit = Number(savedLimit)
+            limitEnabled.checked = limit >= 1
+            limitInput.text = limitEnabled.checked ? String(limit) : "1"
+        }
+        function confirm() {
+            if (limitEnabled.checked && confirmLimit.enabled)
+                backend.saveDesktopSettings(JSON.stringify({subagentConcurrency: Number(limitInput.text)}))
+        }
+
+        Component.onCompleted: resetDraft()
+        onSavedLimitChanged: resetDraft()
+        onVisibleChanged: if (visible) resetDraft()
+
+        ColumnLayout {
+            width: parent.width; spacing: 8
+            CheckBox {
+                id: limitEnabled
+                objectName: "desktopSubagentLimitEnabled"
+                text: I18n.t("限制子智能体并发")
+                font.family: Theme.fontFamily; font.pixelSize: Theme.font(14); font.weight: Font.DemiBold
+                onToggled: {
+                    if (checked) return
+                    if (subagentLimit.savedLimit >= 1 && !backend.saveDesktopSettings(JSON.stringify({subagentConcurrency: null})))
+                        checked = true
+                }
+            }
+            Text {
+                Layout.fillWidth: true; wrapMode: Text.Wrap
+                text: I18n.t("默认不限并发。设限后，超出的任务会排队，等有空位再运行。")
+                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12)
+            }
+            RowLayout {
+                visible: limitEnabled.checked
+                Layout.fillWidth: true; spacing: 8
+                InputField {
+                    id: limitInput
+                    objectName: "desktopSubagentConcurrency"
+                    Layout.fillWidth: true; Layout.maximumWidth: Theme.control(180)
+                    placeholderText: I18n.t("至少 1 个")
+                    Accessible.name: I18n.t("子智能体并发上限")
+                    maximumLength: 16
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    validator: RegularExpressionValidator { regularExpression: /[1-9][0-9]*/ }
+                    onAccepted: subagentLimit.confirm()
+                }
+                ActionButton {
+                    id: confirmLimit
+                    objectName: "desktopSubagentConcurrencyConfirm"
+                    text: I18n.t("确认"); primary: true
+                    enabled: limitInput.acceptableInput && Number.isSafeInteger(Number(limitInput.text))
+                    onClicked: subagentLimit.confirm()
+                }
+            }
+        }
+    }
+    SectionCard {
         width: parent.width
         RowLayout {
             width: parent.width
