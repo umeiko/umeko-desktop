@@ -267,6 +267,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         # Store.save() already merged the external values into memory.
         self.toast.emit('settings.json 无法解析，已另存为 settings.external-invalid.json' if invalid and not keys
                         else 'settings.json 在 Umeko 外被修改，已读入这些修改')
+        if 'desktop' in keys and (pool := getattr(self, '_pool', None)):
+            pool.subagent_admission.set_limit(self.desktopSettings['subagentConcurrency'])
         self.changed.emit()
         if 'chatWallpaper' in keys:
             self._chat_wallpaper.changed.emit()
@@ -331,6 +333,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         )['count']
         self._welcome_greetings, self._welcome_portraits = [], []
         self._pool = PiSessionPool(self, limit=self.store.data['ui']['sessionCacheSize'])
+        self._pool.subagent_admission.set_limit(self.desktopSettings['subagentConcurrency'])
         self._view = self._new_view()
         from .controller_tasks import TaskRecords
         self._task_records = TaskRecords(self)

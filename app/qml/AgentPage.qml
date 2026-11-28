@@ -218,7 +218,32 @@ Column {
         }
         SettingsFold {
             objectName: "piFold_runtime"; width: parent.width; title: I18n.t("运行与资源"); query: search.text
-            searchTerms: I18n.t("上下文 自动压缩 compaction 资源 路径 Skills 提示词 自定义指令 instructions token 回答 上限 运行 ") + I18n.t("会话缓存 后台 空闲 内存 session cache memory ") + [backend.config.agent.agentDir, backend.config.agent.instructions, ...(backend.config.agent.skillPaths || []), ...(backend.config.agent.extensionPaths || [])].join(" ")
+            searchTerms: I18n.t("上下文 自动压缩 compaction 资源 路径 Skills 提示词 自定义指令 instructions token 回答 上限 运行 ") + I18n.t("子智能体并发上限") + " concurrency " + I18n.t("会话缓存 后台 空闲 内存 session cache memory ") + [backend.config.agent.agentDir, backend.config.agent.instructions, ...(backend.config.agent.skillPaths || []), ...(backend.config.agent.extensionPaths || [])].join(" ")
+            SectionCard {
+                width: parent.width
+                RowLayout {
+                    width: parent.width
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Text { text: I18n.t("子智能体并发上限"); color: Theme.ink; font.family: Theme.fontFamily; font.pixelSize: Theme.font(12, visible) }
+                        Text {
+                            Layout.fillWidth: true; wrapMode: Text.Wrap
+                            text: I18n.t("整个桌面共享，范围 1–20。修改立即生效，不会停止正在运行的任务。")
+                            color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.font(11, visible)
+                        }
+                    }
+                    SpinBox {
+                        objectName: "desktopSubagentConcurrency"
+                        from: 1; to: 20; editable: true
+                        value: backend.desktopSettings.subagentConcurrency || 10
+                        Accessible.name: I18n.t("子智能体并发上限")
+                        onValueModified: {
+                            backend.saveDesktopSettings(JSON.stringify({subagentConcurrency: value}))
+                            value = Qt.binding(() => backend.desktopSettings.subagentConcurrency || 10)
+                        }
+                    }
+                }
+            }
             AgentSettings { width: parent.width; query: search.text; enabled: !backend.busy; opacity: enabled ? 1 : 0.6 }
             SettingsFold {
                 objectName: "piFold_sessionCache"; width: parent.width; title: I18n.t("会话缓存"); nested: true; query: search.text

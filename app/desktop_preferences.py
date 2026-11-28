@@ -4,10 +4,12 @@ import os
 import sys
 from pathlib import Path
 from .platform_support import data_directory, legacy_data_directory
+from .subagent_admission import DEFAULT_SUBAGENT_LIMIT, valid_subagent_limit
 
 DEFAULTS = {'autoOpenSubmissions': True, 'webDisplay': 'embedded', 'chatWidthHints': True,
             'coworkEnabled': False, 'teamCollaborationEnabled': False, 'remoteWorkspaceEnabled': False,
-            'disableDxgiVblankThread': False, 'preferGitBash': False, 'gitBashPath': ''}
+            'disableDxgiVblankThread': False, 'preferGitBash': False, 'gitBashPath': '',
+            'subagentConcurrency': DEFAULT_SUBAGENT_LIMIT}
 
 
 def normalize(value):
@@ -20,7 +22,8 @@ def normalize(value):
             'remoteWorkspaceEnabled': value.get('remoteWorkspaceEnabled') is True,
             'disableDxgiVblankThread': value.get('disableDxgiVblankThread') is True,
             'preferGitBash': value.get('preferGitBash') is True,
-            'gitBashPath': value['gitBashPath'].strip() if isinstance(value.get('gitBashPath'), str) else ''}
+            'gitBashPath': value['gitBashPath'].strip() if isinstance(value.get('gitBashPath'), str) else '',
+            'subagentConcurrency': value['subagentConcurrency'] if valid_subagent_limit(value.get('subagentConcurrency')) else DEFAULT_SUBAGENT_LIMIT}
 
 
 def validate_patch(value):
@@ -37,6 +40,8 @@ def validate_patch(value):
         raise ValueError('webDisplay must be embedded or external')
     if 'gitBashPath' in value and (not isinstance(value['gitBashPath'], str) or '\0' in value['gitBashPath']):
         raise ValueError('Invalid Git Bash path')
+    if 'subagentConcurrency' in value and not valid_subagent_limit(value['subagentConcurrency']):
+        raise ValueError('子智能体并发上限须为 1–20 的整数 / Subagent concurrency must be an integer from 1 to 20')
     return value
 
 

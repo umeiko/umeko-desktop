@@ -351,6 +351,59 @@ def patch_search_sandbox(release: Path):
                         child.once("close", () => launch.cleanup?.());'''), encoding='utf-8')
 
 
+def patch_subagent_admission(release: Path):
+    path = release / 'node_modules/@gotgenes/pi-subagents/src/lifecycle/subagent.ts'
+    text = path.read_text(encoding='utf-8')
+    marker = 'umeko:desktop-subagent-admission'
+    if marker in text:
+        return
+    replacements = {
+        '\tstart(): void {\n\t\tthis._promise = this.guardedRun();\n\t}': '''\tprivate desktopAdmission(run: SubagentRun, source: AbortSignal | undefined, work: () => Promise<void>, schedule?: RunScheduler): Promise<void> | undefined {
+		type DesktopAdmission = (item: {id: string, signal: AbortSignal, foreground: boolean, resume: boolean}, work: () => Promise<void>) => Promise<boolean>;
+		const hook = (globalThis as typeof globalThis & Record<symbol, DesktopAdmission | undefined>)[Symbol.for("umeko:desktop-subagent-admission")];
+		if (!hook) return undefined;
+		const cancelQueued = () => { if (run === this.currentRun && this.status === "queued") this.stopQueued(); };
+		if (source?.aborted) cancelQueued();
+		else source?.addEventListener("abort", cancelQueued, { once: true });
+		const askDesktop = async () => {
+			if (run !== this.currentRun || !run.isActive()) return;
+			await hook({id: this.id, signal: run.signal, foreground: !run.inBackground, resume: run.kind === "resume"}, async () => {
+				if (run === this.currentRun && run.isActive()) await work();
+			}).then(started => {
+				if (!started) cancelQueued();
+			}, error => {
+				if (run === this.currentRun && run.isActive()) this.fail(run, error);
+			});
+		};
+		// Locally queued runs must not reserve a desktop slot.
+		return (schedule ? schedule(askDesktop) : askDesktop()).finally(() => source?.removeEventListener("abort", cancelQueued));
+	}
+
+	start(): void {
+		const work = () => this.guardedRun();
+		this._promise = this.desktopAdmission(this.currentRun, this.execution.signal, work) ?? work();
+	}''',
+        '\t\tthis._promise = schedule(() => this.guardedRun());': '''\t\tconst work = () => this.guardedRun();
+		this._promise = this.desktopAdmission(this.currentRun, this.execution.signal, work, schedule) ?? schedule(work);''',
+        '''\t\tthis._promise = schedule(() =>
+			run.isActive() ? this.startResumedRun(run, subagentSession, prompt, options.signal) : Promise.resolve(),
+		);''': '''\t\tconst work = () => run.isActive() ? this.startResumedRun(run, subagentSession, prompt, options.signal) : Promise.resolve();
+		this._promise = this.desktopAdmission(run, options.signal, work, schedule) ?? schedule(work);''',
+        '\t\tthis.currentRun.stopQueued();': '\t\tthis.currentRun.stopQueued();\n\t\tif (Symbol.for("umeko:desktop-subagent-admission") in globalThis) this.currentRun.abort();',
+    }
+    for original, replacement in replacements.items():
+        if text.count(original) != 1:
+            raise RuntimeError('Pi subagent lifecycle changed; desktop admission not installed')
+        text = text.replace(original, replacement)
+    descriptor, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+            output.write(text)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
 def verify_runtime(release: Path, bridge_source: Path):
     node_release = ordinary_path(release)
     release, bridge_source = filesystem_path(release), filesystem_path(bridge_source)
@@ -365,7 +418,8 @@ def verify_runtime(release: Path, bridge_source: Path):
     patch_windows_shell_selection(release)
     patch_command_previews(release, bridge_source)
     patch_search_sandbox(release)
-    for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+    patch_subagent_admission(release)
+    for name in ("tool-visibility.mjs", "session-capabilities.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-admission.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
         copy_runtime_file(bridge_source.parent / name, release / name)
     copy_runtime_file(bridge_source.parent / 'update-cleanup.mjs', release / 'update-cleanup.mjs')
     copy_runtime_file(bridge_source.parent / 'apply-patch.mjs', release / 'apply-patch.mjs')

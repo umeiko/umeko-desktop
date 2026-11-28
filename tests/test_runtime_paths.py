@@ -22,7 +22,7 @@ class RuntimeReaderTests(unittest.TestCase):
             (release/'manifest.json').write_text(json.dumps({'package':PACKAGE,'projection':2}),encoding='utf-8')
             bridge=Path(__file__).resolve().parents[1]/'runtime/bridge.mjs'
             success=subprocess.CompletedProcess([],0,'{"ok":true}','')
-            with patch('app.pi_runtime.node_executable',return_value='node'),patch('app.pi_runtime.node_environment',return_value={}),patch('app.windows_job.run_managed',return_value=success) as run:
+            with patch('app.pi_runtime.patch_subagent_admission'), patch('app.pi_runtime.node_executable',return_value='node'),patch('app.pi_runtime.node_environment',return_value={}),patch('app.windows_job.run_managed',return_value=success) as run:
                 verify_runtime(release,bridge)
                 before={str(p):p.stat().st_mtime_ns for p in release.rglob('*') if p.is_file()}
                 with patch('app.pi_runtime.shutil.copy2',side_effect=AssertionError('Prepared adapters must remain immutable')):
@@ -80,7 +80,7 @@ class RuntimePathTests(unittest.TestCase):
         retry.write_text("const errorMessage = message.errorMessage;")
         (release_io / "manifest.json").write_text(json.dumps({"package":PACKAGE, "projection":2}))
         source_io.mkdir(parents=True)
-        for name in ("tool-visibility.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
+        for name in ("tool-visibility.mjs", "bridge.mjs", "package-install.mjs", "update-engine.mjs", "provider-policy.mjs", "resources.mjs", "chatbox.mjs", "network-retry.mjs", "pi-commands.mjs", "umeko-control.mjs", "umeko-documents.mjs", "widget-messages.mjs", "tool-permissions.mjs", "background-jobs.mjs", "process-guard.mjs", "subagents.mjs", "subagent-admission.mjs", "subagent-sdk.mjs", "subagent-settings.mjs", "input-queue.mjs", "recent-images.mjs", "auxiliary-vision.mjs", "rpc-ui.mjs", "umeko-operations.json", "webview-component.mjs", "webview-component.json"):
             (source_io / name).write_text("fixture")
         (source_io / "session-capabilities.mjs").write_text("fixture")
         (source_io / "skills.mjs").write_text("fixture")
@@ -95,7 +95,7 @@ class RuntimePathTests(unittest.TestCase):
         (source_io / "markdown-preview.mjs").write_text("fixture")
         (source_io / "umeko-docs").mkdir()
         (source_io / "umeko-docs/guide.md").write_text("deep docs")
-        with patch("app.pi_runtime.node_executable", return_value="node.exe"), patch("app.pi_runtime.node_environment", return_value={}), patch("app.windows_job.run_managed", return_value=subprocess.CompletedProcess([], 0, '{"ok":true}', '')) as run:
+        with patch("app.pi_runtime.patch_subagent_admission"), patch("app.pi_runtime.node_executable", return_value="node.exe"), patch("app.pi_runtime.node_environment", return_value={}), patch("app.windows_job.run_managed", return_value=subprocess.CompletedProcess([], 0, '{"ok":true}', '')) as run:
             verify_runtime(filesystem_path(release), source / "bridge.mjs")
         self.assertEqual(run.call_args.args[0][1], str(release / "bridge.mjs"))
         self.assertEqual((release_io / "umeko-docs/guide.md").read_text(), "deep docs")

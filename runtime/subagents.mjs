@@ -127,8 +127,10 @@ export function projectSubagents(branch, messages) {
 export function subagentTool(previous, channel, event, record = {}, invocation = {}) {
   const old = previous?.subagent || {};
   const continuing = channel === "resuming";
+  const terminalStatus = ["stopped", "aborted"].includes(record.status) ? record.status
+    : ["stopped", "aborted"].includes(event.status) ? event.status : "error";
   const status = continuing || channel === "started" ? "running"
-    : channel === "failed" ? "error"
+    : channel === "failed" ? terminalStatus
     : record.status || event.status || (channel === "completed" || channel === "resumed" ? "completed" : old.status || "queued");
   const subagent = {
     ...old, id: event.id, type: event.type || record.type || old.type || invocation.subagent_type || "general-purpose",
@@ -153,7 +155,7 @@ export function subagentTool(previous, channel, event, record = {}, invocation =
   };
 }
 
-export function createSubagentExtension({ emit, loadPackage, restoreSession, getParentRun, getCowork } = {}) {
+export function createSubagentExtension({ emit, loadPackage, restoreSession, getParentRun, getCowork, getAdmission } = {}) {
   const calls = new AsyncLocalStorage();
   const rows = new Map();
   const parentRuns = new Map();
@@ -161,6 +163,9 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
   const pendingSessions = new Set(), observed = new Set();
   const compacting = new Set(), loadingChildren = new Map(), restoredChildren = new Set();
   let api, getService, timer, unbind = [], watching = "", hook, generation = 0, resumeTools;
+  const admissionKey = Symbol.for("umeko:desktop-subagent-admission");
+  let admissionHook, admissionLife;
+  const waitingActivity = new Map();
 
   function publishUsage(id) {
     if (watching !== id) return;
@@ -320,7 +325,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
       if (!row) throw new Error("当前会话中没有这个子代理。");
       if (action === "watch") {
         watching = id; publishContext(id);
-        if (!active.has(row.tool.subagent.status) && !sessions.has(id) && restoreSession && row.tool.subagent.outputFile)
+        if (!input.skipRestore && !active.has(row.tool.subagent.status) && !sessions.has(id) && restoreSession && row.tool.subagent.outputFile)
           void childSession(id).then(()=>publishUsage(id)).catch(()=>{});
         return;
       }
@@ -370,7 +375,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
       restoring.set(id,cancellation);
       update("progress",{id,activity:"Continuing"},{...row.tool.subagent,status:"queued",avatarSlot:slot});
       reply(true);
-      void (async () => {
+      const resumeWork = async () => {
         let session;
         try {
           const report = text => {
@@ -380,7 +385,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
           session = sessions.get(id)?.session || await (loadingChildren.get(id) || restoreSession(row.tool.subagent,contexts.get(id),resumeTools?.(report) || []));
           if (token !== generation || cancellation.signal.aborted) return;
           observe(session,{},id);
-          update("started",{id},{...rows.get(id).tool.subagent,status:"running"});
+          update("started",{id, activity:""},{...rows.get(id).tool.subagent,status:"running"});
           let turns = 0;
           const ceiling = row.tool.subagent.turnBudget?.maxTurns;
           const unlimit = session.subscribe(event => { if (event.type === "turn_end" && ceiling && ++turns >= ceiling && event.toolResults?.length) void session.abort(); });
@@ -397,12 +402,33 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
             sessions.get(id)?.unsubscribe(); sessions.delete(id); restoredChildren.delete(id); restoring.delete(id);
           }
         }
-      })();
+      };
+      const admission = getAdmission?.();
+      if (admission && admissionLife) {
+        const waiting = {label:"同会话补充已排队"};
+        const clearWaiting = () => { if (waitingActivity.get(id) === waiting) waitingActivity.delete(id); };
+        void admission.run({signal: AbortSignal.any([cancellation.signal, admissionLife.signal]), onWaiting: () => {
+          if (token !== generation) return;
+          waitingActivity.set(id,waiting);
+          update("progress", {id,activity:waiting.label});
+        }}, async () => { clearWaiting(); await resumeWork(); }).catch(error => {
+          if (token === generation) update("failed", {id,error:error.message}, {...rows.get(id)?.tool.subagent,status:"error",error:error.message});
+        }).finally(() => {
+          clearWaiting();
+          if (token !== generation || restoring.get(id) !== cancellation) return;
+          if (active.has(rows.get(id)?.tool.subagent.status)) update("progress",{id},{...rows.get(id).tool.subagent,status:"stopped"});
+          restoring.delete(id);
+        });
+      } else void resumeWork();
     } catch (error) { reply(false,error.message); }
   }
 
   function dispose() {
     generation++;
+    admissionLife?.abort();
+    if (globalThis[admissionKey] === admissionHook) delete globalThis[admissionKey];
+    admissionLife = admissionHook = undefined;
+    waitingActivity.clear();
     for (const [id,cancellation] of restoring) { cancellation.abort(); void sessions.get(id)?.session.abort(); }
     restoring.clear();
     for (const unsubscribe of observed) unsubscribe();
@@ -427,6 +453,7 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
         subagentId: "subagent:" + event.id });
     }
     const tool = subagentTool(previous?.tool, channel, event, record, scope?.args);
+    if (tool.subagent.status === "queued" && waitingActivity.has(event.id)) tool.subagent.activity = waitingActivity.get(event.id).label;
     const role = getCowork?.()?.subagents?.find(row => row.id === tool.subagent.type);
     if (role) {
       tool.subagent.profileName = role.name;
@@ -469,6 +496,27 @@ export function createSubagentExtension({ emit, loadPackage, restoreSession, get
     dispose(); api = pi;
     hook = (session,options) => observe(session,options);
     globalThis[sessionHook] = hook;
+    const admission = getAdmission?.();
+    if (admission) {
+      admissionLife = new AbortController();
+      const life = admissionLife.signal;
+      admissionHook = ({id, signal, foreground, resume}, work) => {
+        const scope = calls.getStore();
+        const waiting = {label:resume ? "同会话补充已排队" : foreground ? "前台执行等待并发名额" : "后台执行等待并发名额"};
+        const clearWaiting = () => { if (waitingActivity.get(id) === waiting) waitingActivity.delete(id); };
+        return admission.run({signal: AbortSignal.any([signal, life]), onWaiting: () => {
+          waitingActivity.set(id,waiting);
+          const record = getService?.()?.getRecord(id);
+          if (record?.status === "queued") update("progress", {id, activity:waiting.label}, record, scope);
+        }}, async () => {
+          clearWaiting();
+          const record = getService?.()?.getRecord(id);
+          if (record?.status === "queued" && rows.has(id)) update("progress", {id, activity:""}, record, scope);
+          await work();
+        }).finally(clearWaiting);
+      };
+      globalThis[admissionKey] = admissionHook;
+    }
     const loaded = loadPackage ? await loadPackage() : await (async () => {
       // Keep generated TypeScript cache out of the signed/read-only app bundle.
       const cowork = getCowork?.();

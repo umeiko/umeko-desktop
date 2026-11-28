@@ -12,6 +12,7 @@ import { DESKTOP_PI_PROMPT, addMcpFromInput, createPiCommandController, piComman
 import { UMEKO_TOOL, SEND_TO_USER, REMINDER, REPLY_TO_GROUPCHAT, UMEKO_PROMPT, createUmekoControl, configureUmekoDocs, coordinatorExtension, coordinatorNativeTools } from "./umeko-control.mjs";
 import { rpcCustom } from "./rpc-ui.mjs";
 import { createSubagentExtension, projectSubagents } from "./subagents.mjs";
+import { createSubagentAdmission } from "./subagent-admission.mjs";
 import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResources, coworkSubagentTools } from "./cowork-subagents.mjs";
 import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
@@ -231,8 +232,10 @@ const auxiliaryVision = createAuxiliaryVision({getConfig:() => config, emit:even
   if (event.sessionId && event.sessionId !== runtime?.session.sessionManager.getSessionId()) return subagents.automaticTool(event.sessionId,event);
   emit(event);
 }});
+const subagentAdmission = createSubagentAdmission(emit);
 const subagents = createSubagentExtension({ emit, restoreSession: restoreSubagentSession,
-  getParentRun: () => currentRun, getCowork: () => config?.cowork });
+  getParentRun: () => currentRun, getCowork: () => config?.cowork,
+  getAdmission: () => config?.desktopSubagentAdmission === true ? subagentAdmission : null });
 const textOf = content => typeof content === "string" ? content : (content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
 const thinkingOf = content => Array.isArray(content) ? content.filter(c => c.type === "thinking").map(c => c.thinking || "").join("\n") : "";
 const compactionText = data => `已压缩：${data.before} → ${data.after} tokens`;
@@ -1226,6 +1229,7 @@ async function execute(input) {
     checkpointLocked = input.locked === true;
     return;
   }
+  if (input.type === "subagent-admission-reply") { subagentAdmission.reply(input); return; }
   if (input.type === "desktop_settings") {
     if (config && input.webview && typeof input.webview === "object") config.webview = input.webview;
     if (config && input.remoteNetwork && typeof input.remoteNetwork === "object") {
@@ -1386,7 +1390,7 @@ async function execute(input) {
     else if (input.type === "new") await runtime.newSession();
     else if (input.type === "open") await runtime.switchSession(input.path);
     else if (input.type === "subagent-open") {
-      if (input.command.action === "send") await subagents.command({action:"watch",id:input.command.id});
+      if (input.command.action === "send") await subagents.command({action:"watch",id:input.command.id,skipRestore:true});
       await subagents.command(input.command);
     }
     else if (input.type === "fork") await forkSession(input.entryId || runtime.session.sessionManager.getLeafId(), { position: "at" });
@@ -1434,6 +1438,7 @@ async function shutdown() {
   loopReview.clear();
   umekoControl.clear();
   remoteEnvironments.dispose();
+  subagentAdmission.close();
   subagents.dispose();
   piCommands.clear();
   clearDialogs();

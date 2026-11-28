@@ -26,6 +26,7 @@ Item {
     property bool running: false
     property string toolStatus: ""
     property var turnStatus: ({})
+    property var turnStatusOverride: null
     property alias view: conversation
     property alias selection: chatSelection
     // While a newly activated pane positions its rows it stays transparent
@@ -1078,7 +1079,7 @@ Item {
                 objectName: pane.current ? "turnStatus" : ""
                 x: 33
                 y: 8
-                status: pane.turnStatus
+                status: pane.turnStatusOverride === null ? pane.turnStatus : pane.turnStatusOverride
             }
         }
         delegate: Item {

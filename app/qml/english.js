@@ -1,5 +1,10 @@
 .pragma library
 var strings = {
+    "子智能体并发上限": "Subagent concurrency limit",
+    "整个桌面共享，范围 1–20。修改立即生效，不会停止正在运行的任务。": "Shared across the desktop, from 1 to 20. Changes take effect immediately without stopping running tasks.",
+    "前台执行等待并发名额": "Foreground run waiting for a slot",
+    "后台执行等待并发名额": "Background run waiting for a slot",
+    "同会话补充已排队": "Follow-up queued for this session",
     "无法预览此工作簿，请打开完整文件": "This workbook cannot be previewed. Open the full file.",
     "群聊": "Group chat",
     "用 @ 点名成员。点击头像进入单聊，右键可以点名或拍一拍。": "Mention members with @. Click an avatar to open its chat, or right-click to mention or poke.",
