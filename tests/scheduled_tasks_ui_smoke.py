@@ -334,7 +334,8 @@ with tempfile.TemporaryDirectory(prefix='umeko-scheduled-demo-') as temp:
         assert manager.openPage('scheduled-tasks')
         until(lambda: find('scheduledTasksWidget') is not None, 'Shared timer page missing in a new conversation')
         panel = find('scheduledTasksWidget')
-        until(lambda: not panel.property('pending') and len(values('tasks'))==2, 'New conversation did not list global timers')
+        until(lambda: panel.property('readyForInteraction') and not panel.property('pending')
+              and len(values('tasks') or ()) == 2, 'New conversation did not list global timers')
         assert {t['id'] for t in values('tasks')} == {linked['id'],shared_id}
         assert all(t['global'] for t in values('tasks'))
         orphan = next(t for t in values('tasks') if t['id']==shared_id)

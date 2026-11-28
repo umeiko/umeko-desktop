@@ -2090,8 +2090,6 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             self.toast.emit('工作目录不存在')
             return False
         project = self._ensure_project(str(path), reopen=True)
-        self.store.data["workspace"] = project["path"]
-        self.store.data["activeProject"] = project["id"]
         self._collapsed_projects.discard(project["id"])
         record = self._project_drafts.get(project["path"])
         if record is None or record.messages or record.busy:
