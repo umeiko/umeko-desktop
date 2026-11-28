@@ -50,6 +50,14 @@ $releaseParent = Join-Path $buildDestination 'Umeko/_internal/runtime/releases'
 New-Item -ItemType Directory -Path $releaseParent -Force | Out-Null
 # Node loads its own runtime files; copy them byte-for-byte after Qt packaging.
 Copy-Item -LiteralPath 'runtime/releases/coding-1.5.2' -Destination $releaseParent -Recurse -Force
+$packagedSandbox = Join-Path $releaseParent 'coding-1.5.2/bin/windows-sandbox'
+foreach ($legacyBash in @(Get-ChildItem -LiteralPath $packagedSandbox -Filter 'git-bash-*.tar.xz' -File -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $legacyBash.FullName -Force
+}
+$gitBashManifest = 'build/sandbox-git-component/windows-sandbox-git-bash.json'
+if (Test-Path -LiteralPath $gitBashManifest) {
+    Copy-Item -LiteralPath $gitBashManifest -Destination (Split-Path $releaseParent) -Force
+}
 $generatedRuntimeCache = Join-Path $releaseParent 'coding-1.5.2/node_modules/.cache'
 if (Test-Path -LiteralPath $generatedRuntimeCache) { Remove-Item -LiteralPath $generatedRuntimeCache -Recurse -Force }
 Copy-Item -LiteralPath 'runtime/node' -Destination (Join-Path $buildDestination 'Umeko/_internal/runtime') -Recurse -Force

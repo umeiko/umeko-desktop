@@ -60,4 +60,6 @@ Python 版还提供以下设置操作。先用 `operations.list` 查询当前应
 
 要启用网络封锁，在 Agent 设置中点击「安装管理员级隔离」，并完成 Windows 的权限提示。标准用户隔离会限制写入位置，并在私有桌面运行命令。未完成管理员安装时，要求断网的命令仍在文件隔离下运行，工具结果会说明网络封锁尚未生效。管理员模式启用断网时，Windows 会阻止命令访问外部网络和本机 IPv4、IPv6 回环地址。设置应用于之后启动的命令。
 
-沙箱开启后，用 `bash`、`powershell` 或 `background_job` 执行命令。如果 Git Bash 报告无法创建信号管道，可以使用 `powershell`，或给 `background_job` 指定 `shell: "powershell"`。Agent 可以继续读取共享终端的内容。共享终端里的交互输入由用户操作。
+沙箱开启后，用 `bash`、`powershell` 或 `background_job` 执行命令。首次执行沙箱 Bash 时，Umeko 下载并校验兼容组件，随后复用本机缓存。沙箱 PowerShell 和内置搜索可独立运行。Agent 可以继续读取共享终端的内容。共享终端里的交互输入由用户操作。
+
+普通 Bash 可在「设置 → Agent → Umeko Desktop → Bash 工具」选择 Git for Windows。开启后，路径留空会搜索 PATH 和常见安装位置，也可以填写 Git for Windows 的 `bash.exe` 完整路径。

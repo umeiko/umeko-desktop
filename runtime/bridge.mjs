@@ -16,7 +16,7 @@ import { configureCoworkSubagents, coworkSubagentFromPrompt, coworkSubagentResou
 import { createInputQueue, createModelRoles } from "./input-queue.mjs";
 import { createRecentImagesExtension } from "./recent-images.mjs";
 import { createBackgroundJobsExtension } from "./background-jobs.mjs";
-import { createSandboxPreparation, prepareSandboxSearch, resolveLocalBash, sandboxCommand, windowsShellHints } from "./windows-sandbox.mjs";
+import { createSandboxPreparation, ordinaryGitBash, prepareSandboxSearch, resolveLocalBash, sandboxCommand, windowsShellHints } from "./windows-sandbox.mjs";
 import { createWindowsSandboxMcp } from "./windows-sandbox-mcp.mjs";
 import { blockedShellEnvKey, createShellSnapshots } from "./shell-snapshot.mjs";
 import { createRemoteEnvironments } from "./remote-environments.mjs";
@@ -89,11 +89,18 @@ const remoteToolsApi = {
 };
 const { getShellConfig, getPowerShellConfig } = await import(new URL("./utils/shell.js", entry));
 const bundledNodeDir = fileURLToPath(new URL(process.platform === "win32" ? "../../node" : "../../node/bin", import.meta.url));
-const shellSnapshots = createShellSnapshots({ getShellConfig, getPowerShellConfig,
+const shellSnapshots = createShellSnapshots({ getPowerShellConfig,
+  getShellConfig(shellPath) {
+    if (windowsSandbox?.enabled) {
+      const root = windowsSandbox.gitRoot;
+      return root ? getShellConfig(join(root, "usr", "bin", "bash.exe")) : null;
+    }
+    return ordinaryGitBash(windowsSandbox, getShellConfig) || getShellConfig(shellPath);
+  },
   bundledBin: existsSync(bundledBin) ? bundledBin : undefined,
   bundledNodeDir: existsSync(bundledNodeDir) ? bundledNodeDir : undefined,
   async prepareCapture(command) {
-    const { policy } = await waitForWindowsSandbox();
+    const { policy } = await waitForWindowsSandbox(undefined, { file: command.file });
     if (!policy?.enabled) return command;
     const workspace = config?.workspace || config?.defaultCwd;
     return { ...sandboxCommand({ ...command, cwd: workspace, workspace, policy }), cwd: workspace };
@@ -127,14 +134,12 @@ const sandboxPreparation = createSandboxPreparation({
   request: () => emit({ type: "windows_sandbox_prepare" }),
   language: () => permissionPolicy.language,
 });
-const waitForWindowsSandbox = sandboxPreparation.wait;
-const bundledBashPreparation = createSandboxPreparation({
-  getPolicy: () => windowsSandbox,
-  required: policy => policy?.bundledGitBash,
-  request: () => emit({ type: "windows_sandbox_prepare", bundledBash: true }),
-});
+function waitForWindowsSandbox(signal, options) {
+  if (/(?:^|[\\/])bash(?:\.exe)?$/i.test(options?.file || "")) return sandboxPreparation.wait(signal, options);
+  return { policy: windowsSandbox };
+}
 const getBashConfig = (shellPath, signal) => resolveLocalBash({ shellPath, getShellConfig, policy: windowsSandbox,
-  prepareBundle: bundledBashPreparation.wait, signal });
+  prepareBundle: sandboxPreparation.wait, signal });
 if (process.platform === "win32") {
   globalThis[Symbol.for("umeko:bash-config")] = getBashConfig;
   globalThis[Symbol.for("umeko:shell-hints")] = name => " " + windowsShellHints(name);
@@ -144,7 +149,7 @@ function createBridgeSandboxMcp(loadConfig) {
     createExtension: Pi.createMcpExtension,
     createTransport: createDefaultTransport,
     async prepareTransport(server, work, auth, signal) {
-      const { policy } = await waitForWindowsSandbox(signal);
+      const { policy } = await waitForWindowsSandbox(signal, { file: server.config.command });
       if (policy?.enabled) {
         const expandHome = value => /^~(?:[\\/]|$)/.test(value) ? join(homedir(), value.slice(2)) : value;
         const { command, args = [], cwd: directory = '.' } = server.config;
@@ -167,7 +172,7 @@ const sandboxMcp = createBridgeSandboxMcp(ctx => {
 const sandboxMcpAdapters = new Set([sandboxMcp]);
 
 async function prepareCoworkCommand({ file, args, cwd }, signal) {
-  const { policy } = await waitForWindowsSandbox(signal);
+  const { policy } = await waitForWindowsSandbox(signal, { file });
   if (!policy?.enabled) return { file, args };
   return { ...sandboxCommand({ file, args, cwd, workspace: cwd, policy }), cwd };
 }
@@ -1264,9 +1269,8 @@ async function execute(input) {
   if (input.type === "windows_sandbox") {
     const previous = windowsSandbox;
     windowsSandbox = input.policy;
-    bundledBashPreparation.changed();
     sandboxPreparation.changed();
-    if (["enabled", "allowNetwork", "elevated", "gitRoot"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
+    if (["enabled", "allowNetwork", "elevated", "gitRoot", "preferGitBash", "ordinaryBash"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
       shellSnapshots.invalidate();
     }
     if (["enabled", "allowNetwork", "elevated"].some(key => previous?.[key] !== windowsSandbox?.[key])) {
@@ -1427,7 +1431,6 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   sandboxPreparation.close();
-  bundledBashPreparation.close();
   loopReview.clear();
   umekoControl.clear();
   remoteEnvironments.dispose();

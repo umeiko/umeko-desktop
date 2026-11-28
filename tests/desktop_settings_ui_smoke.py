@@ -94,6 +94,16 @@ try:
         configure.assert_called_once_with(launcher)
         assert window.property('notification') == '已配置 CLI 到 PATH，请关闭并重新打开终端。'
     window.grabWindow().save(str(output/'cli-path.png'))
+    if sys.platform == 'win32':
+        assert find('desktopGitBashSettings').isVisible()
+        find('preferGitBash').setProperty('checked', True)
+        git_path = 'C:/Tools/Git/bin/bash.exe'
+        find('gitBashPath').setProperty('text', git_path)
+        with patch('app.git_for_windows.find_git_bash', return_value=git_path):
+            find('saveGitBashSettings').clicked.emit()
+        desktop = Store(store.directory).data['desktop']
+        assert desktop['preferGitBash'] and desktop['gitBashPath'] == git_path
+        assert backend.saveDesktopSettings(json.dumps({'preferGitBash': False, 'gitBashPath': ''}))
     assert not find('desktopAutoOpenSubmissions').property('checked')
     assert not find('desktopCoworkEnabled').property('checked')
     assert not find('openCoworkButton').isVisible()

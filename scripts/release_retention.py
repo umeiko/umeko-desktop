@@ -47,7 +47,7 @@ def prune_releases(repo, tag, api, gh):
             print("Old patch cleanup deferred until both native editions are published", flush=True)
             return []
     else:
-        assert len(current["assets"]) in (14, 15, 19)
+        assert len(current["assets"]) in (14, 15, 16, 19, 21)
     retained_intel = latest_intel_release(releases) if not repo.endswith("-cpp") else None
     removed = []
     for release in obsolete_patches(releases, tag):

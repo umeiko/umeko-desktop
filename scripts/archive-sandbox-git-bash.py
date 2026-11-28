@@ -4,6 +4,8 @@ See git-for-windows/build-extra/portable/release.sh and make-file-list.sh
 at f48a694d for solid compression and the noninteractive package exclusions.
 """
 from fnmatch import fnmatchcase
+import hashlib
+import json
 import lzma
 from pathlib import Path
 import shutil
@@ -13,7 +15,7 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from app.sandbox_git_bash import ARCHIVE_NAME, REQUIRED_FILES
+from app.sandbox_git_bash import ARCHIVE_NAME, COMPONENT_MANIFEST, REQUIRED_FILES, VERSION
 
 UNATTENDED_EXCLUSIONS = (
     "git-bash.exe", "git-cmd.exe", "cmd/git-gui.exe", "cmd/gitk.exe",
@@ -34,6 +36,21 @@ def included(name):
     return not any(fnmatchcase(name, pattern) for pattern in UNATTENDED_EXCLUSIONS)
 
 
+def stage_component(archive, output):
+    with archive.open("rb") as source:
+        sha256 = hashlib.file_digest(source, "sha256").hexdigest()
+    name = f"{VERSION}-{sha256[:12]}.tar.xz"
+    asset = output / name
+    if archive.parent == output:
+        archive.replace(asset)
+    else:
+        shutil.copy2(archive, asset)
+    manifest = {"name": name, "sha256": sha256, "size": asset.stat().st_size}
+    (output / COMPONENT_MANIFEST).write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+    (output / (name + ".sha256")).write_text(f"{sha256}  {name}\n", encoding="ascii")
+    return asset
+
+
 def main():
     bundle = ROOT / "build/sandbox-git"
     runtime_bin = ROOT / "runtime/releases/coding-1.5.2/bin"
@@ -43,17 +60,15 @@ def main():
     rg = runtime_bin / "rg.exe"
     if not rg.is_file():
         raise RuntimeError("Prepare the pinned ripgrep executable before archiving Git Bash")
-    output = runtime_bin / "windows-sandbox"
+    runtime_sandbox = runtime_bin / "windows-sandbox"
+    output = ROOT / "build/sandbox-git-component"
     output.mkdir(parents=True, exist_ok=True)
-    legacy = output / "git"
+    legacy = runtime_sandbox / "git"
     if legacy.is_symlink() or legacy.is_junction():
         raise RuntimeError("The old sandbox Git bundle must be an ordinary directory")
     if legacy.is_dir():
         shutil.rmtree(legacy)
     archive = output / ARCHIVE_NAME
-    for prior in output.glob("git-bash-*.tar.xz"):
-        if prior != archive:
-            prior.unlink()
     temporary = archive.with_suffix(".tmp")
     # Group similar file types, as the upstream solid 7-Zip build does.
     entries = sorted(bundle.rglob("*"), key=lambda path: (path.suffix.lower(), path.as_posix().lower()))
@@ -74,7 +89,8 @@ def main():
         temporary.replace(archive)
     finally:
         temporary.unlink(missing_ok=True)
-    print(f"{archive.name}: {archive.stat().st_size:,} bytes", flush=True)
+    asset = stage_component(archive, output)
+    print(f"{asset.name}: {asset.stat().st_size:,} bytes", flush=True)
 
 
 if __name__ == "__main__":

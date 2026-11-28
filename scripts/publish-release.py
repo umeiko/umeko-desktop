@@ -9,6 +9,7 @@ import subprocess
 import time
 from release_downloads import release_notes, refresh_readmes
 from release_platforms import ALL_PLATFORMS, asset_count, select_platforms, require_verified_jobs
+from preview_release import checked_git_bash
 
 REPO=os.environ['GITHUB_REPOSITORY']
 RUN=os.environ['RELEASE_BUILD_RUN']
@@ -38,7 +39,7 @@ publish.mkdir(parents=True,exist_ok=True)
 artifact_names = ['Umeko-'+target for target in sorted(platforms)] + ['Umeko-provider-development']
 download_args = [arg for name in artifact_names for arg in ('--name', name)]
 gh('run','download',RUN,'--repo',REPO,'--dir',incoming,*download_args)
-seen=set();sizes=[]
+seen=set();sizes=[];git_bash_assets=0
 for metadata in incoming.rglob('build.json'):
     report=json.loads(metadata.read_text(encoding='utf-8'))
     target=report['platform'];assert target in ALL_PLATFORMS
@@ -58,6 +59,10 @@ for metadata in incoming.rglob('build.json'):
     assert digest==report['sha256'] and checksum.read_text().split()[0]==digest
     shutil.copy2(metadata,publish/('Umeko-'+TAG+'-'+target+'.json'))
     for file in [archive,checksum]:shutil.copy2(file,publish/file.name)
+    component_files = checked_git_bash(metadata.parent, report)
+    for file in component_files:
+        shutil.copy2(file, publish/file.name)
+    git_bash_assets += len(component_files)
     sizes.append((target,archive.stat().st_size))
     if target.startswith('macos-'):
         image = report['diskImage']
@@ -73,7 +78,7 @@ for name in ['umeko-provider-sdk-0.2.1.zip','develop-umeko-provider.zip']:
     matches=list(incoming.rglob(name));assert len(matches)==1
     shutil.copy2(matches[0],publish/name)
 files=sorted(publish.iterdir(),key=lambda p:p.name.casefold())
-assert len(files)==asset_count(platforms)-1
+assert len(files)==asset_count(platforms)-1+git_bash_assets
 (publish/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='ascii',newline='\n')
 files=sorted(publish.iterdir(),key=lambda p:p.stat().st_size)
 releases=api('releases')
