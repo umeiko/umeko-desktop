@@ -25,11 +25,11 @@
 
 <!-- umeko-downloads:standard:start -->
 
-**下载 v0.7.13 · 点击下载**
+**下载 v0.7.14 · 点击下载**
 
-[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.13/Umeko-0.7.13-windows-x64-dd9b32f.zip)
-[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.13/Umeko-0.7.13-macos-arm64-dd9b32f.dmg)
-[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.13/Umeko-0.7.13-linux-x64-dd9b32f.tar.gz)
+[![Windows x64 ZIP](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/windows.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.14/Umeko-0.7.14-windows-x64-5c329de.zip)
+[![macOS Apple Silicon DMG](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/macos-arm64.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.14/Umeko-0.7.14-macos-arm64-5c329de.dmg)
+[![Linux x64 TAR.GZ](https://raw.githubusercontent.com/umeiko/umeko-desktop/main/docs/downloads/linux.svg)](https://github.com/umeiko/umeko-desktop/releases/download/v0.7.14/Umeko-0.7.14-linux-x64-5c329de.tar.gz)
 
 <!-- umeko-downloads:standard:end -->
 
