@@ -12,6 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
 from .npm_config import npm_overrides
+from .subagent_admission import SubagentAdmission
 
 
 def clean_blocked_tools(value):
@@ -145,6 +146,8 @@ class PiSessionPool(QObject):
         self.retiring = set()
         self.closing = False
         self.catalog_requests = {}
+        self.subagent_admission = SubagentAdmission(self._send_admission)
+        self._admission_broken = set()
 
     def query_catalog(self, record, kind, callback, **arguments):
         """Read the owning live Pi without changing its turn, model or busy state."""
@@ -193,11 +196,33 @@ class PiSessionPool(QObject):
         if record.process:
             record.process.write((json.dumps(payload, ensure_ascii=False) + "\n").encode())
 
+    def _send_admission(self, process, payload):
+        if process in self._admission_broken or process.state() == QProcess.NotRunning:
+            return False
+        data = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
+        if process.write(data) != len(data):
+            self._break_admission(process)
+        # An attempted grant may have reached the worker. Hold its lease until
+        # finished, even when a buffered or partial write fails.
+        return True
+
+    def _break_admission(self, process):
+        if process in self._admission_broken or process.state() == QProcess.NotRunning:
+            return
+        self._admission_broken.add(process)
+        self.subagent_admission.remove_waiters(process, notify=False)
+        # Defer the kill to avoid reentering the broker during a reply.
+        def stop():
+            if process in self._admission_broken and process.state() != QProcess.NotRunning:
+                process.kill()
+        QTimer.singleShot(0, stop)
+
     def start(self, record, program, bridge, payload):
         from .windows_job import manage_qprocess
         process = manage_qprocess(QProcess(self))
         record.process, record.buffer, record.ready = process, b"", False
         record.crashed = False
+        payload = {**payload, "desktopSubagentAdmission": True}
         environment = QProcessEnvironment.systemEnvironment()
         for key in environment.keys():
             if key.upper() in ("NODE_OPTIONS", "NODE_PATH") or key.upper().endswith(("API_KEY", "ACCESS_TOKEN", "_AK", "_SK", "_SECRET_KEY", "_SECURITY_TOKEN")):
@@ -237,11 +262,18 @@ class PiSessionPool(QObject):
                 continue
             if event.get('type') == 'widget_catalog':
                 self._catalog_reply(record, event)
+            elif event.get('type') == 'subagent_admission':
+                if process not in self._admission_broken:
+                    self.subagent_admission.event(process, event)
             else:
                 self.event.emit(record, event)
 
     def _error(self, record, process, error):
+        if error == QProcess.WriteError:
+            self._break_admission(process)
         if record.process is process and error == QProcess.FailedToStart:
+            self.subagent_admission.owner_exited(process)
+            self._admission_broken.discard(process)
             record.process = None
             record.crashed = True
             self.event.emit(record, {"type": "exit", "message": "Pi 内核启动失败，请检查 Node.js 和内核设置"})
@@ -255,6 +287,8 @@ class PiSessionPool(QObject):
             if not self.closing:
                 record.crashed = True
                 self.event.emit(record, {"type": "exit"})
+        self.subagent_admission.owner_exited(process)
+        self._admission_broken.discard(process)
         self.retiring.discard(process)
         process.deleteLater()
 
@@ -267,6 +301,7 @@ class PiSessionPool(QObject):
         if not process:
             return
         self._cancel_catalogs(record)
+        self.subagent_admission.remove_waiters(process)
         self.write(record, {"type": "shutdown"})
         record.process, record.ready, record.stale = None, False, False
         self.retiring.add(process)
@@ -338,6 +373,7 @@ class PiSessionPool(QObject):
         if self.closing:
             return
         self.closing = True
+        self.subagent_admission.close()
         for record in self.records.values():
             self._cancel_catalogs(record)
         processes = set(self.retiring)

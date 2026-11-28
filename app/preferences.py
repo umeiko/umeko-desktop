@@ -140,6 +140,10 @@ class PreferencesMixin:
             self._remote_workspace_tools_changed()
         if sys.platform == 'win32' and any(value[key] != old[key] for key in ('preferGitBash', 'gitBashPath')):
             self.windowsSandbox.publish()
+        if (pool := getattr(self, '_pool', None)):
+            limit = self.desktopSettings['subagentConcurrency']
+            if pool.subagent_admission.limit != limit:
+                pool.subagent_admission.set_limit(limit)
         self.desktopSettingsChanged.emit()
         if old['webDisplay'] != value['webDisplay'] and value['webDisplay'] == 'embedded' and configuration().get('disabled'):
             self.toast.emit('重启 Umeko 后可使用内置网页预览')

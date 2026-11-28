@@ -12,12 +12,14 @@ Item {
     property url replyPortrait: ""
     property int roleSlot: -1
     property bool active: visible
+    property var turnStatusOverride: null
     property alias view: chat.view
     property alias selection: chat.selection
     ConversationPane {
         id: chat
         anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
         controller: root.controller
+        turnStatusOverride: root.turnStatusOverride
         viewKey: root.controller ? root.controller.viewKey : ""
         viewName: root.viewName; messagePrefix: root.messagePrefix
         assistantName: root.assistantName; portrait: root.portrait; replyPortrait: root.replyPortrait

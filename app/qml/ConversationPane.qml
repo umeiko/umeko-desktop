@@ -26,6 +26,7 @@ Item {
     property bool running: false
     property string toolStatus: ""
     property var turnStatus: ({})
+    property var turnStatusOverride: null
     property alias view: conversation
     property alias selection: chatSelection
     // While a newly activated pane positions its rows it stays transparent
@@ -1078,7 +1079,7 @@ Item {
                 objectName: pane.current ? "turnStatus" : ""
                 x: 33
                 y: 8
-                status: pane.turnStatus
+                status: pane.turnStatusOverride === null ? pane.turnStatus : pane.turnStatusOverride
             }
         }
         delegate: Item {
@@ -1127,19 +1128,24 @@ Item {
                 return true;
             }
             function applyHeight(value, expanded) {
-                if (!(value > 0) || pane.released)
+                if (!(value > 0) || !pane || pane.released || !pane.messageModel)
                     return;
+                const model = pane.messageModel;
+                const row = index;
                 if (shown && y < conversation.contentY && !conversation.followTail
                         && Math.abs(value - measuredHeight) > 0.5)
                     conversation.keepAnchor(() => { measuredHeight = value; });
                 else
                     measuredHeight = value;
+                // Relayout can synchronously detach this delegate or move it to another row.
+                if (!pane || pane.released || pane.messageModel !== model || !rowShell || rowShell.index !== row)
+                    return;
                 // Expanded blocks are still expanded while their pane is
                 // retained. A rebuilt delegate starts collapsed.
                 if (expanded)
-                    pane.messageModel.invalidateHeight(index);
+                    model.invalidateHeight(row);
                 else
-                    pane.messageModel.recordHeight(index, value);
+                    model.recordHeight(row, value);
             }
             readonly property bool bodyLoaded: (laidOut && bodyLoader.item !== null && bodyLoader.status === Loader.Ready) || !!modelData._loadError
             readonly property bool bodyReady: shown && bodyLoader.item !== null && bodyLoader.status === Loader.Ready

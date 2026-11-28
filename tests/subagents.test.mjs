@@ -242,3 +242,16 @@ test("community child uses Umeko settings and native retry without changing save
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("terminal failure channel preserves a native queued or running stop", () => {
+  const event = {id: "stop-demo"};
+  const previous = subagentTool(undefined, "created", event);
+  for (const status of ["stopped", "aborted"]) {
+    const row = subagentTool(previous, "failed", event, {status});
+    assert.equal(row.subagent.status, status);
+    assert.equal(row.state, "interrupted");
+  }
+  const genuine = subagentTool(previous, "failed", {...event, error: "Provider failed"});
+  assert.equal(genuine.state, "error");
+  assert.equal(genuine.result, "Provider failed");
+});

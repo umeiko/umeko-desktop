@@ -29,6 +29,7 @@ runtime_files = (
     'tool-permissions.mjs',
     'apply-patch.mjs',
     'subagents.mjs',
+    'subagent-admission.mjs',
     'subagent-sdk.mjs',
     'subagent-settings.mjs',
     'rpc-ui.mjs',

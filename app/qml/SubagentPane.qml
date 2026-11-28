@@ -47,6 +47,7 @@ Rectangle {
         anchors.top: header.bottom; anchors.topMargin: 18; anchors.bottom: activity.top; anchors.bottomMargin: 12
         anchors.left: parent.left; anchors.right: parent.right
         controller: backend.subagents.conversation
+        turnStatusOverride: root.agent.status === "queued" ? ({state: ""}) : root.agent.status === "stopped" || root.agent.status === "aborted" ? ({state: "stopped"}) : null
         viewName: "subagentConversation"; messagePrefix: "subagent"
         assistantName: root.agent.name || I18n.t("子代理")
         roleSlot: root.roleSlot
@@ -62,8 +63,8 @@ Rectangle {
         }
     }
     Text { font.family: Theme.fontFamily;
-        id: activity; x: 20; width: Math.max(0,parent.width-40); anchors.bottom: queued.top; anchors.bottomMargin: 10
-        text: root.running ? (root.agent.activity || I18n.t("正在工作")) + " · " + I18n.t("调用工具 %1 次").replace("%1",root.agent.toolUses || 0) : root.contextState.truncated ? I18n.t("当前显示最近的对话内容") : ""
+        id: activity; objectName: "subagentAdmissionActivity"; x: 20; width: Math.max(0,parent.width-40); anchors.bottom: queued.top; anchors.bottomMargin: 10
+        text: root.agent.status === "queued" ? I18n.t(root.agent.activity || "排队中") : root.running ? (root.agent.activity || I18n.t("正在工作")) + " · " + I18n.t("调用工具 %1 次").replace("%1",root.agent.toolUses || 0) : root.contextState.truncated ? I18n.t("当前显示最近的对话内容") : ""
         textFormat: Text.PlainText; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; color: Theme.muted; font.pixelSize: Theme.font(10, visible)
     }
     QueuedMessages {

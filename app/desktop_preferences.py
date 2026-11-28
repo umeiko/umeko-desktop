@@ -4,14 +4,17 @@ import os
 import sys
 from pathlib import Path
 from .platform_support import data_directory, legacy_data_directory
+from .subagent_admission import valid_subagent_limit
 
 DEFAULTS = {'autoOpenSubmissions': True, 'webDisplay': 'embedded', 'chatWidthHints': True,
             'coworkEnabled': False, 'teamCollaborationEnabled': False, 'remoteWorkspaceEnabled': False,
-            'disableDxgiVblankThread': False, 'preferGitBash': False, 'gitBashPath': ''}
+            'disableDxgiVblankThread': False, 'preferGitBash': False, 'gitBashPath': '',
+            'subagentConcurrency': None}
 
 
 def normalize(value):
     value = value if isinstance(value, dict) else {}
+    limit = value.get('subagentConcurrency')
     return {'autoOpenSubmissions': value.get('autoOpenSubmissions') if type(value.get('autoOpenSubmissions')) is bool else True,
             'webDisplay': value.get('webDisplay') if value.get('webDisplay') in ('embedded', 'external') else 'embedded',
             'chatWidthHints': value.get('chatWidthHints') if type(value.get('chatWidthHints')) is bool else True,
@@ -20,7 +23,8 @@ def normalize(value):
             'remoteWorkspaceEnabled': value.get('remoteWorkspaceEnabled') is True,
             'disableDxgiVblankThread': value.get('disableDxgiVblankThread') is True,
             'preferGitBash': value.get('preferGitBash') is True,
-            'gitBashPath': value['gitBashPath'].strip() if isinstance(value.get('gitBashPath'), str) else ''}
+            'gitBashPath': value['gitBashPath'].strip() if isinstance(value.get('gitBashPath'), str) else '',
+            'subagentConcurrency': limit if valid_subagent_limit(limit) else None}
 
 
 def validate_patch(value):
@@ -37,6 +41,8 @@ def validate_patch(value):
         raise ValueError('webDisplay must be embedded or external')
     if 'gitBashPath' in value and (not isinstance(value['gitBashPath'], str) or '\0' in value['gitBashPath']):
         raise ValueError('Invalid Git Bash path')
+    if 'subagentConcurrency' in value and not valid_subagent_limit(value['subagentConcurrency']):
+        raise ValueError('子智能体并发上限须为可精确表示的正整数，或设为不限 / Subagent concurrency must be a positive safe integer or unlimited')
     return value
 
 

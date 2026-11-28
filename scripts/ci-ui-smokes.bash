@@ -82,6 +82,7 @@ smokes=(
   tests/subagent_reaction_ui_smoke.py
   tests/viewport_cache_ui_smoke.py
   tests/subagent_queue_ui_smoke.py
+  tests/local_subagent_admission_ui_smoke.py
   tests/preview_resize_ui_smoke.py
   tests/api_proxy_layout_ui_smoke.py
   tests/large_chat_ui_smoke.py
