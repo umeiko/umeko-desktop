@@ -207,6 +207,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
     approvalRequested = Signal(object)
     approvalChanged = Signal()
     attachmentsChanged = Signal()
+    selectionQuoteChanged = Signal()
     contextUsageChanged = Signal()
     reasoningChanged = Signal()
     reasoningDetectionChanged = Signal()
@@ -363,6 +364,7 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         self._transcript_warmup = None
         self._copy_request = 0
         self._selection_attachment = None
+        self._selection_quote = None
         self._selection_epoch = 0
         self.viewChanged.connect(self._invalidate_selection_attachment)
         self._session_preview = SessionPreview(self)
@@ -903,6 +905,70 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
         elif not result['ok'] and valid:
             self.toast.emit('无法附加所选内容：' + result['value'])
         self.attachmentsChanged.emit()
+
+    @Property(bool, notify=selectionQuoteChanged)
+    def selectionQuoteBusy(self):
+        return self._selection_quote is not None
+
+    def _insert_chat_quote(self, text):
+        from .selection_quote import QuoteTooLong, append_quote
+        try:
+            draft = append_quote(self._view.draft, text)
+        except QuoteTooLong:
+            self.toast.emit('所选内容过长，请改用“附加到聊天”')
+            return False
+        if draft == self._view.draft:
+            return False
+        self._view.draft = draft
+        self.editorText.emit(draft)
+        return True
+
+    @Slot(str)
+    def quoteChatSelection(self, raw):
+        if self._selection_quote is not None:
+            return
+        try:
+            selection = json.loads(raw)
+            for point in (selection['anchor'], selection['cursor']):
+                if not all(isinstance(point[key], int) for key in ('row', 'block', 'offset')):
+                    return
+        except (ValueError, KeyError, TypeError):
+            return
+        from .chat_copy import SelectionTooLong, selected_text
+        from .selection_quote import QUOTE_MAX_CHARS
+        model = self._chat_model
+        snapshot, overlay = model.snapshot, copy.deepcopy(model.rows)
+        context = (self._view, self._selection_epoch)
+        self._selection_quote = context
+        self.selectionQuoteChanged.emit()
+        script_path = self.root / 'app/qml/markdown.js'
+        def prepare():
+            try:
+                return {'text': selected_text(script_path.read_text(encoding='utf-8'), snapshot, overlay,
+                                              selection['anchor'], selection['cursor'],
+                                              selection.get('expanded', {}), limit=QUOTE_MAX_CHARS)}
+            except SelectionTooLong:
+                return {'tooLong': True}
+        self._job('quote-chat-selection', prepare)
+
+    def _selection_quote_ready(self, result):
+        context, self._selection_quote = self._selection_quote, None
+        try:
+            if context is None:
+                return
+            record, epoch = context
+            if record is not self._view or epoch != self._selection_epoch:
+                return
+            if result['ok']:
+                value = result['value']
+                if value.get('tooLong'):
+                    self.toast.emit('所选内容过长，请改用“附加到聊天”')
+                else:
+                    self._insert_chat_quote(value['text'])
+            else:
+                self.toast.emit('暂时无法引用所选内容，请重新选择后再试')
+        finally:
+            self.selectionQuoteChanged.emit()
 
     def _copy_chat(self, job):
         self._copy_request += 1
@@ -3029,6 +3095,8 @@ class Controller(ImageProvidersMixin, AuxiliaryVisionMixin, CharactersMixin, Com
             return
         if name == 'attach-chat-selection':
             return self._selection_attachment_ready(result)
+        if name == 'quote-chat-selection':
+            return self._selection_quote_ready(result)
         if name == 'discard-selection-attachment':
             return
         if name.startswith('copy-chat:'):

@@ -75,7 +75,7 @@ Pi can deliver images and compact file cards directly with [`submit_to_chatbox`]
 
 On wide windows, hover either blank side margin to reveal a Yanami control and expand or collapse that side. When a model reports an output-length limit, Umeko continues the reply automatically up to five times and keeps completed tools and code blocks together.
 
-Selecting a chat shows a Yanami loading cover while its history loads in the background; when you switch quickly, Umeko opens the last chat you picked. Selected chat text offers a Copy / Select all context menu.
+Selecting a chat shows a Yanami loading cover while its history loads in the background; when you switch quickly, Umeko opens the last chat you picked. Selected chat text offers a Copy / Quote / Attach to chat / Select all context menu; Quote inserts the passage into the composer as a Markdown quote.
 
 Refresh provider-reported context windows in model settings. Click the context-usage circle to compact an idle conversation; automatic compaction follows Pi's own policy. Each compaction appears as a collapsible history event. See [context windows and compaction](docs/context-compaction.md).
 

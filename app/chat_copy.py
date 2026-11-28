@@ -7,7 +7,11 @@ from PySide6.QtQml import QJSEngine
 from .transcript_index import connect, StaleIndex
 
 
-def selected_text(script, snapshot, overlay, anchor, cursor, expanded):
+class SelectionTooLong(Exception):
+    """Raised when a bounded extraction exceeds its character budget."""
+
+
+def selected_text(script, snapshot, overlay, anchor, cursor, expanded, limit=None):
     def order(value):
         return value['row'], value['block'], value['offset']
     start, end = sorted((anchor, cursor), key=order)
@@ -16,7 +20,21 @@ def selected_text(script, snapshot, overlay, anchor, cursor, expanded):
     if result.isError():
         raise RuntimeError(result.toString())
     document, pieces = QTextDocument(), []
+    total = 0
     base = snapshot.count if snapshot else 0
+
+    def add(piece, joined=False):
+        nonlocal total
+        if joined and pieces:
+            total += len(piece)
+        else:
+            total += len(piece) + (2 if pieces else 0)
+        if limit is not None and total > limit:
+            raise SelectionTooLong()
+        if joined and pieces:
+            pieces[-1] += piece
+        else:
+            pieces.append(piece)
 
     def append(row, message):
         expression = 'selectionSegments(' + json.dumps(message) + ',' + str(row) + ',' + json.dumps(expanded) + ')'
@@ -43,9 +61,10 @@ def selected_text(script, snapshot, overlay, anchor, cursor, expanded):
                 if selected.startswith(prefix):
                     selected = selected[len(prefix):]
             if segment.get('copyJoin') and pieces:
-                pieces[-1] += ('' if segment['copyJoin'] == 'direct' or pieces[-1].endswith('\n') else '\n') + selected
+                prefix = '' if segment['copyJoin'] == 'direct' or pieces[-1].endswith('\n') else '\n'
+                add(prefix + selected, True)
             else:
-                pieces.append(selected)
+                add(selected)
 
     if snapshot and start['row'] < base:
         # One read transaction gives the copy a consistent branch while Pi can

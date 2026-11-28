@@ -210,6 +210,11 @@ Item {
         if (hasSelection && dataSource === backend)
             backend.attachChatSelection(JSON.stringify({anchor:anchor, cursor:cursor, expanded:expandedDetails}))
     }
+    function quoteToChat() {
+        if (!hasSelection || dataSource !== backend || backend.selectionQuoteBusy) return
+        backend.quoteChatSelection(JSON.stringify({anchor:anchor, cursor:cursor, expanded:expandedDetails}))
+        clear()
+    }
     function selectAll() {
         const count = dataSource.messageCount
         if (!count) return
@@ -240,9 +245,10 @@ Item {
     FloatingMenu {
         id: selectionMenu; objectName: "selectionContextMenu"
         ContextAction { objectName: "copySelectedText"; text: I18n.t("复制"); glyph: "copy"; enabled: root.hasSelection; onTriggered: root.copy() }
+        ContextAction { objectName: "quoteSelectedText"; text: I18n.t("引用"); glyph: "quote"; visible: root.dataSource === backend; enabled: root.hasSelection && !backend.selectionQuoteBusy; onTriggered: root.quoteToChat() }
         ContextAction { objectName: "attachSelectedText"; text: I18n.t("附加到聊天"); glyph: "plus"; visible: root.dataSource === backend; enabled: root.hasSelection && !backend.selectionAttachmentBusy; onTriggered: root.attachToChat() }
         ContextAction { objectName: "selectAllChatText"; text: I18n.t("全选"); onTriggered: root.selectAll() }
-        onClosed: if (root.visible) root.forceActiveFocus()
+        onClosed: if (root.visible && root.hasSelection) root.forceActiveFocus()
     }
     MouseArea {
         id: selectionArea
