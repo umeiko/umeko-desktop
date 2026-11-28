@@ -17,6 +17,7 @@ from .agent_worktrees import (GitWorktrees, WorktreeConflict, WorktreeError,
                               paths_overlap, worktree_display)
 from .team_board import TeamBoard
 from .group_chat import GroupChat
+from .im_widget_channel import ImWidgetChannel
 
 TERMINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
 NATIVE_TOOLS = ('read', 'bash', 'powershell', 'edit', 'write', 'grep', 'find', 'ls')
@@ -41,6 +42,7 @@ class GlobalAgents(QObject):
         self.merging = set()
         self.team_board = TeamBoard(self)
         self.group_chat = GroupChat(self)
+        self.im_channel = ImWidgetChannel(self)
         self.creation_requests = {}
         self.skill_jobs = {}
         self.busy_since = {}
@@ -127,6 +129,7 @@ class GlobalAgents(QObject):
     def start(self): self.active = True; self.timer.start(); self.changed(persist=False)
     def stop(self):
         self.active = False; self.timer.stop()
+        self.im_channel.stop()
         for row in self.creation_requests.values():
             if row['status']=='awaiting_approval':row['status']='cancelled'
         for identifier in list(self.records): self.halt(identifier)
@@ -526,6 +529,8 @@ class GlobalAgents(QObject):
             if approval.get('method')=='select' and value is not None and value not in approval.get('options',[]): raise ValueError('请选择提供的选项')
             self.b._pool.write(record,{'type':'ui_response','id':approval['id'],'value':value}); record.approval={}; self.changed(); return {'status':'answered'}
         if method=='send':
+            if self.im_channel.owns(self.member_sessions.get(identifier) or self.records.get(identifier)):
+                raise ValueError('外部群聊回合正在运行，请等它完成后再发消息。')
             if self.agents[identifier].get('quotaPaused'):
                 raise ValueError('模型额度不足，请切换模型后继续')
             text=self.text(args,'text',16000)
@@ -539,10 +544,8 @@ class GlobalAgents(QObject):
             if record.busy:
                 if not record.ready: raise ValueError('代理正在加载，请稍后发送')
                 self.b._pool.write(record,{'type':'steer','text':text}); return {'status':'queued'}
-            record.messages.append({'role':'user','text':text}); record.messages.append({'role':'assistant','text':''})
-            record.optimistic_user=True
-            if not self.b._command_pi('prompt',record,text=text): record.optimistic_user=False;record.messages=record.messages[:-2]; raise ValueError('代理启动失败，请检查模型与内核')
-            self.changed(); return {'status':'accepted'}
+            self.start_direct_turn(record, text)
+            return {'status':'accepted'}
         if method=='stop':
             self.halt(identifier)
             for row in list(self.requests.values()):
@@ -566,6 +569,22 @@ class GlobalAgents(QObject):
             # Transcript files remain recoverable on disk; deleted agents cannot be addressed.
             self.changed(); self.save(); return {'status':'deleted'}
         raise ValueError('未知全局子智能体操作')
+    def start_direct_turn(self, record, text):
+        record.messages.extend([{'role': 'user', 'text': text}, {'role': 'assistant', 'text': ''}])
+        record.optimistic_user = True
+        if not self.b._command_pi('prompt', record, text=text):
+            record.optimistic_user = False
+            del record.messages[-2:]
+            raise ValueError('代理启动失败，请检查模型与内核')
+        self.changed()
+
+    def retire_turn(self, record):
+        record.cancelled = True
+        self.b._pool.write(record, {'type': 'abort'})
+        self.b._pool.retire(record)
+        record.phase, record.tool_status, record.queue, record.approval = 'idle', '', [], {}
+        self.im_channel.interrupted(record)
+
     def halt(self, identifier):
         self.pending_models.pop(identifier, None)
         self.resume_members.discard(identifier)
@@ -574,8 +593,7 @@ class GlobalAgents(QObject):
             row.pop('quotaPaused', None)
         record=self.member_sessions.get(identifier) or self.records.get(identifier)
         if record:
-            record.cancelled=True; self.b._pool.write(record,{'type':'abort'}); self.b._pool.retire(record)
-            record.phase='idle'; record.tool_status=''; record.queue=[]; record.approval={}
+            self.retire_turn(record)
     def creation_result(self,row):
         result={'requestId':row['id'],'status':row['status'],**{key:row[key] for key in ('name','character','model','instructions')}}
         if row.get('agentId'):
@@ -1007,6 +1025,7 @@ class GlobalAgents(QObject):
                 item['data']['quote'] = group_chat['quote']
     def tick(self):
         if not self.active: return
+        self.im_channel.expire()
         now=time.time()
         for identifier in list(self.resume_members):
             self.resume_member(identifier)
@@ -1030,6 +1049,8 @@ class GlobalAgents(QObject):
                 continue
             try:
                 record=self.record(item['target'])
+                if self.im_channel.owns(record):
+                    continue
                 if record.global_agent and item['wake'] and self.agents[record.global_agent].get('quotaPaused'): continue
                 group_chat = item.get('groupChat')
                 if group_chat is None and not self.can_route(item['data']['source'],item['data']['target']):
@@ -1068,6 +1089,7 @@ class GlobalAgents(QObject):
                 self.outbox.pop(identifier,None); row=self.requests.get(item['requestId'])
                 if row and row['status'] not in TERMINAL: self.finish(row,'failed',str(error))
     def observe(self, record, event):
+        self.im_channel.observe(record, event)
         if record.id and not record.global_agent and not record.id.startswith('pending-'):
             for row in self.creation_requests.values():
                 if row.get('sourceKey')==record.key and row['source']!=self.identifier(record):row['source']=self.identifier(record);row['sourceSession']=record.id;self.changed()

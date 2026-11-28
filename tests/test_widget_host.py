@@ -73,6 +73,35 @@ class WidgetHostTests(unittest.TestCase):
         self.app.processEvents()
         return identifier
 
+    def test_im_calls_require_the_authorized_application_worker(self):
+        from app.im_widget_channel import OPERATIONS, WIDGET_ID
+
+        manager = self.manager
+        agent_list = next(name for name, action in OPERATIONS.items() if action == 'agents')
+        calls = []
+        manager.global_agents = SimpleNamespace(im_channel=SimpleNamespace(
+            request=lambda operation, arguments: calls.append((operation, arguments)) or {'agents': []}))
+        manager.entries[WIDGET_ID] = {'permissions': ['sessions.manage']}
+        manager.workers[WIDGET_ID] = {'ready': True}
+        manager.entries['a']['permissions'].append('sessions.manage')
+
+        def request(widget=WIDGET_ID, *, page=False):
+            request_id = self.host.request_for(widget, {'operation': agent_list, 'arguments': {},
+                                                       'session': {'token': 'background'}}, page=page)
+            self.app.processEvents()
+            return manager.replies[request_id]
+
+        self.assertFalse(request('a')['ok'])
+        self.assertFalse(request(page=True)['ok'])
+        with patch.object(manager, 'application', return_value=False):
+            self.assertFalse(request()['ok'])
+        manager.entries[WIDGET_ID]['permissions'] = []
+        self.assertFalse(request()['ok'])
+        self.assertEqual(calls, [])
+        manager.entries[WIDGET_ID]['permissions'] = ['sessions.manage']
+        self.assertEqual(request()['result'], {'agents': []})
+        self.assertEqual(calls, [(agent_list, {})])
+
     def test_scheduled_tasks_page_can_only_open_its_own_sessions(self):
         manager = self.manager
         widget = 'scheduled-tasks'

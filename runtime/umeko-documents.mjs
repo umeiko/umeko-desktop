@@ -1,5 +1,5 @@
 // Instance-local, on-demand documentation. Model names never enter the prompt.
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -21,6 +21,43 @@ export function modelTable(models) {
     '', '调用示例：`' + JSON.stringify({prompt:'检查实现并报告结果',model:rows[0].model}) + '`'
   ].join('\n') : '当前实例尚无可用模型。先在 Umeko 添加供应商并配置模型，再调用 umeko_desktop 的 models.list。';
 }
+
+const sharingErrors = new Set(['EPERM', 'EACCES', 'EBUSY']);
+const retrySignal = new Int32Array(new SharedArrayBuffer(4));
+
+function containsText(path, text) {
+  try {
+    return readFileSync(path, 'utf8') === text;
+  } catch (error) {
+    if (error.code !== 'ENOENT' && !sharingErrors.has(error.code)) throw error;
+    return false;
+  }
+}
+
+function writeDocument(target, name, text) {
+  const path = join(target, name);
+  if (containsText(path, text)) return;
+  const temporary = join(target, '.' + name + '.' + randomUUID() + '.tmp');
+  try {
+    writeFileSync(temporary, text, { mode: 0o600 });
+    for (const delay of [10, 20, 40, 80, 0]) {
+      try {
+        renameSync(temporary, path);
+        return;
+      } catch (error) {
+        // Other Pi processes share these docs. Windows can refuse replacement
+        // while a sibling is reading or replacing the same destination.
+        if (!sharingErrors.has(error.code)) throw error;
+        if (containsText(path, text)) return;
+        if (!delay) throw error;
+        Atomics.wait(retrySignal, 0, 0, delay);
+      }
+    }
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
 export function prepareDocumentation({ directory, models = [] }) {
   const target = resolve(directory);
   if (target === resolve(bundled)) throw new Error('Generated docs must use the current user profile');
@@ -28,9 +65,7 @@ export function prepareDocumentation({ directory, models = [] }) {
   for (const name of readdirSync(bundled).filter(name => name.endsWith('.md'))) {
     let text = readFileSync(join(bundled, name), 'utf8');
     if (name === 'delegate-subagents.md') text = text.replace('<!-- UMEKO_AVAILABLE_MODELS -->', modelTable(models));
-    const temporary = join(target, '.' + name + '.' + randomUUID() + '.tmp');
-    writeFileSync(temporary, text, { mode: 0o600 });
-    renameSync(temporary, join(target, name));
+    writeDocument(target, name, text);
   }
   return { docsRoot: target, entry: join(target, 'README.md') };
 }
