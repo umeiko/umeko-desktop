@@ -1,7 +1,9 @@
 """Exercise the workspace group with real QML and Pi against a loopback model."""
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import sqlite3
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -16,7 +18,7 @@ if not PREVIEW:
     os.environ.setdefault('QT_QUICK_BACKEND', 'software')
 os.environ['UMEKO_LANGUAGE'] = 'zh'
 
-from PySide6.QtCore import QObject, Qt
+from PySide6.QtCore import QObject, QTimer, Qt, QUrl
 from PySide6.QtTest import QTest
 from app.storage import Store
 from main import create_application
@@ -180,7 +182,13 @@ def run(folder):
         # Direct a single turn at the first session. The member row carries
         # the same stable ID used by the visible mention picker.
         find('workspaceGroupChat').setProperty('recipient', 'agent:' + first)
-        click('groupChatSend')
+        # The release runs on the GUI thread. A blocking SQLite busy wait
+        # would prevent the timer from running and discard this send.
+        with closing(sqlite3.connect(group.database)) as writer:
+            writer.execute('BEGIN IMMEDIATE')
+            QTimer.singleShot(250, window, writer.rollback)
+            click('groupChatSend')
+            wait(lambda: not writer.in_transaction, 'The GUI did not release the database lock')
         wait(lambda: any(row['author'] == 'agent:' + first for row in messages()), 'Pi did not report to the group', 25)
         assert any('submit_to_chatgroup' in names and '(from group chat)' in json.dumps(rows)
                    for names, rows in requests)
@@ -217,6 +225,44 @@ def run(folder):
                  'An ordinary conversation turn did not report progress', 25)
             wait(lambda: not backend._pool.find(first).busy, 'Ordinary turn did not settle')
             click('workspaceGroupChatButton')
+            previous = messages()[-1]['id']
+            composer = find('groupChatComposer')
+            composer.setProperty('text', 'Broadcast dispatch')
+            note = workspace / 'acceptance-note.txt'
+            note.write_text('Attachment sent with SQLite contention.\n', encoding='utf-8')
+            assert find('workspaceGroupChat').acceptChatFiles([QUrl.fromLocalFile(str(note)).toString()])
+            with (
+                closing(sqlite3.connect(group.database)) as writer,
+                patch.object(group.timer, 'start'),
+                patch.object(group.chat, 'copy_files', wraps=group.chat.copy_files) as archive,
+            ):
+                writer.execute('BEGIN IMMEDIATE')
+                QTimer.singleShot(250, window, writer.rollback)
+                click('groupChatSend')
+                wait(lambda: len(group.outbox) == 2, 'Broadcast did not queue both members')
+                assert not writer.in_transaction
+                archive.assert_called_once()
+            sent = [row for row in messages() if row['id'] > previous and row['author'] == 'user']
+            assert len(sent) == 1 and Path(sent[0]['files'][0]['path']).read_bytes() == note.read_bytes()
+            group.drain()
+            assert len(group.outbox) == 1, 'One dispatch tick started both idle members'
+            group.drain()
+            assert not group.outbox, 'The next dispatch tick did not start the other member'
+            wait(lambda: {row['author'] for row in messages() if row['id'] > previous}
+                 >= {'agent:' + first, 'agent:' + second}, 'Broadcast lost a member report', 25)
+            wait(lambda: all(not backend._pool.find(sid).busy for sid in (first, second)),
+                 'Broadcast turns did not settle')
+            click('groupChatDetailsButton')
+            click('groupChatClearHistory')
+            with closing(sqlite3.connect(group.database)) as reader:
+                reader.execute('BEGIN')
+                assert reader.execute('SELECT COUNT(*) FROM global_chat_messages').fetchone()[0] > 0
+                QTimer.singleShot(250, window, reader.rollback)
+                click('groupChatConfirmClear')
+                wait(lambda: not reader.in_transaction, 'The GUI did not release the read lock')
+            wait(lambda: not messages() and find('groupChatMessages').property('count') == 0,
+                 'Clear did not recover after the lock')
+            assert first in group.aliases and second in group.aliases
             click('groupChatDetailsButton')
             click('groupChatMember_agent:' + first, Qt.RightButton)
             click('groupChatRemoveMember')

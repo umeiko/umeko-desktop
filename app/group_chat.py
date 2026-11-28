@@ -104,9 +104,11 @@ class GroupChat(QObject):
         return {'hasOlder': len(rows) > 80,
                 'messages': [{'id': row['id'], **json.loads(row['message'])} for row in reversed(rows[:80])]}
 
-    def clear_history(self, store):
+    def clear_history(self, store, *, exclusive=False):
         try:
             with store.connection() as db:
+                if exclusive:
+                    db.execute('BEGIN EXCLUSIVE')
                 db.execute('DELETE FROM global_chat_messages')
         except sqlite3.Error as error:
             raise ValueError('无法清空群聊记录') from error
@@ -115,7 +117,7 @@ class GroupChat(QObject):
         self.bus.changed(persist=False)
         return {'cleared': True}
 
-    def append(self, store, author, recipient, text, files=(), *, poke=False, quote=None, author_name=''):
+    def append(self, store, author, recipient, text, files=(), *, poke=False, quote=None, author_name='', exclusive=False):
         message = {'author': author, 'recipient': recipient, 'text': text, 'files': list(files),
                    'poke': poke, 'created': datetime.now(timezone.utc).isoformat(timespec='seconds')}
         if quote is not None:
@@ -123,6 +125,8 @@ class GroupChat(QObject):
         if author_name:
             message['authorName'] = author_name
         with store.connection() as db:
+            if exclusive:
+                db.execute('BEGIN EXCLUSIVE')
             cursor = db.execute('INSERT INTO global_chat_messages (message) VALUES (?)',
                                 (json.dumps(message, ensure_ascii=False),))
             return {'id': cursor.lastrowid, **message}

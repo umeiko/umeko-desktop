@@ -14,6 +14,7 @@ Rectangle {
     property var drafts: ({})
     property string section: "agents"
     readonly property bool groupChatVisible: visible && sdk.active && !selected && section === "group"
+    readonly property bool busTreeVisible: visible && sdk.active && !selected && section === "bridge" && !busSessionId
     property string error: ""
     property string snapshotSelection: ""
     property bool polling: false
@@ -103,6 +104,7 @@ Rectangle {
     }
     ListModel {id:busRows;dynamicRoles:true}
     function updateBusTree() {
+        if (!busTreeVisible) return
         const rows=bridgeTree(state.projects || [],state.targets,bridgeSearch.text,collapsedProjects)
         // Keep delegates and the visible project anchored while a background
         // snapshot changes status or the user expands/collapses a long tree.
@@ -118,6 +120,7 @@ Rectangle {
         if(busRows.count>rows.length)busRows.remove(rows.length,busRows.count-rows.length)
     }
     onStateChanged: updateBusTree()
+    onBusTreeVisibleChanged: if (busTreeVisible) updateBusTree()
     onCollapsedProjectsChanged:updateBusTree()
     function call(method,args) {
         const id=sdk.call(method,args || {})

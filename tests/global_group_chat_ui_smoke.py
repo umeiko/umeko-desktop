@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+from threading import Event
 from time import monotonic
 from unittest.mock import patch
 from zipfile import ZipFile
@@ -20,7 +21,7 @@ def run(directory):
     from PySide6.QtCore import QCoreApplication, QMimeData, QObject, QPointF, Qt, QUrl
     from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QImage, QInputMethodEvent
     from PySide6.QtQml import QQmlEngine, QQmlExpression
-    from PySide6.QtTest import QTest
+    from PySide6.QtTest import QSignalSpy, QTest
     from app.integration import Completion
     from app.pi_runtime import RELEASE_NAME, verify_runtime
     from app.storage import Store
@@ -99,6 +100,27 @@ def run(directory):
         click("groupChatTabButton")
         wait(lambda: (item := find("groupChat")) and item.property("active"), "Group did not load")
         wait(lambda: evaluate("groupChat", "mentionChoices.length") == 4, "Group members did not load")
+        tree = find("agentBusProjectTree")
+        assert tree.property("count") == 0, "Group snapshots populated the hidden Agent Bus"
+        click("agentBusTabButton")
+        wait(lambda: tree.property("count") > 0, "Agent Bus did not load when opened")
+        click("groupChatTabButton")
+        wait(lambda: find("groupChat").property("active"), "Returning from Agent Bus did not reopen the group")
+        config_changed = QSignalSpy(backend.changed)
+        for result in ({'ok': True, 'value': {'messages': []}}, {'ok': False, 'value': 'fixture error'}):
+            replies = []
+            task = 'group-chat:polling-fixture'
+            service.group_chat.jobs[task] = replies.append
+            backend.jobDone.emit(task, result)
+            assert replies == [result] and task not in service.group_chat.jobs
+        assert config_changed.count() == 0, "Group results invalidated desktop configuration"
+        original_theme = backend.config['theme']
+        original_color = find("groupChat").property("color")
+        selected_theme = 'dark' if original_theme != 'dark' else 'white'
+        backend.setTheme(selected_theme)
+        assert config_changed.count() == 1
+        wait(lambda: find("groupChat").property("color") != original_color, "Theme change did not reach the group UI")
+        backend.setTheme(original_theme)
         assert find("agentBusRequestsTabButton") is None
         assert find("groupChatPicker") is None
         composer = find("groupChatComposer")
@@ -292,8 +314,30 @@ def run(directory):
         assert service.handle("groupChatHistory", {}) == history
         click("groupChatDetailsButton")
         click("groupChatClearHistory")
-        click("groupChatConfirmClear")
-        wait(lambda: find("groupChatMessages").property("count") == 0, "Cleared messages are still visible")
+        wait(lambda: not evaluate("groupChat", "reading"), "Initial history request did not settle")
+        chat = service.group_chat
+        chat.append(service.team_board.storage(), "user", "all", "Stale before clear")
+        started, release = Event(), Event()
+        original_history = chat.history
+
+        def held_history(*args):
+            snapshot = original_history(*args)
+            if not started.is_set():
+                started.set()
+                assert release.wait(15)
+            return snapshot
+
+        with patch.object(chat, "history", side_effect=held_history):
+            try:
+                evaluate("groupChat", "refresh()")
+                wait(started.is_set, "The history request did not start")
+                click("groupChatConfirmClear")
+                wait(lambda: find("groupChatMessages").property("count") == 0, "Cleared messages are still visible")
+                assert evaluate("groupChat", "reading")
+            finally:
+                release.set()
+            wait(lambda: not evaluate("groupChat", "reading || refreshQueued"), "Refresh after clear did not settle")
+            assert find("groupChatMessages").property("count") == 0, "A stale history response restored cleared messages"
         assert not service.handle("groupChatHistory", {})["messages"]
         assert not service.group_chat.active
         assert attachment.is_file()
@@ -364,7 +408,7 @@ def run(directory):
         click(file_card, Qt.RightButton)
         wait_menu("groupChatFileMenu")
         click("groupChatCopyFile")
-        wait(lambda: [url.toLocalFile() for url in app.clipboard().mimeData().urls()] == [saved_zip["path"]],
+        wait(lambda: [Path(url.toLocalFile()) for url in app.clipboard().mimeData().urls()] == [Path(saved_zip["path"])],
              "Copy did not put the file on the system clipboard")
         with patch.object(backend, "openChatboxPath") as reveal:
             click(file_card, Qt.RightButton)
