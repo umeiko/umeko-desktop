@@ -84,22 +84,39 @@ class RequestDiagnostics(QObject):
 
     def _persist(self, record):
         with self.lock:
-            self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             path = self.directory / (record['id'] + '.json')
-            path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
-            path.chmod(0o600)
+            try:
+                self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
+                path.chmod(0o600)
+            except OSError:
+                # Local diagnostics must not replace the upstream result.
+                return False
             details = self._details(record)
             retried = 'error' not in record and any(call.get('parameterRetry') for call in record.get('http', []))
             if (details or retried) and record.get('providerId'):
                 self.latest[record['providerId']] = {'id': record['id'], 'details': details}
             elif record.get('providerId'):
                 self.latest.pop(record['providerId'], None)
-            expired = sorted(self.directory.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)[30:]
-            for old in expired:
-                old.unlink()
-            removed = {old.stem for old in expired}
+            removed = self._prune_reports(path)
             self.latest = {key: value for key, value in self.latest.items() if value['id'] not in removed}
         self.changed.emit()
+        return True
+
+    def _prune_reports(self, current):
+        try:
+            candidates = [(path.stat().st_mtime, path) for path in self.directory.glob('*.json')
+                          if path != current]
+        except OSError:
+            return set()
+        removed = set()
+        for _, old in sorted(candidates, key=lambda item: item[0], reverse=True)[29:]:
+            try:
+                old.unlink(missing_ok=True)
+            except OSError:
+                continue
+            removed.add(old.stem)
+        return removed
 
     def compatibility(self, provider, request, http):
         """Keep a successful cached adjustment accessible through request details."""
@@ -116,8 +133,7 @@ class RequestDiagnostics(QObject):
         if timing:
             record['streamDiagnostics'] = timing
         record = redact(record, self._secrets(provider, record))
-        self._persist(record)
-        return record['id']
+        return record['id'] if self._persist(record) else ''
 
     def failure(self, provider, request, response, error, http=None):
         http_calls = http or []
@@ -168,10 +184,14 @@ class RequestDiagnostics(QObject):
         else:
             message = '供应商请求失败：' + safe_text(error_text, [provider.get('key', '')])
         record['summary'] = safe_text(message, secrets)
-        self._persist(record)
+        saved = self._persist(record)
+        summary = record['summary']
+        if saved:
+            summary += f' [Umeko:{record["id"]}]'
+        elif code:
+            summary = summary.removesuffix(', then open request details')
         managed = bool(record['http'] and record['http'][-1].get('httpRetryManaged'))
-        failure = RequestFailure(f'{record["summary"]} [Umeko:{record["id"]}]',
-                                 transient_failure(error, http_calls) and not managed)
+        failure = RequestFailure(summary, transient_failure(error, http_calls) and not managed)
         failure.http_retry_managed = managed
         failure.tls_code = code
         failure.gateway_timeout = failure.retryable and (
