@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import ssl
 import tempfile
 import unittest
@@ -10,6 +11,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QObject, Signal
 from app.app_about import AppAbout, fetch_latest_release, version_key
 from app.project_info import VERSION, PROJECT_URL, RELEASE_API, RELEASES_URL, build_metadata, project_info
+from umeko_provider_sdk import network
 
 
 class AboutTests(unittest.TestCase):
@@ -83,6 +85,29 @@ class AboutTests(unittest.TestCase):
             context = build.call_args.args[1]._context
             self.assertTrue(context.check_hostname)
             self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_macos_release_check_uses_system_ca_when_openssl_defaults_are_missing(self):
+        ca_file = Path(__file__).parent / 'fixtures' / 'update-tls' / 'ca.pem'
+        defaults = ssl.get_default_verify_paths()._replace(cafile=None, capath=None)
+        raw = json.dumps(self.release('v99.0.0')).encode()
+        for proxy in ('', 'http://fixture.invalid:8080'):
+            with self.subTest(proxy=proxy):
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                with patch.object(network.sys, 'platform', 'darwin'), \
+                     patch.object(network, '_MACOS_CA_FILE', ca_file), \
+                     patch.object(ssl, 'get_default_verify_paths', return_value=defaults), \
+                     patch.object(ssl, 'create_default_context', return_value=context), \
+                     patch.dict(os.environ, {'UMEKO_MODEL_CA_FILE': str(ca_file.with_name('missing.pem'))}), \
+                     patch('app.app_about.system_proxy', return_value=proxy), \
+                     patch('urllib.request.build_opener') as build:
+                    build.return_value.open.return_value.__enter__.return_value.read.return_value = raw
+                    self.assertEqual(fetch_latest_release()['state'], 'available')
+                proxy_handler, https_handler = build.call_args.args
+                self.assertEqual(proxy_handler.proxies, {'https': proxy} if proxy else {})
+                self.assertIs(https_handler._context, context)
+                self.assertEqual(context.cert_store_stats()['x509_ca'], 1)
+                self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+                self.assertTrue(context.check_hostname)
 
     def test_packaged_info_uses_build_platform_and_never_guesses_build_date(self):
         with tempfile.TemporaryDirectory() as temp:
